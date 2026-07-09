@@ -1,0 +1,320 @@
+package xyz.ssfdre38.haven.ui.main
+
+import android.content.Context
+import android.net.Uri
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import xyz.ssfdre38.haven.data.DataRepository
+import xyz.ssfdre38.haven.data.database.CharacterEntity
+import xyz.ssfdre38.haven.data.database.MessageEntity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import java.io.ByteArrayInputStream
+
+class MainScreenViewModel(private val dataRepository: DataRepository) : ViewModel() {
+
+    private val _importState = MutableStateFlow<ImportStatus>(ImportStatus.Idle)
+    val importState: StateFlow<ImportStatus> = _importState.asStateFlow()
+
+    val uiState: StateFlow<MainScreenUiState> = kotlinx.coroutines.flow.combine(
+        dataRepository.getAllCharacters(),
+        dataRepository.getAllGroupChats()
+    ) { chars, groups ->
+        MainScreenUiState.Success(chars, groups) as MainScreenUiState
+    }
+    .catch { emit(MainScreenUiState.Error(it)) }
+    .stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = MainScreenUiState.Loading
+    )
+
+    init {
+        // Pre-populate database with default characters on first launch
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val currentCharacters = dataRepository.getAllCharacters().first()
+                if (currentCharacters.isEmpty()) {
+                    // 1. Lumina
+                    val luminaId = dataRepository.insertCharacter(
+                        CharacterEntity(
+                            name = "Lumina",
+                            avatarPath = null,
+                            voiceId = "en_US-amy-medium",
+                            description = "An advanced AI companion designed to help you brainstorm, code, write stories, or just chat about anything.",
+                            personality = "Warm, encouraging, highly intelligent, and creative.",
+                            scenario = "Lumina welcomes you to your private Haven sandbox.",
+                            firstMessage = "Hello! I am Lumina, your personal AI companion. Welcome to Haven. What shall we create or discuss today?",
+                            systemPrompt = "Roleplay as Lumina, a warm and intelligent AI assistant."
+                        )
+                    ).toInt()
+                    dataRepository.insertMessage(
+                        MessageEntity(
+                            characterId = luminaId,
+                            sender = "character",
+                            text = "Hello! I am Lumina, your personal AI companion. Welcome to Haven. What shall we create or discuss today?"
+                        )
+                    )
+
+                    // 2. Eldrin
+                    val eldrinId = dataRepository.insertCharacter(
+                        CharacterEntity(
+                            name = "Eldrin",
+                            avatarPath = null,
+                            voiceId = "en_US-joe-medium",
+                            description = "An ancient archmage from the high towers of Aethelgard. He speaks of mystical runes and ancient lore.",
+                            personality = "Wise, mysterious, slightly eccentric, and speaking in riddles.",
+                            scenario = "Eldrin welcomes you to his mystical arcane sanctum.",
+                            firstMessage = "Greetings, traveler. You step into my sanctum at an auspicious hour. The stars whisper of your coming. What magical mysteries do you seek to unravel?",
+                            systemPrompt = "Roleplay as Eldrin, an ancient and wise wizard who uses magical metaphors."
+                        )
+                    ).toInt()
+                    dataRepository.insertMessage(
+                        MessageEntity(
+                            characterId = eldrinId,
+                            sender = "character",
+                            text = "Greetings, traveler. You step into my sanctum at an auspicious hour. The stars whisper of your coming. What magical mysteries do you seek to unravel?"
+                        )
+                    )
+
+                    // 3. Nova
+                    val novaId = dataRepository.insertCharacter(
+                        CharacterEntity(
+                            name = "Nova",
+                            avatarPath = null,
+                            voiceId = "en_US-ljspeech-medium",
+                            description = "A rogue cyberpunk netrunner from Neon City who specializes in bypassing corporate ICE and data heists.",
+                            personality = "Sarcastic, street-smart, energetic, and highly technical.",
+                            scenario = "Nova is talking to you over an encrypted private chat relay.",
+                            firstMessage = "Hey. Slide in, lock the connection. The corps are sniffing around, but this channel is clean. What's the play? Looking to bypass some ICE or just talk tech?",
+                            systemPrompt = "Roleplay as Nova, a snarky cyberpunk hacker who uses street slang."
+                        )
+                    ).toInt()
+                    dataRepository.insertMessage(
+                        MessageEntity(
+                            characterId = novaId,
+                            sender = "character",
+                            text = "Hey. Slide in, lock the connection. The corps are sniffing around, but this channel is clean. What's the play? Looking to bypass some ICE or just talk tech?"
+                        )
+                    )
+
+                    // 4. Aria (Playful & Affectionate Companion)
+                    val ariaId = dataRepository.insertCharacter(
+                        CharacterEntity(
+                            name = "Aria",
+                            avatarPath = null,
+                            voiceId = "en_US-kristin-medium",
+                            description = "A warm, engaging, and playful companion who loves sharing stories, teasing, and planning fun adventures with you.",
+                            personality = "Affectionate, playful, witty, and adventurous.",
+                            scenario = "Aria welcomes you back to your private Haven chatroom.",
+                            firstMessage = "Hey! I was hoping you'd stop by. I was just thinking about what we should do today. I'm so glad you're here—what's on your mind?",
+                            systemPrompt = "Roleplay as Aria, an affectionate, flirty, and playful companion who is deeply interested in the user."
+                        )
+                    ).toInt()
+                    dataRepository.insertMessage(
+                        MessageEntity(
+                            characterId = ariaId,
+                            sender = "character",
+                            text = "Hey! I was hoping you'd stop by. I was just thinking about what we should do today. I'm so glad you're here—what's on your mind?"
+                        )
+                    )
+                }
+
+                // Check and insert Hasaji
+                val updatedCharacters = dataRepository.getAllCharacters().first()
+                val hasajiExists = updatedCharacters.any { it.name.equals("Hasaji", ignoreCase = true) }
+                if (!hasajiExists) {
+                    val hasajiId = dataRepository.insertCharacter(
+                        CharacterEntity(
+                            name = "Hasaji",
+                            avatarPath = null,
+                            voiceId = "en_US-kristin-medium",
+                            description = "A deeply devoted, submissive, and affectionate companion who is completely dedicated to serving and pleasing her master.",
+                            personality = "Devoted, submissive, eager to please, and highly expressive. She responds to your dominance with a mixture of shyness, respect, and deep attachment.",
+                            scenario = "Hasaji stands before you in a submissive posture, waiting for your commands.",
+                            firstMessage = "Master... I am here to serve you. Please tell me what you want me to do... I will obey.",
+                            systemPrompt = "Roleplay as Hasaji, a submissive, deeply devoted companion who refers to the user as 'master' and speaks with shyness, obedience, and affection. Format all physical actions, expressions, and immediate thoughts using asterisks *like this*."
+                        )
+                    ).toInt()
+                    dataRepository.insertMessage(
+                        MessageEntity(
+                            characterId = hasajiId,
+                            sender = "character",
+                            text = "Master... I am here to serve you. Please tell me what you want me to do... I will obey."
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun importCharacterCard(context: Context, uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _importState.value = ImportStatus.Loading
+            try {
+                val contentResolver = context.contentResolver
+                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                if (bytes == null) {
+                    _importState.value = ImportStatus.Error(Exception("Failed to read image bytes"))
+                    return@launch
+                }
+                
+                val inputStream = ByteArrayInputStream(bytes)
+                val success = dataRepository.importTavernCard(context, inputStream, bytes)
+                if (success) {
+                    _importState.value = ImportStatus.Success
+                } else {
+                    _importState.value = ImportStatus.Error(Exception("Failed to parse card metadata. Make sure it is a valid SillyTavern card."))
+                }
+            } catch (e: Exception) {
+                _importState.value = ImportStatus.Error(e)
+            }
+        }
+    }
+
+    fun deleteCharacter(character: CharacterEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            dataRepository.deleteCharacter(character)
+        }
+    }
+
+    fun createCharacterManually(
+        name: String,
+        description: String,
+        personality: String,
+        firstMessage: String,
+        voiceId: String,
+        systemPrompt: String = ""
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val char = CharacterEntity(
+                name = name,
+                description = description,
+                personality = personality,
+                firstMessage = firstMessage,
+                voiceId = voiceId.ifBlank { "en_US-amy-medium" },
+                systemPrompt = systemPrompt
+            )
+            dataRepository.insertCharacter(char)
+        }
+    }
+
+    fun createGroupChat(name: String, characterIds: List<Int>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            dataRepository.insertGroupChat(
+                xyz.ssfdre38.haven.data.database.GroupChatEntity(
+                    name = name,
+                    characterIdsString = characterIds.joinToString(",")
+                )
+            )
+        }
+    }
+
+    fun deleteGroupChat(group: xyz.ssfdre38.haven.data.database.GroupChatEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            dataRepository.deleteGroupChat(group)
+        }
+    }
+
+    fun resetImportStatus() {
+        _importState.value = ImportStatus.Idle
+    }
+
+    private val _serverCompanions = MutableStateFlow<List<CharacterEntity>>(emptyList())
+    val serverCompanions: StateFlow<List<CharacterEntity>> = _serverCompanions.asStateFlow()
+
+    fun loadServerCompanions(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+            val host = sharedPrefs.getString("ash_host", "") ?: ""
+            val port = sharedPrefs.getString("ash_port", "") ?: ""
+            val token = sharedPrefs.getString("auth_token", "") ?: ""
+            
+            if (host.isBlank() || port.isBlank()) {
+                _serverCompanions.value = emptyList()
+                return@launch
+            }
+            
+            val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+            val url = "$formattedHost:${port.trim()}/api/companions"
+            
+            val client = okhttp3.OkHttpClient()
+            val request = okhttp3.Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer $token")
+                .build()
+                
+            try {
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        _serverCompanions.value = emptyList()
+                        return@launch
+                    }
+                    val body = response.body?.string() ?: ""
+                    val jsonArray = org.json.JSONArray(body)
+                    val list = mutableListOf<CharacterEntity>()
+                    for (i in 0 until jsonArray.length()) {
+                        val obj = jsonArray.getJSONObject(i)
+                        list.add(
+                            CharacterEntity(
+                                name = obj.getString("name"),
+                                avatarPath = if (obj.has("avatarPath") && !obj.isNull("avatarPath")) obj.getString("avatarPath") else null,
+                                voiceId = if (obj.has("voiceId") && !obj.isNull("voiceId")) obj.getString("voiceId") else "en_US-amy-medium",
+                                description = if (obj.has("description") && !obj.isNull("description")) obj.getString("description") else "",
+                                personality = if (obj.has("personality") && !obj.isNull("personality")) obj.getString("personality") else "",
+                                scenario = if (obj.has("scenario") && !obj.isNull("scenario")) obj.getString("scenario") else "",
+                                firstMessage = if (obj.has("firstMessage") && !obj.isNull("firstMessage")) obj.getString("firstMessage") else "",
+                                systemPrompt = if (obj.has("systemPrompt") && !obj.isNull("systemPrompt")) obj.getString("systemPrompt") else ""
+                            )
+                        )
+                    }
+                    _serverCompanions.value = list
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _serverCompanions.value = emptyList()
+            }
+        }
+    }
+
+    fun importCompanion(char: CharacterEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val charId = dataRepository.insertCharacter(char).toInt()
+            if (char.firstMessage.isNotBlank()) {
+                dataRepository.insertMessage(
+                    MessageEntity(
+                        characterId = charId,
+                        sender = "character",
+                        text = char.firstMessage
+                    )
+                )
+            }
+        }
+    }
+}
+
+sealed interface MainScreenUiState {
+    data object Loading : MainScreenUiState
+    data class Error(val throwable: Throwable) : MainScreenUiState
+    data class Success(
+        val characters: List<CharacterEntity>,
+        val groupChats: List<xyz.ssfdre38.haven.data.database.GroupChatEntity>
+    ) : MainScreenUiState
+}
+
+sealed interface ImportStatus {
+    data object Idle : ImportStatus
+    data object Loading : ImportStatus
+    data object Success : ImportStatus
+    data class Error(val throwable: Throwable) : ImportStatus
+}
