@@ -786,7 +786,7 @@ fun MessageBubble(
 data class ParsedMessage(val thought: String?, val cleanText: String)
 
 fun parseMessageText(text: String): ParsedMessage {
-    val thoughtRegex = "<\\s*thought\\s*>(.*?)<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
+    val thoughtRegex = "<\\s*thought\\s*>(.*?)<\\s*/\\s*thought\\s*>".toRegex(setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
     val match = thoughtRegex.find(text)
     return if (match != null) {
         val thoughtContent = match.groups[1]?.value?.trim()
