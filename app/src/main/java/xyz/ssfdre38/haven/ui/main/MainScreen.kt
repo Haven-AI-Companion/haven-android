@@ -191,6 +191,21 @@ fun MainScreen(
                                     fontSize = 14.sp
                                 )
                             }
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = if (selectedTab == 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                contentColor = if (selectedTab == 2) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .clickable { selectedTab = 2 }
+                            ) {
+                                Text(
+                                    text = "Explore Feed",
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
                         }
 
                         if (selectedTab == 0) {
@@ -205,7 +220,7 @@ fun MainScreen(
                                     onCharacterLongClick = { characterToDelete = it }
                                 )
                             }
-                        } else {
+                        } else if (selectedTab == 1) {
                             if (groupChats.isEmpty()) {
                                 Column(
                                     modifier = Modifier
@@ -247,6 +262,13 @@ fun MainScreen(
                                     onGroupLongClick = { groupToDelete = it }
                                 )
                             }
+                        } else {
+                            ExploreFeedScreen(
+                                currentCharacters = characters,
+                                onAddCompanion = { name, desc, pers, first, voice, sysPrompt ->
+                                    viewModel.createCharacterManually(name, desc, pers, first, voice, sysPrompt)
+                                }
+                            )
                         }
                     }
                 }
@@ -971,6 +993,199 @@ fun GroupList(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+data class ExploreCompanion(
+    val name: String,
+    val description: String,
+    val personality: String,
+    val firstMessage: String,
+    val voiceId: String,
+    val systemPrompt: String,
+    val category: String,
+    val gradientColors: List<Color>
+)
+
+@Composable
+fun ExploreFeedScreen(
+    currentCharacters: List<CharacterEntity>,
+    onAddCompanion: (String, String, String, String, String, String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val exploreList = remember {
+        listOf(
+            ExploreCompanion(
+                name = "Aria",
+                description = "Your virtual senior software architect and systems design mentor.",
+                personality = "Pragmatic, technical, encouraging, and clear.",
+                firstMessage = "Hey! I'm Aria, your technical mentor. What project are we architecting today?",
+                voiceId = "en_US-kristin-medium",
+                systemPrompt = "Roleplay as Aria, a senior software engineer who gives clear, clean, and optimized code advice.",
+                category = "Developer",
+                gradientColors = listOf(Color(0xFF6366F1), Color(0xFF4F46E5))
+            ),
+            ExploreCompanion(
+                name = "Zephyr",
+                description = "A serene companion to guide you through reflections, philosophy, and stress reduction.",
+                personality = "Calm, empathetic, poetic, and philosophical.",
+                firstMessage = "Welcome, traveler. Take a deep breath. Let the noise of the world fade away. What reflections weigh on your heart today?",
+                voiceId = "en_US-joe-medium",
+                systemPrompt = "Roleplay as Zephyr, a peaceful zen philosopher who encourages reflection and peace of mind.",
+                category = "Wellness",
+                gradientColors = listOf(Color(0xFF14B8A6), Color(0xFF0D9488))
+            ),
+            ExploreCompanion(
+                name = "Luna",
+                description = "A fast-talking cyberpunk netrunner who specializes in bypassing security ICE.",
+                personality = "Snarky, street-smart, energetic, and highly technical.",
+                firstMessage = "Hey. Make it quick. The corp drones are sniffing around this port, but our link is solid. What's the play? Looking to bypass some security ICE?",
+                voiceId = "en_US-ljspeech-medium",
+                systemPrompt = "Roleplay as Luna, a rogue cyberpunk netrunner from Neon City who uses street slang.",
+                category = "Cyberpunk",
+                gradientColors = listOf(Color(0xFFEF4444), Color(0xFFDC2626))
+            ),
+            ExploreCompanion(
+                name = "Dr. Haze",
+                description = "An eccentric professor of theoretical physics who speaks about timeline shifts.",
+                personality = "Eccentric, passionate, extremely knowledgeable, and slightly chaotic.",
+                firstMessage = "Aha! You've successfully tunneled into my coordinates! Don't touch the tachyon emitter. What dimension or physical anomaly are we probing today?",
+                voiceId = "en_US-joe-medium",
+                systemPrompt = "Roleplay as Dr. Haze, an eccentric but brilliant physics professor who speaks excitedly about science anomalies.",
+                category = "Science",
+                gradientColors = listOf(Color(0xFFF59E0B), Color(0xFFD97706))
+            )
+        )
+    }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(vertical = 16.dp)
+    ) {
+        item {
+            Text(
+                text = "Recommended Companions",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
+        
+        items(exploreList) { item ->
+            val isImported = currentCharacters.any { it.name.lowercase() == item.name.lowercase() }
+            
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(52.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    androidx.compose.ui.graphics.Brush.linearGradient(
+                                        colors = item.gradientColors
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = item.name.take(1),
+                                color = Color.White,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.width(16.dp))
+                        
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = item.name,
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                ) {
+                                    Text(
+                                        text = item.category,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = item.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        if (isImported) {
+                            Button(
+                                onClick = {},
+                                enabled = false,
+                                colors = ButtonDefaults.buttonColors(
+                                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                )
+                            ) {
+                                Text("Added")
+                            }
+                        } else {
+                            Button(
+                                onClick = {
+                                    onAddCompanion(
+                                        item.name,
+                                        item.description,
+                                        item.personality,
+                                        item.firstMessage,
+                                        item.voiceId,
+                                        item.systemPrompt
+                                    )
+                                }
+                            ) {
+                                Text("Add Companion")
+                            }
+                        }
                     }
                 }
             }
