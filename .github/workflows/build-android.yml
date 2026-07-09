@@ -1,0 +1,70 @@
+name: Build Android Client
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Grant Execute Permission for Gradlew
+        run: chmod +x gradlew
+
+      - name: Build with Gradle
+        run: ./gradlew assembleRelease bundleRelease
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: haven-android-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          retention-days: 7
+
+      - name: Upload AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: haven-android-aab
+          path: app/build/outputs/bundle/release/app-release.aab
+          retention-days: 7
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Haven Mobile ${{ github.ref_name }}"
+          body: |
+            ## Haven Mobile Client ${{ github.ref_name }}
+            
+            This is the official release of the Haven Mobile client for Android.
+            
+            ### Downloads
+            *   **Android APK (Sideload)**: `app-release.apk`
+            *   **Android App Bundle (Play Store)**: `app-release.aab`
+          files: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/bundle/release/app-release.aab
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
