@@ -171,9 +171,9 @@ fun MainScreen(
                             ) {
                                 Text(
                                     text = "Companions",
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
+                                    fontSize = 13.sp
                                 )
                             }
                             Surface(
@@ -186,9 +186,9 @@ fun MainScreen(
                             ) {
                                 Text(
                                     text = "Group Rooms",
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
+                                    fontSize = 13.sp
                                 )
                             }
                             Surface(
@@ -200,10 +200,10 @@ fun MainScreen(
                                     .clickable { selectedTab = 2 }
                             ) {
                                 Text(
-                                    text = "Explore Feed",
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    text = "Explore",
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
+                                    fontSize = 13.sp
                                 )
                             }
                         }
