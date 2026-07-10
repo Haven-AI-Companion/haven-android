@@ -25,6 +25,7 @@ import androidx.compose.runtime.mutableStateListOf
 import xyz.ssfdre38.haven.GroupChat
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -92,26 +93,37 @@ fun MainScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { 
-                    Text("Haven Portal", fontWeight = FontWeight.Bold) 
-                },
-                actions = {
-                    IconButton(onClick = { onNavigate(Settings) }) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Settings"
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground
+    val mainGradient = remember {
+        listOf(Color(0xFF1E1035), Color(0xFF0C051A))
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(mainGradient))
+    ) {
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    title = { 
+                        Text("Haven Portal", fontWeight = FontWeight.Bold) 
+                    },
+                    actions = {
+                        IconButton(onClick = { onNavigate(Settings) }) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Settings",
+                                tint = Color.White
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent,
+                        titleContentColor = Color.White
+                    )
                 )
-            )
-        },
+            },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {
@@ -133,12 +145,11 @@ fun MainScreen(
         },
         modifier = modifier
     ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-        ) {
+            Box(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize()
+            ) {
             when (state) {
                 is MainScreenUiState.Loading -> {
                     Box(
@@ -662,6 +673,7 @@ fun MainScreen(
         }
     }
 }
+}
 
 @Composable
 fun EmptyStatePrompt(
@@ -747,8 +759,9 @@ fun CharacterCard(
             ),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-        )
+            containerColor = Color(0xFF1A1A1A).copy(alpha = 0.65f)
+        ),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
@@ -771,7 +784,7 @@ fun CharacterCard(
                             text = character.name,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = Color.White
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         // Level badge
@@ -807,7 +820,7 @@ fun CharacterCard(
                     Text(
                         text = character.description.ifBlank { "No description provided." },
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = Color.White.copy(alpha = 0.7f),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -911,11 +924,11 @@ fun GroupList(
                     ),
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                    containerColor = Color(0xFF1A1A1A).copy(alpha = 0.65f)
                 ),
-                border = androidx.compose.foundation.BorderStroke(
+                border = BorderStroke(
                     1.dp,
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
+                    Color.White.copy(alpha = 0.08f)
                 )
             ) {
                 Row(
@@ -983,13 +996,13 @@ fun GroupList(
                             text = group.name,
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onBackground
+                            color = Color.White
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = roomParticipants.joinToString { it.name },
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            color = Color.White.copy(alpha = 0.7f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -1075,7 +1088,7 @@ fun ExploreFeedScreen(
                 text = "Recommended Companions",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
+                color = Color.White,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
         }
@@ -1086,7 +1099,13 @@ fun ExploreFeedScreen(
             Card(
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                colors = CardDefaults.cardColors(
+                    containerColor = Color(0xFF1A1A1A).copy(alpha = 0.65f)
+                ),
+                border = BorderStroke(
+                    1.dp,
+                    Color.White.copy(alpha = 0.08f)
+                )
             ) {
                 Column(
                     modifier = Modifier
@@ -1126,7 +1145,7 @@ fun ExploreFeedScreen(
                                     text = item.name,
                                     fontWeight = FontWeight.Bold,
                                     style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onBackground
+                                    color = Color.White
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Surface(
@@ -1146,7 +1165,7 @@ fun ExploreFeedScreen(
                             Text(
                                 text = item.description,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                color = Color.White.copy(alpha = 0.7f),
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
