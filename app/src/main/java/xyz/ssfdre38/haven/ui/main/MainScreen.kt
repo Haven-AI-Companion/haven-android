@@ -1,5 +1,6 @@
 package xyz.ssfdre38.haven.ui.main
 
+import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,6 +20,8 @@ import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.mutableStateListOf
@@ -77,6 +80,22 @@ fun MainScreen(
     var showManualCreateDialog by remember { mutableStateOf(false) }
     var showServerImportDialog by remember { mutableStateOf(false) }
     var groupToDelete by remember { mutableStateOf<xyz.ssfdre38.haven.data.database.GroupChatEntity?>(null) }
+
+    val sharedPrefs = remember { context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE) }
+    val ashHost = sharedPrefs.getString("ash_host", "http://10.0.2.2") ?: "http://10.0.2.2"
+    val ashPort = sharedPrefs.getString("ash_port", "18799") ?: "18799"
+    val serverUrl = "${ashHost.trimEnd('/')}:${ashPort.trim()}"
+    var availableVoices by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+
+    LaunchedEffect(showManualCreateDialog) {
+        if (showManualCreateDialog) {
+            xyz.ssfdre38.haven.data.network.HavenHttpClient.getAvailableVoices(serverUrl) { result ->
+                result.onSuccess { voices ->
+                    availableVoices = voices
+                }
+            }
+        }
+    }
 
     // Handle import state toasts/dialogs
     LaunchedEffect(importState) {
@@ -582,13 +601,108 @@ fun MainScreen(
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Spacer(modifier = Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = voiceId,
-                                onValueChange = { voiceId = it },
-                                label = { Text("Voice ID") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                            var dropdownExpanded by remember { mutableStateOf(false) }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(modifier = Modifier.weight(1f)) {
+                                    OutlinedTextField(
+                                        value = availableVoices.find { it.first == voiceId }?.second ?: voiceId,
+                                        onValueChange = {},
+                                        readOnly = true,
+                                        label = { Text("Companion Voice") },
+                                        trailingIcon = {
+                                            IconButton(onClick = { dropdownExpanded = true }) {
+                                                Icon(
+                                                    imageVector = androidx.compose.material.icons.Icons.Default.ArrowDropDown,
+                                                    contentDescription = "Select Voice"
+                                                )
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    DropdownMenu(
+                                        expanded = dropdownExpanded,
+                                        onDismissRequest = { dropdownExpanded = false },
+                                        modifier = Modifier.fillMaxWidth(0.8f)
+                                    ) {
+                                        availableVoices.forEach { voice ->
+                                            DropdownMenuItem(
+                                                text = { Text(voice.second) },
+                                                onClick = {
+                                                    voiceId = voice.first
+                                                    dropdownExpanded = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+
+                                var isPlayingSample by remember { mutableStateOf(false) }
+                                val token = sharedPrefs.getString("auth_token", "") ?: ""
+
+                                IconButton(
+                                    onClick = {
+                                        if (isPlayingSample) return@IconButton
+                                        isPlayingSample = true
+                                        val sampleText = "Hello! I am $name, your AI companion."
+                                        xyz.ssfdre38.haven.data.network.HavenHttpClient.generateTts(
+                                            serverUrl = serverUrl,
+                                            token = token,
+                                            text = sampleText,
+                                            voice = voiceId
+                                        ) { result ->
+                                            result.fold(
+                                                onSuccess = { relativeUrl ->
+                                                    val resolvedUrl = if (relativeUrl.startsWith("/")) {
+                                                        val host = serverUrl.trimEnd('/')
+                                                        if (host.startsWith("http")) "$host$relativeUrl" else "http://$host$relativeUrl"
+                                                    } else {
+                                                        relativeUrl
+                                                    }
+                                                    (context as? android.app.Activity)?.runOnUiThread {
+                                                        try {
+                                                            android.media.MediaPlayer().apply {
+                                                                setDataSource(resolvedUrl)
+                                                                prepareAsync()
+                                                                setOnPreparedListener { start() }
+                                                                setOnCompletionListener {
+                                                                    release()
+                                                                    isPlayingSample = false
+                                                                }
+                                                                setOnErrorListener { _, _, _ ->
+                                                                    release()
+                                                                    isPlayingSample = false
+                                                                    true
+                                                                }
+                                                            }
+                                                        } catch (e: Exception) {
+                                                            isPlayingSample = false
+                                                        }
+                                                    }
+                                                },
+                                                onFailure = {
+                                                    isPlayingSample = false
+                                                }
+                                            )
+                                        }
+                                    },
+                                    enabled = !isPlayingSample && voiceId.isNotBlank(),
+                                    modifier = Modifier.size(56.dp)
+                                ) {
+                                    if (isPlayingSample) {
+                                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                    } else {
+                                        Icon(
+                                            imageVector = androidx.compose.material.icons.Icons.Filled.PlayArrow,
+                                            contentDescription = "Play voice sample",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
                             Spacer(modifier = Modifier.height(8.dp))
                             OutlinedTextField(
                                 value = description,

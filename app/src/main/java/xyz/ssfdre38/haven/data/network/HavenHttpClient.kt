@@ -395,4 +395,46 @@ object HavenHttpClient {
             }
         })
     }
+
+    /**
+     * Fetches the list of available text-to-speech voices from the server.
+     */
+    fun getAvailableVoices(
+        serverUrl: String,
+        onResult: (Result<List<Pair<String, String>>>) -> Unit
+    ) {
+        val url = "${serverUrl.trimEnd('/')}/api/tts/voices"
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .build()
+
+        client.newCall(request).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
+                onResult(Result.failure(e))
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                response.use {
+                    if (!response.isSuccessful) {
+                        onResult(Result.failure(Exception("Failed to load voices: HTTP ${response.code}")))
+                        return
+                    }
+
+                    try {
+                        val body = response.body?.string() ?: ""
+                        val array = JSONArray(body)
+                        val list = mutableListOf<Pair<String, String>>()
+                        for (i in 0 until array.length()) {
+                            val obj = array.getJSONObject(i)
+                            list.add(Pair(obj.getString("id"), obj.getString("name")))
+                        }
+                        onResult(Result.success(list))
+                    } catch (e: Exception) {
+                        onResult(Result.failure(e))
+                    }
+                }
+            }
+        })
+    }
 }
