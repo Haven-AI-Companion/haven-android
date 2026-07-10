@@ -950,13 +950,34 @@ data class ParsedMessage(val thought: String?, val cleanText: String)
 fun parseMessageText(text: String): ParsedMessage {
     val thoughtRegex = "<\\s*thought\\s*>(.*?)<\\s*/\\s*thought\\s*>".toRegex(setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
     val match = thoughtRegex.find(text)
-    return if (match != null) {
+    if (match != null) {
         val thoughtContent = match.groups[1]?.value?.trim()
         val cleanTextContent = text.replace(thoughtRegex, "").trim()
-        ParsedMessage(thoughtContent, cleanTextContent)
-    } else {
-        ParsedMessage(null, text)
+        return ParsedMessage(thoughtContent, cleanTextContent)
     }
+
+    // Fallback 1: If only closing </thought> is present
+    val closingTagIndex = text.indexOf("</thought>", ignoreCase = true)
+    if (closingTagIndex != -1) {
+        val thoughtContent = text.substring(0, closingTagIndex).replace("<thought>", "", ignoreCase = true).trim()
+        val cleanTextContent = text.substring(closingTagIndex + "</thought>".length).trim()
+        return ParsedMessage(
+            thought = if (thoughtContent.isNotBlank()) thoughtContent else null,
+            cleanText = cleanTextContent
+        )
+    }
+
+    // Fallback 2: If only opening <thought> is present (cut-off)
+    val openingTagIndex = text.indexOf("<thought>", ignoreCase = true)
+    if (openingTagIndex != -1) {
+        val thoughtContent = text.substring(openingTagIndex + "<thought>".length).trim()
+        return ParsedMessage(
+            thought = if (thoughtContent.isNotBlank()) thoughtContent else null,
+            cleanText = ""
+        )
+    }
+
+    return ParsedMessage(null, text)
 }
 
 data class MessageContent(val cleanText: String, val imageUrl: String?)
