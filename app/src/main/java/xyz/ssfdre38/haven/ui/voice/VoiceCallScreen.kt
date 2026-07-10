@@ -81,6 +81,7 @@ class VoiceCallViewModel(
     val companionSpeech: StateFlow<String> = _companionSpeech.asStateFlow()
 
     private var webSocket: WebSocket? = null
+    private var okHttpClient: okhttp3.OkHttpClient? = null
     private var audioRecord: AudioRecord? = null
     private var recordingJob: Job? = null
     private var player: MediaPlayer? = null
@@ -136,7 +137,9 @@ class VoiceCallViewModel(
             val client = okhttp3.OkHttpClient.Builder()
                 .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
                 .readTimeout(0, java.util.concurrent.TimeUnit.SECONDS)
+                .pingInterval(15, java.util.concurrent.TimeUnit.SECONDS)
                 .build()
+            okHttpClient = client
 
             val wsUrl = serverUrl
                 .replace("http://", "ws://")
@@ -317,6 +320,9 @@ class VoiceCallViewModel(
         player = null
         webSocket?.close(1000, "User ended call")
         webSocket = null
+        okHttpClient?.dispatcher?.executorService?.shutdown()
+        okHttpClient?.connectionPool?.evictAll()
+        okHttpClient = null
         vad?.close()
         vad = null
         _callState.value = CallState.Idle

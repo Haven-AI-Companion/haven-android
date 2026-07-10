@@ -28,6 +28,14 @@ import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -102,8 +110,62 @@ fun ChatScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
+    // Text-To-Speech Engine for reading companion responses aloud
+    var tts by remember { mutableStateOf<android.speech.tts.TextToSpeech?>(null) }
+    DisposableEffect(context) {
+        onDispose {
+            tts?.stop()
+            tts?.shutdown()
+        }
+    }
+    val speakText: (String) -> Unit = { text ->
+        if (tts == null) {
+            tts = android.speech.tts.TextToSpeech(context) { status ->
+                if (status == android.speech.tts.TextToSpeech.SUCCESS) {
+                    tts?.language = java.util.Locale.US
+                    tts?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, null)
+                }
+            }
+        } else {
+            tts?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, null)
+            Unit
+        }
+    }
+
+    val themeGradients = remember(characterId) {
+        when (characterId) {
+            1 -> listOf(Color(0xFF1E1035), Color(0xFF0C051A)) // Nova: cosmic violet
+            2 -> listOf(Color(0xFF3D1E03), Color(0xFF150A00)) // Aria: solar amber
+            3 -> listOf(Color(0xFF05201A), Color(0xFF010A08)) // Lumina: glassmorphic teal
+            else -> listOf(Color(0xFF121212), Color(0xFF080808))
+        }
+    }
+    val bgModifier = Modifier.background(Brush.verticalGradient(themeGradients))
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .then(bgModifier)
+    ) {
+        // Full-screen character background image (low opacity for immersion)
+        val localChar = character
+        if (localChar?.avatarPath != null) {
+            val bgFile = remember(localChar.avatarPath) { File(localChar.avatarPath) }
+            if (bgFile.exists()) {
+                androidx.compose.foundation.Image(
+                    painter = coil.compose.rememberAsyncImagePainter(model = bgFile),
+                    contentDescription = "Background",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    alignment = Alignment.Center,
+                    alpha = 0.3f
+                )
+            }
+        }
+
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -282,13 +344,14 @@ fun ChatScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                    containerColor = Color.Transparent
                 )
             )
         },
         bottomBar = {
             Surface(
-                tonalElevation = 2.dp,
+                color = Color.Black.copy(alpha = 0.45f),
+                tonalElevation = 0.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -369,7 +432,16 @@ fun ChatScreen(
                         OutlinedTextField(
                             value = inputText,
                             onValueChange = { inputText = it },
-                            placeholder = { Text("Message...") },
+                            placeholder = { Text("Message...", color = Color.White.copy(alpha = 0.5f)) },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = Color.Black.copy(alpha = 0.25f),
+                                unfocusedContainerColor = Color.Black.copy(alpha = 0.15f),
+                                disabledContainerColor = Color.Black.copy(alpha = 0.05f),
+                                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            ),
                             modifier = Modifier
                                 .weight(1f)
                                 .onPreviewKeyEvent { keyEvent ->
@@ -434,7 +506,6 @@ fun ChatScreen(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
-                .then(bgModifier)
         ) {
             LazyColumn(
                 state = listState,
@@ -443,15 +514,29 @@ fun ChatScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(messages, key = { it.id }) { message ->
+                    val isLast = message.id == messages.lastOrNull { it.sender == "character" }?.id
                     MessageBubble(
                         message = message,
                         character = character,
-                        onImageClick = { activeFullscreenImage = it }
+                        onImageClick = { activeFullscreenImage = it },
+                        isLastMessage = isLast,
+                        onRegenerateClick = {
+                            val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+                            val ashHost = prefs.getString("ash_host", "") ?: ""
+                            val ashPort = prefs.getString("ash_port", "18799") ?: "18799"
+                            val token = prefs.getString("auth_token", "") ?: ""
+                            if (ashHost.isNotBlank()) {
+                                val serverUrl = "${ashHost.trimEnd('/')}:$ashPort"
+                                viewModel.regenerateLastMessage(context, serverUrl, token)
+                            }
+                        },
+                        speakText = speakText
                     )
                 }
             }
         }
     }
+}
 
     showLevelUpDialog?.let { lv ->
         AlertDialog(
@@ -597,6 +682,9 @@ fun MessageBubble(
     message: MessageEntity,
     character: CharacterEntity?,
     onImageClick: (Any) -> Unit,
+    isLastMessage: Boolean,
+    onRegenerateClick: () -> Unit,
+    speakText: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isUser = message.sender == "user"
@@ -718,18 +806,15 @@ fun MessageBubble(
                             bottomEnd = 18.dp
                         ),
                         color = if (isUser)
-                            MaterialTheme.colorScheme.primary
+                            Color(0xFF4A148C).copy(alpha = 0.55f) // Glassmorphic User purple
                         else
-                            MaterialTheme.colorScheme.surfaceVariant,
+                            Color(0xFF1A1A1A).copy(alpha = 0.7f), // Glassmorphic Companion dark grey
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
                         modifier = Modifier.widthIn(max = 280.dp)
                     ) {
                         Text(
-                            text = contentParsed.cleanText,
+                            text = formatMessageText(contentParsed.cleanText, isUser),
                             style = MaterialTheme.typography.bodyLarge,
-                            color = if (isUser)
-                                MaterialTheme.colorScheme.onPrimary
-                            else
-                                MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
                         )
                     }
@@ -762,6 +847,83 @@ fun MessageBubble(
                             tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
                             modifier = Modifier.size(18.dp)
                         )
+                    }
+                }
+            }
+
+            // Inline Action Toolbar directly below the bubble (only for companion messages)
+            if (!isUser && contentParsed.cleanText.isNotBlank()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(
+                    horizontalArrangement = Arrangement.Start,
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 4.dp)
+                ) {
+                    // Copy button
+                    IconButton(
+                        onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            val clip = android.content.ClipData.newPlainText("Message", contentParsed.cleanText)
+                            clipboard.setPrimaryClip(clip)
+                            Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copy",
+                            tint = Color.White.copy(alpha = 0.5f),
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    
+                    // TTS button (uses player for audioPath, falls back to speakText)
+                    IconButton(
+                        onClick = {
+                            if (message.audioPath != null) {
+                                try {
+                                    android.media.MediaPlayer().apply {
+                                        setDataSource(message.audioPath)
+                                        prepareAsync()
+                                        setOnPreparedListener { start() }
+                                        setOnCompletionListener { release() }
+                                        setOnErrorListener { _, _, _ ->
+                                            release()
+                                            true
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            } else {
+                                speakText(contentParsed.cleanText)
+                            }
+                        },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (message.audioPath != null) Icons.Filled.PlayCircle else Icons.Default.VolumeUp,
+                            contentDescription = "Speak Text",
+                            tint = Color.White.copy(alpha = 0.5f),
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                    
+                    // Regenerate button (only shown if this is the last companion message)
+                    if (isLastMessage) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        IconButton(
+                            onClick = onRegenerateClick,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Regenerate",
+                                tint = Color.White.copy(alpha = 0.5f),
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -813,6 +975,35 @@ fun parseImageUrls(text: String, serverUrl: String): MessageContent {
         MessageContent(cleanText, resolvedUrl)
     } else {
         MessageContent(text, null)
+    }
+}
+
+fun formatMessageText(text: String, isUser: Boolean): androidx.compose.ui.text.AnnotatedString {
+    return buildAnnotatedString {
+        val parts = text.split("*")
+        for (i in parts.indices) {
+            val part = parts[i]
+            if (i % 2 == 1) {
+                // Inside asterisks: roleplay action style
+                withStyle(
+                    style = SpanStyle(
+                        fontStyle = FontStyle.Italic,
+                        color = if (isUser) Color.White.copy(alpha = 0.7f) else Color(0xFFD1C4E9) // Soft purple tint
+                    )
+                ) {
+                    append(part)
+                }
+            } else {
+                // Outside asterisks: dialogue style
+                withStyle(
+                    style = SpanStyle(
+                        color = Color.White
+                    )
+                ) {
+                    append(part)
+                }
+            }
+        }
     }
 }
 

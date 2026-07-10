@@ -65,4 +65,14 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        // Clear stale socket connections when app returns to foreground
+        try {
+            xyz.ssfdre38.haven.data.network.HavenHttpClient.evictAllConnections()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 }

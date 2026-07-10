@@ -120,7 +120,7 @@ class GroupChatViewModel(
                                 groupId = groupId,
                                 sender = "character",
                                 characterId = targetChar.id,
-                                text = streamBuffer.toString().trim()
+                                text = cleanStreamingText(streamBuffer.toString())
                             )
                         )
                     }
@@ -131,22 +131,26 @@ class GroupChatViewModel(
                     
                     // Parse thoughts for state updates (outfit, location, mood) for the active speaker
                     val thoughtRegex = "<\\s*thought\\s*>(.*?)<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
-                    val thoughtMatch = thoughtRegex.find(fullText)
-                    if (thoughtMatch != null) {
-                        val thought = thoughtMatch.groups[1]?.value ?: ""
-                        val outfitRegex = "\\[\\s*Out\\s*fit\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
-                        val outfitMatch = outfitRegex.find(thought)
-                        val newOutfit = outfitMatch?.groups[1]?.value?.trim()
+                    val toolCallRegex = "(?:\\[\\s*(?:Tool\\s*(?:Call\\s*)?:\\s*)?generate_portr?ait\\s*\\])|(?:<\\s*call\\s*>\\s*generate_portr?ait\\s*<\\s*/\\s*call\\s*>)|(?:<\\s*call\\s*:\\s*generate_portr?ait\\s*>)".toRegex(RegexOption.IGNORE_CASE)
+                    val cleanText = fullText.replace(thoughtRegex, "").replace(toolCallRegex, "").trim()
+                    var newOutfit: String? = null
+                    var newLocation: String? = null
+                    var newMood: String? = null
 
-                        val locationRegex = "\\[\\s*Location\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
-                        val locationMatch = locationRegex.find(thought)
-                        val newLocation = locationMatch?.groups[1]?.value?.trim()
+                    // Extract [Outfit: ...] from fullText for maximum robustness
+                    val outfitRegex = "\\[\\s*Out\\s*fit\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+                    val outfitMatch = outfitRegex.find(fullText)
+                    newOutfit = outfitMatch?.groups[1]?.value?.trim()
 
-                        val moodRegex = "\\[\\s*Mood\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
-                        val moodMatch = moodRegex.find(thought)
-                        val newMood = moodMatch?.groups[1]?.value?.trim()
+                    val locationRegex = "\\[\\s*Location\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+                    val locationMatch = locationRegex.find(fullText)
+                    newLocation = locationMatch?.groups[1]?.value?.trim()
 
-                        if (newOutfit != null || newLocation != null || newMood != null) {
+                    val moodRegex = "\\[\\s*Mood\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+                    val moodMatch = moodRegex.find(fullText)
+                    newMood = moodMatch?.groups[1]?.value?.trim()
+
+                    if (newOutfit != null || newLocation != null || newMood != null) {
                             viewModelScope.launch(Dispatchers.IO) {
                                 val currentChar = repository.getCharacterById(targetChar.id)
                                 if (currentChar != null) {
@@ -203,34 +207,102 @@ class GroupChatViewModel(
                                 }
                             }
                         }
-                    }
 
-                    // Download inline generated image if present
-                    val cleanText = fullText.replace(thoughtRegex, "").trim()
-                    val urlRegex = "(https?://[^\\s/]+/uploads/[\\w\\d-]+\\.(?:png|jpg|jpeg|webp))|(/uploads/[\\w\\d-]+\\.(?:png|jpg|jpeg|webp))".toRegex(RegexOption.IGNORE_CASE)
-                    val urlMatch = urlRegex.find(cleanText)
-                    if (urlMatch != null) {
-                        val rawUrl = urlMatch.value
-                        val resolvedUrl = if (rawUrl.startsWith("/")) {
-                            val host = serverUrl.trimEnd('/')
-                            if (host.startsWith("http")) "$host$rawUrl" else "http://$host$rawUrl"
-                        } else {
-                            rawUrl
-                        }
+                    val hasToolTag = toolCallRegex.containsMatchIn(fullText)
+                    val hasImplicitTrigger = !hasToolTag && shouldAutoTriggerPortrait(cleanText)
+
+                    if (hasToolTag || hasImplicitTrigger) {
+                        val cleanedText = fullText.replace(toolCallRegex, "").trim()
+                        val textWithoutThoughts = cleanText
                         
+                        // Immediately clean up the message in the DB to hide the raw tool call from the user
                         viewModelScope.launch(Dispatchers.IO) {
-                            try {
-                                val localPath = HavenHttpClient.downloadImage(context, resolvedUrl)
-                                if (localPath != null) {
-                                    val lastMsg = repository.getLastGroupMessage(groupId)
-                                    if (lastMsg != null && lastMsg.sender == "character") {
-                                        repository.insertGroupMessage(
-                                            lastMsg.copy(imagePath = localPath)
-                                        )
+                            val lastMsg = repository.getLastGroupMessage(groupId)
+                            if (lastMsg != null && lastMsg.sender == "character") {
+                                repository.insertGroupMessage(lastMsg.copy(text = cleanedText))
+                            }
+                        }
+
+                        // Trigger the image generation tool
+                        viewModelScope.launch(Dispatchers.IO) {
+                            val currentChar = repository.getCharacterById(targetChar.id)
+                            val outfitPrompt = if (currentChar != null) {
+                                val currentOutfitVal = newOutfit ?: currentChar.currentOutfit
+                                val currentLocationVal = newLocation ?: currentChar.currentLocation
+                                val currentMoodVal = newMood ?: currentChar.currentMood
+                                "${currentChar.name}, description: ${currentChar.description}, wearing ${currentOutfitVal.ifBlank { "casual attire" }}, location: ${currentLocationVal.ifBlank { "cozy room" }}, expression: ${currentMoodVal.ifBlank { "smiling" }}"
+                            } else {
+                                "companion in a cozy room"
+                            }
+                            
+                            val args = org.json.JSONObject().apply {
+                                put("description", outfitPrompt)
+                            }
+                            
+                            HavenHttpClient.executeTool(
+                                serverUrl = serverUrl,
+                                token = token,
+                                toolName = "generate_portrait",
+                                arguments = args
+                            ) { result ->
+                                result.onSuccess { relativeUrl ->
+                                    val resolvedUrl = if (relativeUrl.startsWith("/")) {
+                                        val host = serverUrl.trimEnd('/')
+                                        if (host.startsWith("http")) "$host$relativeUrl" else "http://$host$relativeUrl"
+                                    } else {
+                                        relativeUrl
+                                    }
+                                    
+                                    viewModelScope.launch(Dispatchers.IO) {
+                                        // Update the message text to append the URL so the UI logic resolves it
+                                        val msg = repository.getLastGroupMessage(groupId)
+                                        if (msg != null && msg.sender == "character") {
+                                            repository.insertGroupMessage(msg.copy(text = "${msg.text}\n$relativeUrl"))
+                                        }
+                                        
+                                        // Download and save the portrait
+                                        try {
+                                            val localPath = HavenHttpClient.downloadImage(context, resolvedUrl)
+                                            if (localPath != null) {
+                                                val finalMsg = repository.getLastGroupMessage(groupId)
+                                                if (finalMsg != null && finalMsg.sender == "character") {
+                                                    repository.insertGroupMessage(finalMsg.copy(imagePath = localPath))
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                        }
                                     }
                                 }
-                            } catch (e: Exception) {
-                                e.printStackTrace()
+                            }
+                        }
+                    } else {
+                        // Download inline generated image if present
+                        val urlRegex = "(https?://[^\\s/]+/uploads/[\\w\\d-]+\\.(?:png|jpg|jpeg|webp))|(/uploads/[\\w\\d-]+\\.(?:png|jpg|jpeg|webp))".toRegex(RegexOption.IGNORE_CASE)
+                        val urlMatch = urlRegex.find(cleanText)
+                        if (urlMatch != null) {
+                            val rawUrl = urlMatch.value
+                            val resolvedUrl = if (rawUrl.startsWith("/")) {
+                                val host = serverUrl.trimEnd('/')
+                                if (host.startsWith("http")) "$host$rawUrl" else "http://$host$rawUrl"
+                            } else {
+                                rawUrl
+                            }
+                            
+                            viewModelScope.launch(Dispatchers.IO) {
+                                try {
+                                    val localPath = HavenHttpClient.downloadImage(context, resolvedUrl)
+                                    if (localPath != null) {
+                                        val lastMsg = repository.getLastGroupMessage(groupId)
+                                        if (lastMsg != null && lastMsg.sender == "character") {
+                                            repository.insertGroupMessage(
+                                                lastMsg.copy(imagePath = localPath)
+                                            )
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
                             }
                         }
                     }
@@ -287,7 +359,7 @@ class GroupChatViewModel(
             appendLine("[System Rule: Before responding, you MUST write down your inner thoughts, plans, or reasoning inside <thought>...</thought> tags, followed by your actual response to $userName. Do not omit the tags.]")
             appendLine("[System Instruction: You can dynamically update your location, outfit, or expression/mood if the context changes by including '[Location: name]', '[Outfit: description]', or '[Mood: expression]' inside your <thought>...</thought> block. Example: '<thought>[Outfit: nightgown] [Location: bedroom] [Mood: sleepy]</thought> Goodnight!' Only change these when it makes sense for the chat flow.]")
             appendLine("[System Instruction: Format roleplay actions, physical gestures, and immediate/direct thoughts using asterisks (e.g. *smiles and waves*, *thinking to myself: this is interesting*). Do not use square brackets [like this] for roleplay actions or thoughts. Understand that $userName will also use asterisks for their actions and thoughts.]")
-            appendLine("[System Instruction: You have access to the 'generate_portrait' tool. You should invoke it whenever $userName asks for a picture, photo, selfie, or visual update, or when you decide on your own to show $userName what you are doing. Always call the tool first, and then include the returned URL path in your final message so $userName can see it!]")
+            appendLine("[System Instruction: You have access to the 'generate_portrait' tool. You should invoke it whenever $userName asks for a picture, photo, selfie, or visual update, or when you decide on your own to show $userName what you are doing. To call the tool, you MUST output the tag <call>generate_portrait</call> immediately after your </thought> tag (before your conversational dialogue). Do not output any arguments. The app will automatically generate the image and display it to the user.]")
         }
 
         // Fetch history
@@ -350,7 +422,7 @@ class GroupChatViewModel(
                                 groupId = groupId,
                                 sender = "character",
                                 characterId = targetChar.id,
-                                text = streamBuffer.toString().trim()
+                                text = cleanStreamingText(streamBuffer.toString())
                             )
                         )
                     }
@@ -360,22 +432,20 @@ class GroupChatViewModel(
                     val fullText = streamBuffer.toString().trim()
                     
                     val thoughtRegex = "<\\s*thought\\s*>(.*?)<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
-                    val thoughtMatch = thoughtRegex.find(fullText)
-                    if (thoughtMatch != null) {
-                        val thought = thoughtMatch.groups[1]?.value ?: ""
-                        val outfitRegex = "\\[\\s*Out\\s*fit\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
-                        val outfitMatch = outfitRegex.find(thought)
-                        val newOutfit = outfitMatch?.groups[1]?.value?.trim()
+                    // Extract [Outfit: ...] from fullText for maximum robustness
+                    val outfitRegex = "\\[\\s*Out\\s*fit\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+                    val outfitMatch = outfitRegex.find(fullText)
+                    val newOutfit = outfitMatch?.groups[1]?.value?.trim()
 
-                        val locationRegex = "\\[\\s*Location\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
-                        val locationMatch = locationRegex.find(thought)
-                        val newLocation = locationMatch?.groups[1]?.value?.trim()
+                    val locationRegex = "\\[\\s*Location\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+                    val locationMatch = locationRegex.find(fullText)
+                    val newLocation = locationMatch?.groups[1]?.value?.trim()
 
-                        val moodRegex = "\\[\\s*Mood\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
-                        val moodMatch = moodRegex.find(thought)
-                        val newMood = moodMatch?.groups[1]?.value?.trim()
+                    val moodRegex = "\\[\\s*Mood\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+                    val moodMatch = moodRegex.find(fullText)
+                    val newMood = moodMatch?.groups[1]?.value?.trim()
 
-                        if (newOutfit != null || newLocation != null || newMood != null) {
+                    if (newOutfit != null || newLocation != null || newMood != null) {
                             viewModelScope.launch(Dispatchers.IO) {
                                 val currentChar = repository.getCharacterById(targetChar.id)
                                 if (currentChar != null) {
@@ -388,7 +458,6 @@ class GroupChatViewModel(
                                 }
                             }
                         }
-                    }
 
                     viewModelScope.launch(Dispatchers.IO) {
                         repository.addXpAndIncrementMessages(targetChar.id, 5)
@@ -454,5 +523,62 @@ class GroupChatViewModel(
         }
 
         return "$systemContext\n\n=== Conversation History ===\n$formattedHistory\n${targetChar.name}:"
+    }
+
+    private fun cleanStreamingText(rawText: String): String {
+        var text = rawText
+        
+        // 1. Remove completed thought blocks
+        val completedThoughtRegex = "<\\s*thought\\s*>.*?<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
+        text = text.replace(completedThoughtRegex, "")
+        
+        // 2. Remove completed call blocks
+        val completedCallRegex = "<\\s*call\\s*>.*?<\\s*/\\s*call\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
+        text = text.replace(completedCallRegex, "")
+        val completedCallAttrRegex = "<\\s*call\\s*:\\s*.*?\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
+        text = text.replace(completedCallAttrRegex, "")
+        
+        // 3. Remove open thought block and everything following it
+        val openThoughtIndex = text.indexOf("<thought")
+        if (openThoughtIndex != -1) {
+            text = text.substring(0, openThoughtIndex)
+        }
+        
+        // 4. Remove open call block and everything following it
+        val openCallIndex = text.indexOf("<call")
+        if (openCallIndex != -1) {
+            text = text.substring(0, openCallIndex)
+        }
+        
+        // 5. Remove any loose brackets/state markers
+        val stateRegex = "\\[\\s*(?:Outfit|Location|Mood|Tool|Call)\\s*:.*?\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+        text = text.replace(stateRegex, "")
+
+        // 6. Strip trailing partial tag openers (e.g. "<", "<c", "<ca", etc.) to prevent flicker
+        val partialTagRegex = "<[a-zA-Z]*$".toRegex()
+        text = text.replace(partialTagRegex, "")
+
+        // 7. Strip trailing partial bracket openers (e.g. "[", "[O", "[Outfit", etc.)
+        val partialBracketRegex = "\\[[a-zA-Z\\s:]*$".toRegex()
+        text = text.replace(partialBracketRegex, "")
+        
+        return text.trim()
+    }
+
+    private fun shouldAutoTriggerPortrait(text: String): Boolean {
+        val cleanLower = text.lowercase()
+        val phrases = listOf(
+            "sends you a photo", "sending you a photo", "sends a photo", "sending a photo",
+            "here is a photo", "here's a photo", "here is the photo", "here's the photo",
+            "sends you a picture", "sending you a picture", "sends a picture", "sending a picture",
+            "here is a picture", "here's a picture", "here is the picture", "here's the picture",
+            "sends a selfie", "sending a selfie", "here is a selfie", "here's a selfie",
+            "look at this picture", "look at the picture", "look through the picture",
+            "look at this photo", "look at the photo", "look through the photo",
+            "sent you a photo", "sent you a picture", "sent a photo", "sent a picture",
+            "took a photo", "took a picture", "took a selfie", "take a look at this picture",
+            "take a look at this photo"
+        )
+        return phrases.any { cleanLower.contains(it) }
     }
 }

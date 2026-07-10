@@ -35,6 +35,9 @@ interface HavenDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: MessageEntity): Long
 
+    @Delete
+    suspend fun deleteMessage(message: MessageEntity)
+
     @Query("DELETE FROM messages WHERE characterId = :characterId")
     suspend fun clearMessagesForCharacter(characterId: Int)
 

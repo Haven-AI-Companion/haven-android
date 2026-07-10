@@ -20,6 +20,8 @@ object HavenHttpClient {
         .connectTimeout(180, TimeUnit.SECONDS)
         .readTimeout(180, TimeUnit.SECONDS)
         .writeTimeout(180, TimeUnit.SECONDS)
+        .connectionPool(okhttp3.ConnectionPool(5, 5, TimeUnit.SECONDS))
+        .retryOnConnectionFailure(true)
         .build()
 
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
@@ -88,6 +90,7 @@ object HavenHttpClient {
         onComplete: () -> Unit,
         onFailure: (Exception) -> Unit
     ) {
+        client.connectionPool.evictAll()
         val url = "${serverUrl.trimEnd('/')}/api/chat"
         val requestBodyJson = JSONObject().apply {
             put("prompt", prompt)
@@ -105,6 +108,7 @@ object HavenHttpClient {
             .url(url)
             .post(requestBodyJson.toRequestBody(JSON_MEDIA_TYPE))
             .addHeader("Authorization", "Bearer $token")
+            .addHeader("Connection", "close")
             .build()
 
         client.newCall(request).enqueue(object : okhttp3.Callback {
@@ -330,5 +334,17 @@ object HavenHttpClient {
                 }
             }
         })
+    }
+
+    /**
+     * Evicts all idle connections in the pool. Call this when the app is resumed
+     * from background to clear any stale/orphaned sockets.
+     */
+    fun evictAllConnections() {
+        try {
+            client.connectionPool.evictAll()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }
