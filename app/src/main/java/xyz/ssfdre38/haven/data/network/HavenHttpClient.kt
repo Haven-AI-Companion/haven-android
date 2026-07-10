@@ -347,4 +347,52 @@ object HavenHttpClient {
             e.printStackTrace()
         }
     }
+
+    /**
+     * Resets active HTTP client socket connections and queues.
+     */
+    fun resetConnections() {
+        try {
+            client.dispatcher.cancelAll()
+            client.connectionPool.evictAll()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * Tests the connectivity to the server's public health check endpoint.
+     */
+    fun testConnection(
+        serverUrl: String,
+        onResult: (Result<String>) -> Unit
+    ) {
+        val url = if (serverUrl.contains("/health")) serverUrl else "${serverUrl.trimEnd('/')}/health"
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .build()
+
+        val shortTimeoutClient = client.newBuilder()
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(5, TimeUnit.SECONDS)
+            .writeTimeout(5, TimeUnit.SECONDS)
+            .build()
+
+        shortTimeoutClient.newCall(request).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
+                onResult(Result.failure(e))
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                response.use {
+                    if (response.isSuccessful) {
+                        onResult(Result.success("Connection Successful!"))
+                    } else {
+                        onResult(Result.failure(Exception("Server returned HTTP ${response.code}")))
+                    }
+                }
+            }
+        })
+    }
 }

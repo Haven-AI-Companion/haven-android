@@ -89,6 +89,8 @@ fun SettingsScreen(
     var quietTimeEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("quiet_time_enabled", false)) }
     var quietTimeStart by remember { mutableStateOf(sharedPrefs.getString("quiet_time_start", "22:00") ?: "22:00") }
     var quietTimeEnd by remember { mutableStateOf(sharedPrefs.getString("quiet_time_end", "07:00") ?: "07:00") }
+    var testStatus by remember { mutableStateOf<String?>(null) }
+    var isTesting by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -151,6 +153,93 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Connection Diagnostics",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Verify connection stability to the server. If a zombie connection is hanging or timeouts occur, resetting will purge OkHttp connection pools and cancel active calls.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+
+                    if (testStatus != null) {
+                        Text(
+                            text = testStatus!!,
+                            color = if (testStatus!!.contains("Successful", ignoreCase = true) || testStatus!!.contains("Reconnected", ignoreCase = true)) Color(0xFF4CAF50) else Color(0xFFF44336),
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                isTesting = true
+                                testStatus = "Testing connection..."
+                                val serverUrl = "${ashHost.trimEnd('/')}:${ashPort.trim()}"
+                                xyz.ssfdre38.haven.data.network.HavenHttpClient.testConnection(serverUrl) { result ->
+                                    isTesting = false
+                                    result.fold(
+                                        onSuccess = { msg ->
+                                            testStatus = msg
+                                        },
+                                        onFailure = { err ->
+                                            testStatus = "Failed: ${err.message}. Auto-resetting connections..."
+                                            xyz.ssfdre38.haven.data.network.HavenHttpClient.resetConnections()
+                                            // Retry connection test once after resetting!
+                                            xyz.ssfdre38.haven.data.network.HavenHttpClient.testConnection(serverUrl) { retryResult ->
+                                                retryResult.fold(
+                                                    onSuccess = { retryMsg ->
+                                                        testStatus = "Reset Successful & Reconnected!"
+                                                    },
+                                                    onFailure = { retryErr ->
+                                                        testStatus = "Reset Complete. Reconnect Failed: ${retryErr.message}"
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    )
+                                }
+                            },
+                            enabled = !isTesting,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            if (isTesting) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                            } else {
+                                Text("Test Connection")
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                xyz.ssfdre38.haven.data.network.HavenHttpClient.resetConnections()
+                                testStatus = "Connection pool reset complete!"
+                                Toast.makeText(context, "Network connections reset", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                        ) {
+                            Text("Reset Network")
+                        }
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
             Text(
