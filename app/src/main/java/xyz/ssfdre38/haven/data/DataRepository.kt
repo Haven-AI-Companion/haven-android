@@ -30,9 +30,12 @@ interface DataRepository {
     suspend fun importTavernCard(context: Context, inputStream: InputStream, cardBytes: ByteArray): Boolean
     fun getDiaryEntries(characterId: Int): Flow<List<DiaryEntryEntity>>
     suspend fun insertDiaryEntry(entry: DiaryEntryEntity): Long
+    suspend fun clearDiaryEntriesForCharacter(characterId: Int)
     suspend fun getDiaryEntryByDate(characterId: Int, dateString: String): DiaryEntryEntity?
     fun getAllGroupChats(): Flow<List<GroupChatEntity>>
     suspend fun getGroupChatById(id: Int): GroupChatEntity?
+    suspend fun getGroupChatByUuid(uuid: String): GroupChatEntity?
+    suspend fun getCharacterByName(name: String): CharacterEntity?
     suspend fun insertGroupChat(group: GroupChatEntity): Long
     suspend fun deleteGroupChat(group: GroupChatEntity)
     fun getGroupMessages(groupId: Int): Flow<List<GroupMessageEntity>>
@@ -77,11 +80,17 @@ class DefaultDataRepository(private val havenDao: HavenDao) : DataRepository {
 
     override suspend fun insertDiaryEntry(entry: DiaryEntryEntity): Long = havenDao.insertDiaryEntry(entry)
 
+    override suspend fun clearDiaryEntriesForCharacter(characterId: Int) = havenDao.clearDiaryEntriesForCharacter(characterId)
+
     override suspend fun getDiaryEntryByDate(characterId: Int, dateString: String): DiaryEntryEntity? = havenDao.getDiaryEntryByDate(characterId, dateString)
 
     override fun getAllGroupChats(): Flow<List<GroupChatEntity>> = havenDao.getAllGroupChats()
 
     override suspend fun getGroupChatById(id: Int): GroupChatEntity? = havenDao.getGroupChatById(id)
+
+    override suspend fun getGroupChatByUuid(uuid: String): GroupChatEntity? = havenDao.getGroupChatByUuid(uuid)
+
+    override suspend fun getCharacterByName(name: String): CharacterEntity? = havenDao.getCharacterByName(name)
 
     override suspend fun insertGroupChat(group: GroupChatEntity): Long = havenDao.insertGroupChat(group)
 

@@ -4,6 +4,8 @@ import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -13,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -89,33 +92,115 @@ fun SettingsScreen(
     var quietTimeEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("quiet_time_enabled", false)) }
     var quietTimeStart by remember { mutableStateOf(sharedPrefs.getString("quiet_time_start", "22:00") ?: "22:00") }
     var quietTimeEnd by remember { mutableStateOf(sharedPrefs.getString("quiet_time_end", "07:00") ?: "07:00") }
+    var enableBubbles by remember { mutableStateOf(sharedPrefs.getBoolean("enable_bubbles", true)) }
     var testStatus by remember { mutableStateOf<String?>(null) }
     var isTesting by remember { mutableStateOf(false) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Haven Settings") },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
-                    }
-                }
-            )
-        },
+    val mainGradient = remember {
+        listOf(Color(0xFF1E1035), Color(0xFF0C051A))
+    }
+
+    Box(
         modifier = modifier
-    ) { innerPadding ->
-        Column(
+            .fillMaxSize()
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(mainGradient))
+    ) {
+        // Floating premium background animations
+        val infiniteTransition = rememberInfiniteTransition(label = "background_orbs")
+        
+        val orb1X by infiniteTransition.animateFloat(
+            initialValue = -50f,
+            targetValue = 180f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(12000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "orb1X"
+        )
+        val orb1Y by infiniteTransition.animateFloat(
+            initialValue = -50f,
+            targetValue = 350f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(14000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "orb1Y"
+        )
+        
+        val orb2X by infiniteTransition.animateFloat(
+            initialValue = 220f,
+            targetValue = -60f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(16000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "orb2X"
+        )
+        val orb2Y by infiniteTransition.animateFloat(
+            initialValue = 450f,
+            targetValue = 60f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(11000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "orb2Y"
+        )
+
+        androidx.compose.foundation.Canvas(
             modifier = Modifier
-                .padding(innerPadding)
                 .fillMaxSize()
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .blur(80.dp)
         ) {
+            drawCircle(
+                brush = androidx.compose.ui.graphics.Brush.radialGradient(
+                    colors = listOf(Color(0xFF6366F1).copy(alpha = 0.15f), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(orb1X.dp.toPx(), orb1Y.dp.toPx()),
+                    radius = 300.dp.toPx()
+                ),
+                radius = 300.dp.toPx(),
+                center = androidx.compose.ui.geometry.Offset(orb1X.dp.toPx(), orb1Y.dp.toPx())
+            )
+            
+            drawCircle(
+                brush = androidx.compose.ui.graphics.Brush.radialGradient(
+                    colors = listOf(Color(0xFFD946EF).copy(alpha = 0.12f), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(orb2X.dp.toPx(), orb2Y.dp.toPx()),
+                    radius = 280.dp.toPx()
+                ),
+                radius = 280.dp.toPx(),
+                center = androidx.compose.ui.geometry.Offset(orb2X.dp.toPx(), orb2Y.dp.toPx())
+            )
+        }
+
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("Haven Settings", color = Color.White) },
+                    navigationIcon = {
+                        IconButton(onClick = onBackClick) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = Color.White
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent
+                    )
+                )
+            },
+            containerColor = Color.Transparent,
+            modifier = Modifier.fillMaxSize()
+        ) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize()
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
             Text(
                 text = "Backend Server Configurations",
                 style = MaterialTheme.typography.titleMedium,
@@ -276,6 +361,23 @@ fun SettingsScreen(
                 Switch(
                     checked = autoSpeak,
                     onCheckedChange = { autoSpeak = it }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Enable Conversational Chat Bubbles",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Switch(
+                    checked = enableBubbles,
+                    onCheckedChange = { enableBubbles = it }
                 )
             }
 
@@ -524,6 +626,7 @@ fun SettingsScreen(
                         putBoolean("quiet_time_enabled", quietTimeEnabled)
                         putString("quiet_time_start", quietTimeStart.trim())
                         putString("quiet_time_end", quietTimeEnd.trim())
+                        putBoolean("enable_bubbles", enableBubbles)
                         apply()
                     }
                     Toast.makeText(context, "Settings saved successfully", Toast.LENGTH_SHORT).show()
@@ -538,6 +641,7 @@ fun SettingsScreen(
             }
         }
     }
+}
 }
 
 // Utility extension helper to work with mutable state in Compose

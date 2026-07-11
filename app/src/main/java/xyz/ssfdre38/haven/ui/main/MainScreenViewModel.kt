@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.ByteArrayInputStream
+import java.io.File
+import xyz.ssfdre38.haven.data.network.HavenHttpClient
 
 class MainScreenViewModel(private val dataRepository: DataRepository) : ViewModel() {
 
@@ -209,20 +211,79 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
         }
     }
 
-    fun createGroupChat(name: String, characterIds: List<Int>) {
+    fun createGroupChat(context: Context, name: String, characterIds: List<Int>) {
         viewModelScope.launch(Dispatchers.IO) {
+            val uuid = java.util.UUID.randomUUID().toString()
             dataRepository.insertGroupChat(
                 xyz.ssfdre38.haven.data.database.GroupChatEntity(
                     name = name,
-                    characterIdsString = characterIds.joinToString(",")
+                    characterIdsString = characterIds.joinToString(","),
+                    uuid = uuid
                 )
             )
+            
+            val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+            val host = sharedPrefs.getString("ash_host", "") ?: ""
+            val port = sharedPrefs.getString("ash_port", "") ?: ""
+            val token = sharedPrefs.getString("auth_token", "") ?: ""
+            if (host.isNotBlank() && token.isNotBlank()) {
+                val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+                val serverUrl = "$formattedHost:${port.trim()}"
+                val characterNames = characterIds.mapNotNull { dataRepository.getCharacterById(it)?.name }.joinToString(",")
+                HavenHttpClient.saveGroup(serverUrl, token, uuid, name, characterNames)
+            }
         }
     }
 
-    fun deleteGroupChat(group: xyz.ssfdre38.haven.data.database.GroupChatEntity) {
+    fun deleteGroupChat(context: Context, group: xyz.ssfdre38.haven.data.database.GroupChatEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             dataRepository.deleteGroupChat(group)
+            
+            val groupUuid = group.uuid ?: return@launch
+            val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+            val host = sharedPrefs.getString("ash_host", "") ?: ""
+            val port = sharedPrefs.getString("ash_port", "") ?: ""
+            val token = sharedPrefs.getString("auth_token", "") ?: ""
+            if (host.isNotBlank() && token.isNotBlank()) {
+                val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+                val serverUrl = "$formattedHost:${port.trim()}"
+                HavenHttpClient.deleteGroup(serverUrl, token, groupUuid)
+            }
+        }
+    }
+
+    fun syncGroupChats(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+            val host = sharedPrefs.getString("ash_host", "") ?: ""
+            val port = sharedPrefs.getString("ash_port", "") ?: ""
+            val token = sharedPrefs.getString("auth_token", "") ?: ""
+            if (host.isBlank() || token.isBlank()) return@launch
+            
+            val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+            val serverUrl = "$formattedHost:${port.trim()}"
+            
+            val serverGroups = HavenHttpClient.getGroups(serverUrl, token)
+            serverGroups.forEach { obj ->
+                val uuid = obj.getString("id")
+                val name = obj.getString("name")
+                val characterNamesStr = obj.getString("characterNames")
+                
+                val existing = dataRepository.getGroupChatByUuid(uuid)
+                if (existing == null) {
+                    val names = characterNamesStr.split(",").map { it.trim() }
+                    val resolvedIds = names.mapNotNull { charName ->
+                        dataRepository.getCharacterByName(charName)?.id
+                    }
+                    dataRepository.insertGroupChat(
+                        xyz.ssfdre38.haven.data.database.GroupChatEntity(
+                            name = name,
+                            characterIdsString = resolvedIds.joinToString(","),
+                            uuid = uuid
+                        )
+                    )
+                }
+            }
         }
     }
 
@@ -299,6 +360,40 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                     )
                 )
             }
+        }
+    }
+
+    fun updateCharacterVrm(context: Context, character: CharacterEntity, uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val contentResolver = context.contentResolver
+                val localDir = File(context.filesDir, "vrm_models").apply { mkdirs() }
+                val targetFile = File(localDir, "${character.name.replace("\\s+".toRegex(), "_")}_avatar_${System.currentTimeMillis()}.glb")
+                
+                contentResolver.openInputStream(uri)?.use { input ->
+                    targetFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                
+                if (targetFile.exists()) {
+                    dataRepository.insertCharacter(
+                        character.copy(vrmModelPath = targetFile.absolutePath)
+                    )
+                    xyz.ssfdre38.haven.ui.widget.HavenAppWidgetProvider.triggerUpdate(context)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun removeCharacterVrm(context: Context, character: CharacterEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            dataRepository.insertCharacter(
+                character.copy(vrmModelPath = null)
+            )
+            xyz.ssfdre38.haven.ui.widget.HavenAppWidgetProvider.triggerUpdate(context)
         }
     }
 }

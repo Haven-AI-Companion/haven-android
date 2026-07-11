@@ -1,5 +1,7 @@
 package xyz.ssfdre38.haven.ui.chat
 
+import xyz.ssfdre38.haven.ui.components.VrmAvatarView
+
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import android.content.Context
@@ -110,6 +112,18 @@ fun ChatScreen(
         }
     }
 
+    // Sync chat logs from server
+    LaunchedEffect(Unit) {
+        val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+        val ashHost = prefs.getString("ash_host", null)
+        val ashPort = prefs.getString("ash_port", "18799")
+        val token = prefs.getString("auth_token", null)
+        if (!ashHost.isNullOrBlank() && !token.isNullOrBlank()) {
+            val serverUrl = "${ashHost.trimEnd('/')}:$ashPort"
+            viewModel.syncMessages(serverUrl, token)
+        }
+    }
+
     // Text-To-Speech Engine for reading companion responses aloud
     var tts by remember { mutableStateOf<android.speech.tts.TextToSpeech?>(null) }
     DisposableEffect(context) {
@@ -147,19 +161,29 @@ fun ChatScreen(
             .fillMaxSize()
             .then(bgModifier)
     ) {
-        // Full-screen character background image (low opacity for immersion)
+        // Full-screen character 3D avatar or static background image (for immersion)
         val localChar = character
-        if (localChar?.avatarPath != null) {
-            val bgFile = remember(localChar.avatarPath) { File(localChar.avatarPath) }
-            if (bgFile.exists()) {
-                androidx.compose.foundation.Image(
-                    painter = coil.compose.rememberAsyncImagePainter(model = bgFile),
-                    contentDescription = "Background",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                    alignment = Alignment.Center,
-                    alpha = 0.3f
+        if (localChar != null) {
+            val vrmPath = localChar.vrmModelPath
+            val vrmFile = if (vrmPath != null) remember(vrmPath) { File(vrmPath) } else null
+            if (vrmFile != null && vrmFile.exists()) {
+                VrmAvatarView(
+                    modelPath = vrmFile.absolutePath,
+                    mood = localChar.currentMood,
+                    modifier = Modifier.fillMaxSize()
                 )
+            } else if (localChar.avatarPath != null) {
+                val bgFile = remember(localChar.avatarPath) { File(localChar.avatarPath) }
+                if (bgFile.exists()) {
+                    androidx.compose.foundation.Image(
+                        painter = coil.compose.rememberAsyncImagePainter(model = bgFile),
+                        contentDescription = "Background",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        alignment = Alignment.Center,
+                        alpha = 0.3f
+                    )
+                }
             }
         }
 

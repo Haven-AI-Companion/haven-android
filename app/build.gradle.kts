@@ -36,8 +36,8 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
     buildFeatures {
       compose = true
@@ -54,7 +54,7 @@ android {
 }
 
 kotlin {
-    jvmToolchain(17)
+    jvmToolchain(21)
 }
 
 dependencies {
@@ -117,6 +117,16 @@ dependencies {
   // Background WorkManager
   implementation(libs.androidx.work.runtime.ktx)
 
+  // CameraX dependencies
+  val cameraVersion = "1.3.1"
+  implementation("androidx.camera:camera-core:$cameraVersion")
+  implementation("androidx.camera:camera-camera2:$cameraVersion")
+  implementation("androidx.camera:camera-lifecycle:$cameraVersion")
+  implementation("androidx.camera:camera-view:$cameraVersion")
+
   // ONNX Runtime Mobile for local Silero VAD
   implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
+
+  // Sceneview for 3D GLB/GLTF and VRM Model Rendering
+  implementation("io.github.sceneview:sceneview:4.21.0")
 }

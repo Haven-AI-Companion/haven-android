@@ -1,9 +1,13 @@
 package xyz.ssfdre38.haven.ui.main
 
 import android.content.Context
+import android.net.Uri
 import android.widget.Toast
+import androidx.compose.ui.text.style.TextAlign
+import xyz.ssfdre38.haven.MemoryVault
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -35,6 +39,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -73,7 +78,23 @@ fun MainScreen(
     }
 
     // Handle character deletion confirmation dialog
+    // Handle character deletion confirmation dialog
     var characterToDelete by remember { mutableStateOf<CharacterEntity?>(null) }
+    var activeCharacterActions by remember { mutableStateOf<CharacterEntity?>(null) }
+
+    val vrmPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val selectedChar = activeCharacterActions
+            if (selectedChar != null) {
+                viewModel.updateCharacterVrm(context, selectedChar, uri)
+                Toast.makeText(context, "3D Avatar updated successfully!", Toast.LENGTH_SHORT).show()
+            }
+        }
+        activeCharacterActions = null
+    }
+
     var selectedTab by remember { mutableIntStateOf(0) }
     var showCreateGroupDialog by remember { mutableStateOf(false) }
     var showAddCompanionChooser by remember { mutableStateOf(false) }
@@ -112,6 +133,11 @@ fun MainScreen(
         }
     }
 
+    // Sync group chats on startup
+    LaunchedEffect(Unit) {
+        viewModel.syncGroupChats(context)
+    }
+
     val mainGradient = remember {
         listOf(Color(0xFF1E1035), Color(0xFF0C051A))
     }
@@ -121,12 +147,84 @@ fun MainScreen(
             .fillMaxSize()
             .background(androidx.compose.ui.graphics.Brush.verticalGradient(mainGradient))
     ) {
+        // Floating premium background animations
+        val infiniteTransition = rememberInfiniteTransition(label = "background_orbs")
+        
+        val orb1X by infiniteTransition.animateFloat(
+            initialValue = -50f,
+            targetValue = 180f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(12000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "orb1X"
+        )
+        val orb1Y by infiniteTransition.animateFloat(
+            initialValue = -50f,
+            targetValue = 350f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(14000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "orb1Y"
+        )
+        
+        val orb2X by infiniteTransition.animateFloat(
+            initialValue = 220f,
+            targetValue = -60f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(16000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "orb2X"
+        )
+        val orb2Y by infiniteTransition.animateFloat(
+            initialValue = 450f,
+            targetValue = 60f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(11000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "orb2Y"
+        )
+
+        androidx.compose.foundation.Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .blur(80.dp)
+        ) {
+            drawCircle(
+                brush = androidx.compose.ui.graphics.Brush.radialGradient(
+                    colors = listOf(Color(0xFF6366F1).copy(alpha = 0.15f), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(orb1X.dp.toPx(), orb1Y.dp.toPx()),
+                    radius = 300.dp.toPx()
+                ),
+                radius = 300.dp.toPx(),
+                center = androidx.compose.ui.geometry.Offset(orb1X.dp.toPx(), orb1Y.dp.toPx())
+            )
+            
+            drawCircle(
+                brush = androidx.compose.ui.graphics.Brush.radialGradient(
+                    colors = listOf(Color(0xFFD946EF).copy(alpha = 0.12f), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(orb2X.dp.toPx(), orb2Y.dp.toPx()),
+                    radius = 280.dp.toPx()
+                ),
+                radius = 280.dp.toPx(),
+                center = androidx.compose.ui.geometry.Offset(orb2X.dp.toPx(), orb2Y.dp.toPx())
+            )
+        }
+
         Scaffold(
             containerColor = Color.Transparent,
             topBar = {
                 TopAppBar(
                     title = { 
-                        Text("Haven Portal", fontWeight = FontWeight.Bold) 
+                        Column {
+                            val prefs = LocalContext.current.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+                            val userNamePref = remember { prefs.getString("user_name", "User") ?: "User" }
+                            Text("Haven Portal", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                            Text("Welcome back, $userNamePref", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.6f))
+                        }
                     },
                     actions = {
                         IconButton(onClick = { onNavigate(Settings) }) {
@@ -143,163 +241,153 @@ fun MainScreen(
                     )
                 )
             },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    if (selectedTab == 0) {
-                        showAddCompanionChooser = true
-                    } else {
-                        showCreateGroupDialog = true
+            floatingActionButton = {
+                if (selectedTab != 2) {
+                    FloatingActionButton(
+                        onClick = {
+                            if (selectedTab == 0) {
+                                showAddCompanionChooser = true
+                            } else {
+                                showCreateGroupDialog = true
+                            }
+                        },
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        shape = CircleShape
+                    ) {
+                        Icon(
+                            imageVector = if (selectedTab == 0) Icons.Default.Add else Icons.Default.Group,
+                            contentDescription = if (selectedTab == 0) "Import Character Card" else "Create Group Room"
+                        )
                     }
-                },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                shape = FloatingActionButtonDefaults.largeShape
-            ) {
-                Icon(
-                    imageVector = if (selectedTab == 0) Icons.Default.Add else Icons.Default.Group,
-                    contentDescription = if (selectedTab == 0) "Import Character Card" else "Create Group Room"
-                )
-            }
-        },
-        modifier = modifier
-    ) { innerPadding ->
+                }
+            },
+            modifier = modifier
+        ) { innerPadding ->
             Box(
                 modifier = Modifier
                     .padding(innerPadding)
                     .fillMaxSize()
             ) {
-            when (state) {
-                is MainScreenUiState.Loading -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                    }
-                }
-                is MainScreenUiState.Success -> {
-                    val successState = state as MainScreenUiState.Success
-                    val characters = successState.characters
-                    val groupChats = successState.groupChats
-
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        // Custom Pill-shaped Tab Switcher
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                when (state) {
+                    is MainScreenUiState.Loading -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = if (selectedTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                contentColor = if (selectedTab == 0) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .clickable { selectedTab = 0 }
-                            ) {
-                                Text(
-                                    text = "Companions",
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                            }
-                            Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = if (selectedTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                contentColor = if (selectedTab == 1) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .clickable { selectedTab = 1 }
-                            ) {
-                                Text(
-                                    text = "Group Rooms",
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                            }
-                            Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = if (selectedTab == 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                contentColor = if (selectedTab == 2) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .clickable { selectedTab = 2 }
-                            ) {
-                                Text(
-                                    text = "Explore",
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                            }
+                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                         }
+                    }
+                    is MainScreenUiState.Success -> {
+                        val successState = state as MainScreenUiState.Success
+                        val characters = successState.characters
+                        val groupChats = successState.groupChats
 
-                        if (selectedTab == 0) {
-                            if (characters.isEmpty()) {
-                                EmptyStatePrompt(
-                                    onImportClick = { filePickerLauncher.launch("image/png") }
-                                )
-                            } else {
-                                CharacterList(
-                                    characters = characters,
-                                    onCharacterClick = { charId -> onNavigate(Chat(charId)) },
-                                    onCharacterLongClick = { characterToDelete = it }
-                                )
-                            }
-                        } else if (selectedTab == 1) {
-                            if (groupChats.isEmpty()) {
-                                Column(
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            // Custom Pill-shaped Glassmorphic Tab Switcher
+                            Surface(
+                                shape = RoundedCornerShape(24.dp),
+                                color = Color.White.copy(alpha = 0.05f),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                            ) {
+                                Row(
                                     modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(32.dp),
-                                    verticalArrangement = Arrangement.Center,
-                                    horizontalAlignment = Alignment.CenterHorizontally
+                                        .fillMaxWidth()
+                                        .padding(4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Group,
-                                        contentDescription = "No Groups",
-                                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                                        modifier = Modifier.size(80.dp)
-                                    )
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    Text(
-                                        text = "No Group Rooms",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onBackground
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        text = "Create a multi-companion room to start a group conversation with Nova, Aria, and others!",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                    )
-                                    Spacer(modifier = Modifier.height(24.dp))
-                                    Button(onClick = { showCreateGroupDialog = true }) {
-                                        Text("Create Group Room")
+                                    val tabs = listOf("Companions", "Group Rooms", "Explore")
+                                    tabs.forEachIndexed { index, title ->
+                                        val isSelected = selectedTab == index
+                                        val targetBgColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
+                                        val targetContentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else Color.White.copy(alpha = 0.6f)
+                                        
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(20.dp))
+                                                .background(targetBgColor)
+                                                .clickable { selectedTab = index }
+                                                .padding(vertical = 10.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = title,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                fontSize = 14.sp,
+                                                color = targetContentColor
+                                            )
+                                        }
                                     }
                                 }
+                            }
+
+                            if (selectedTab == 0) {
+                                if (characters.isEmpty()) {
+                                    EmptyStatePrompt(
+                                        onImportClick = { filePickerLauncher.launch("image/png") }
+                                    )
+                                } else {
+                                    CharacterList(
+                                        characters = characters,
+                                        onCharacterClick = { charId -> onNavigate(Chat(charId)) },
+                                        onCharacterLongClick = { activeCharacterActions = it }
+                                    )
+                                }
+                            } else if (selectedTab == 1) {
+                                if (groupChats.isEmpty()) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(32.dp),
+                                        verticalArrangement = Arrangement.Center,
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Group,
+                                            contentDescription = "No Groups",
+                                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                                            modifier = Modifier.size(80.dp)
+                                        )
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Text(
+                                            text = "No Group Rooms",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onBackground
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            text = "Create a multi-companion room to start a group conversation with Nova, Aria, and others!",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
+                                        Spacer(modifier = Modifier.height(24.dp))
+                                        Button(onClick = { showCreateGroupDialog = true }) {
+                                            Text("Create Group Room")
+                                        }
+                                    }
+                                } else {
+                                    GroupList(
+                                        groups = groupChats,
+                                        participants = characters,
+                                        onGroupClick = { groupId -> onNavigate(GroupChat(groupId)) },
+                                        onGroupLongClick = { groupToDelete = it }
+                                    )
+                                }
                             } else {
-                                GroupList(
-                                    groups = groupChats,
-                                    participants = characters,
-                                    onGroupClick = { groupId -> onNavigate(GroupChat(groupId)) },
-                                    onGroupLongClick = { groupToDelete = it }
+                                ExploreFeedScreen(
+                                    currentCharacters = characters,
+                                    onAddCompanion = { name, desc, pers, first, voice, sysPrompt ->
+                                        viewModel.createCharacterManually(name, desc, pers, first, voice, sysPrompt)
+                                    }
                                 )
                             }
-                        } else {
-                            ExploreFeedScreen(
-                                currentCharacters = characters,
-                                onAddCompanion = { name, desc, pers, first, voice, sysPrompt ->
-                                    viewModel.createCharacterManually(name, desc, pers, first, voice, sysPrompt)
-                                }
-                            )
-                        }
                     }
                 }
                 is MainScreenUiState.Error -> {
@@ -338,6 +426,75 @@ fun MainScreen(
                         }
                     }
                 }
+            }
+
+            // Companion Actions Sheet / Dialog
+            activeCharacterActions?.let { character ->
+                AlertDialog(
+                    onDismissRequest = { activeCharacterActions = null },
+                    title = { Text("Companion Actions: ${character.name}") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(
+                                onClick = {
+                                    activeCharacterActions = null
+                                    onNavigate(Chat(character.id))
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Chat Room", textAlign = TextAlign.Start, modifier = Modifier.fillMaxWidth())
+                            }
+                            TextButton(
+                                onClick = {
+                                    activeCharacterActions = null
+                                    onNavigate(MemoryVault(character.id))
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Memory Vault Fact Sheet", textAlign = TextAlign.Start, modifier = Modifier.fillMaxWidth())
+                            }
+                            TextButton(
+                                onClick = {
+                                    vrmPickerLauncher.launch("*/*")
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = if (character.vrmModelPath != null) "Change 3D VRM Avatar" else "Set 3D VRM Avatar (.vrm / .glb)",
+                                    textAlign = TextAlign.Start,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            if (character.vrmModelPath != null) {
+                                TextButton(
+                                    onClick = {
+                                        viewModel.removeCharacterVrm(context, character)
+                                        Toast.makeText(context, "3D Avatar removed.", Toast.LENGTH_SHORT).show()
+                                        activeCharacterActions = null
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Remove 3D Avatar (use 2D dynamic portrait instead)", color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Start, modifier = Modifier.fillMaxWidth())
+                                }
+                            }
+                            TextButton(
+                                onClick = {
+                                    characterToDelete = character
+                                    activeCharacterActions = null
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Delete Companion", color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Start, modifier = Modifier.fillMaxWidth())
+                            }
+                        }
+                    },
+                    confirmButton = {},
+                    dismissButton = {
+                        TextButton(onClick = { activeCharacterActions = null }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
             }
 
             // Delete verification dialog
@@ -425,7 +582,7 @@ fun MainScreen(
                         TextButton(
                             onClick = {
                                 if (groupName.isNotBlank() && selectedIds.isNotEmpty()) {
-                                    viewModel.createGroupChat(groupName, selectedIds.toList())
+                                    viewModel.createGroupChat(context, groupName, selectedIds.toList())
                                     showCreateGroupDialog = false
                                 }
                             },
@@ -770,7 +927,7 @@ fun MainScreen(
                     confirmButton = {
                         TextButton(
                             onClick = {
-                                viewModel.deleteGroupChat(group)
+                                viewModel.deleteGroupChat(context, group)
                                 groupToDelete = null
                             }
                         ) {
@@ -866,16 +1023,21 @@ fun CharacterCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clip(CardDefaults.shape)
+            .clip(RoundedCornerShape(20.dp))
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
             ),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF1A1A1A).copy(alpha = 0.65f)
+            containerColor = Color(0xFF16161E).copy(alpha = 0.45f)
         ),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
+        border = BorderStroke(
+            1.dp,
+            androidx.compose.ui.graphics.Brush.linearGradient(
+                listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.02f))
+            )
+        )
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
@@ -884,11 +1046,22 @@ fun CharacterCard(
                     .fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Avatar
-                CharacterAvatar(
-                    character = character,
-                    modifier = Modifier.size(60.dp)
-                )
+                // Avatar with level-colored glowing border
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(CircleShape)
+                        .background(levelColor.copy(alpha = 0.15f))
+                        .border(1.5.dp, levelColor.copy(alpha = 0.5f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CharacterAvatar(
+                        character = character,
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                    )
+                }
 
                 Spacer(modifier = Modifier.width(12.dp))
 
@@ -1032,17 +1205,20 @@ fun GroupList(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clip(RoundedCornerShape(20.dp))
                     .combinedClickable(
                         onClick = { onGroupClick(group.id) },
                         onLongClick = { onGroupLongClick(group) }
                     ),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFF1A1A1A).copy(alpha = 0.65f)
+                    containerColor = Color(0xFF16161E).copy(alpha = 0.45f)
                 ),
                 border = BorderStroke(
                     1.dp,
-                    Color.White.copy(alpha = 0.08f)
+                    androidx.compose.ui.graphics.Brush.linearGradient(
+                        listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.02f))
+                    )
                 )
             ) {
                 Row(
@@ -1078,7 +1254,7 @@ fun GroupList(
                                         .offset(x = offset - 10.dp)
                                         .size(32.dp)
                                         .clip(CircleShape)
-                                        .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
+                                        .border(2.dp, Color(0xFF16161E), CircleShape)
                                         .background(MaterialTheme.colorScheme.primary)
                                 ) {
                                     if (p.avatarPath != null) {
@@ -1211,14 +1387,16 @@ fun ExploreFeedScreen(
             val isImported = currentCharacters.any { it.name.lowercase() == item.name.lowercase() }
             
             Card(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(20.dp),
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFF1A1A1A).copy(alpha = 0.65f)
+                    containerColor = Color(0xFF16161E).copy(alpha = 0.45f)
                 ),
                 border = BorderStroke(
                     1.dp,
-                    Color.White.copy(alpha = 0.08f)
+                    androidx.compose.ui.graphics.Brush.linearGradient(
+                        listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.02f))
+                    )
                 )
             ) {
                 Column(

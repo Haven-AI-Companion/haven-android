@@ -20,5 +20,7 @@ data class CharacterEntity(
     val currentMood: String = "",
     val relationshipXp: Int = 0,
     val messageCount: Int = 0,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val conversationId: String? = null,
+    val vrmModelPath: String? = null
 )

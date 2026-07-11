@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material3.*
+import android.content.Context
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -20,10 +21,12 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import xyz.ssfdre38.haven.data.DataRepository
 import xyz.ssfdre38.haven.data.database.CharacterEntity
 import xyz.ssfdre38.haven.data.database.MemoryEntity
+import xyz.ssfdre38.haven.data.network.HavenHttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -38,6 +41,7 @@ fun MemoryVaultScreen(
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var character by remember { mutableStateOf<CharacterEntity?>(null) }
     val memories by repository.getMemoriesForCharacter(characterId).collectAsState(initial = emptyList())
@@ -47,9 +51,40 @@ fun MemoryVaultScreen(
     var customFactText by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("general") }
 
+    val prefs = remember { context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE) }
+    val serverUrl = remember {
+        val host = prefs.getString("ash_host", "") ?: ""
+        val port = prefs.getString("ash_port", "") ?: ""
+        val trimmedHost = host.trimEnd('/')
+        val trimmedPort = port.trim()
+        if (trimmedHost.startsWith("http")) "$trimmedHost:$trimmedPort" else "http://$trimmedHost:$trimmedPort"
+    }
+    val token = remember { prefs.getString("auth_token", "") ?: "" }
+
     LaunchedEffect(characterId) {
         coroutineScope.launch(Dispatchers.IO) {
             character = repository.getCharacterById(characterId)
+        }
+    }
+
+    LaunchedEffect(character) {
+        val charName = character?.name ?: return@LaunchedEffect
+        if (serverUrl.isNotBlank() && token.isNotBlank()) {
+            coroutineScope.launch(Dispatchers.IO) {
+                val serverMemories = HavenHttpClient.getMemories(serverUrl, token, charName)
+                if (serverMemories.isNotEmpty()) {
+                    repository.clearMemoriesForCharacter(characterId)
+                    serverMemories.forEach { obj ->
+                        repository.insertMemory(
+                            MemoryEntity(
+                                characterId = characterId,
+                                content = obj.getString("content"),
+                                category = obj.getString("category")
+                            )
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -184,6 +219,10 @@ fun MemoryVaultScreen(
                             onDeleteClick = {
                                 coroutineScope.launch(Dispatchers.IO) {
                                     repository.deleteMemory(memory)
+                                    val charName = character?.name
+                                    if (charName != null && serverUrl.isNotBlank() && token.isNotBlank()) {
+                                        HavenHttpClient.deleteMemory(serverUrl, token, charName, memory.content)
+                                    }
                                 }
                             }
                         )
@@ -233,15 +272,20 @@ fun MemoryVaultScreen(
                 confirmButton = {
                     Button(
                         onClick = {
-                            if (customFactText.isNotBlank()) {
+                            val fact = customFactText.trim()
+                            if (fact.isNotBlank()) {
                                 coroutineScope.launch(Dispatchers.IO) {
                                     repository.insertMemory(
                                         MemoryEntity(
                                             characterId = characterId,
-                                            content = customFactText.trim(),
+                                            content = fact,
                                             category = selectedCategory
                                         )
                                     )
+                                    val charName = character?.name
+                                    if (charName != null && serverUrl.isNotBlank() && token.isNotBlank()) {
+                                        HavenHttpClient.saveMemory(serverUrl, token, charName, fact, selectedCategory)
+                                    }
                                 }
                                 customFactText = ""
                                 showAddDialog = false

@@ -3,6 +3,7 @@ package xyz.ssfdre38.haven.ui.diary
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -11,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.blur
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Book
@@ -79,64 +81,138 @@ fun DiaryScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "$characterName's Journal",
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(
-                        onClick = {
-                            if (serverUrl.isBlank() || token.isBlank()) {
-                                Toast.makeText(context, "Please configure server settings first", Toast.LENGTH_SHORT).show()
-                                return@IconButton
-                            }
-                            viewModel.generateTodayEntry(context, serverUrl, token, characterName)
-                        },
-                        enabled = !isGenerating
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Create,
-                            contentDescription = "Write Today's Entry",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent
-                )
-            )
-        },
-        containerColor = MaterialTheme.colorScheme.background,
+    LaunchedEffect(serverUrl, token) {
+        if (serverUrl.isNotBlank() && token.isNotBlank() && characterName.isNotBlank()) {
+            viewModel.syncDiaries(serverUrl, token, characterName)
+        }
+    }
+
+    val mainGradient = remember {
+        listOf(Color(0xFF1E1035), Color(0xFF0C051A))
+    }
+
+    Box(
         modifier = modifier
-    ) { innerPadding ->
-        Box(
+            .fillMaxSize()
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(mainGradient))
+    ) {
+        // Floating premium background animations
+        val infiniteTransition = rememberInfiniteTransition(label = "background_orbs")
+        
+        val orb1X by infiniteTransition.animateFloat(
+            initialValue = -50f,
+            targetValue = 180f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(12000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "orb1X"
+        )
+        val orb1Y by infiniteTransition.animateFloat(
+            initialValue = -50f,
+            targetValue = 350f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(14000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "orb1Y"
+        )
+        
+        val orb2X by infiniteTransition.animateFloat(
+            initialValue = 220f,
+            targetValue = -60f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(16000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "orb2X"
+        )
+        val orb2Y by infiniteTransition.animateFloat(
+            initialValue = 450f,
+            targetValue = 60f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(11000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "orb2Y"
+        )
+
+        androidx.compose.foundation.Canvas(
             modifier = Modifier
-                .padding(innerPadding)
                 .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.background,
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
+                .blur(80.dp)
+        ) {
+            drawCircle(
+                brush = androidx.compose.ui.graphics.Brush.radialGradient(
+                    colors = listOf(Color(0xFF6366F1).copy(alpha = 0.15f), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(orb1X.dp.toPx(), orb1Y.dp.toPx()),
+                    radius = 300.dp.toPx()
+                ),
+                radius = 300.dp.toPx(),
+                center = androidx.compose.ui.geometry.Offset(orb1X.dp.toPx(), orb1Y.dp.toPx())
+            )
+            
+            drawCircle(
+                brush = androidx.compose.ui.graphics.Brush.radialGradient(
+                    colors = listOf(Color(0xFFD946EF).copy(alpha = 0.12f), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(orb2X.dp.toPx(), orb2Y.dp.toPx()),
+                    radius = 280.dp.toPx()
+                ),
+                radius = 280.dp.toPx(),
+                center = androidx.compose.ui.geometry.Offset(orb2X.dp.toPx(), orb2Y.dp.toPx())
+            )
+        }
+
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "$characterName's Journal",
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
                         )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBackClick) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = Color.White
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(
+                            onClick = {
+                                if (serverUrl.isBlank() || token.isBlank()) {
+                                    Toast.makeText(context, "Please configure server settings first", Toast.LENGTH_SHORT).show()
+                                    return@IconButton
+                                }
+                                viewModel.generateTodayEntry(context, serverUrl, token, characterName)
+                            },
+                            enabled = !isGenerating
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Create,
+                                contentDescription = "Write Today's Entry",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent
                     )
                 )
-        ) {
+            },
+            containerColor = Color.Transparent,
+            modifier = Modifier.fillMaxSize()
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize()
+            ) {
             if (isGenerating) {
                 Column(
                     modifier = Modifier.fillMaxSize(),
@@ -210,12 +286,12 @@ fun DiaryScreen(
 
                             Surface(
                                 shape = RoundedCornerShape(20.dp),
-                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                                contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.05f),
+                                contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else Color.White.copy(alpha = 0.6f),
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(20.dp))
                                     .clickable { selectedEntry = entry },
-                                border = if (!isSelected) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)) else null
+                                border = if (!isSelected) androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)) else null
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
@@ -257,11 +333,13 @@ fun DiaryScreen(
                                 .weight(1f),
                             shape = RoundedCornerShape(24.dp),
                             colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                                containerColor = Color(0xFF16161E).copy(alpha = 0.45f)
                             ),
                             border = androidx.compose.foundation.BorderStroke(
                                 1.dp,
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)
+                                androidx.compose.ui.graphics.Brush.linearGradient(
+                                    listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.02f))
+                                )
                             )
                         ) {
                             Column(
@@ -293,7 +371,7 @@ fun DiaryScreen(
                                         fontSize = 16.sp,
                                         lineHeight = 26.sp,
                                         fontStyle = FontStyle.Italic,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.95f),
+                                        color = Color.White.copy(alpha = 0.85f),
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                 }
@@ -304,4 +382,5 @@ fun DiaryScreen(
             }
         }
     }
+}
 }

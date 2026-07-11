@@ -8,6 +8,24 @@ import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaPlayer
 import android.media.MediaRecorder
+import android.media.AudioManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.ImageFormat
+import android.graphics.Rect
+import android.graphics.YuvImage
+import android.graphics.Matrix
+import android.util.Base64
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -19,6 +37,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.VideocamOff
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -80,22 +102,71 @@ class VoiceCallViewModel(
     private val _companionSpeech = MutableStateFlow("")
     val companionSpeech: StateFlow<String> = _companionSpeech.asStateFlow()
 
+    private val _isCameraActive = MutableStateFlow(false)
+    val isCameraActive: StateFlow<Boolean> = _isCameraActive.asStateFlow()
+
+    private val _isSpeakerphoneOn = MutableStateFlow(true)
+    val isSpeakerphoneOn: StateFlow<Boolean> = _isSpeakerphoneOn.asStateFlow()
+
     private var webSocket: WebSocket? = null
     private var okHttpClient: okhttp3.OkHttpClient? = null
     private var audioRecord: AudioRecord? = null
     private var recordingJob: Job? = null
     private var player: MediaPlayer? = null
     private var vad: SileroVad? = null
+    private var appContext: Context? = null
 
     private val SAMPLE_RATE = 16000
     private val CHANNEL = AudioFormat.CHANNEL_IN_MONO
     private val ENCODING = AudioFormat.ENCODING_PCM_16BIT
+
+    fun toggleCamera() {
+        _isCameraActive.value = !_isCameraActive.value
+    }
+
+    fun toggleSpeakerphone(context: Context) {
+        val newValue = !_isSpeakerphoneOn.value
+        _isSpeakerphoneOn.value = newValue
+        applySpeakerphone(context, newValue)
+    }
+
+    private fun applySpeakerphone(context: Context, enabled: Boolean) {
+        val audioManager = context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        audioManager?.let {
+            try {
+                if (enabled) {
+                    it.mode = AudioManager.MODE_IN_COMMUNICATION
+                    it.isSpeakerphoneOn = true
+                } else {
+                    it.isSpeakerphoneOn = false
+                    it.mode = AudioManager.MODE_NORMAL
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun sendCameraFrame(base64Image: String) {
+        val ws = webSocket
+        if (ws != null && _callState.value != CallState.Idle && _callState.value !is CallState.Error) {
+            try {
+                val payload = org.json.JSONObject().apply {
+                    put("type", "camera_frame")
+                    put("image", base64Image)
+                }
+                ws.send(payload.toString())
+            } catch (_: Exception) {}
+        }
+    }
 
     fun startCall(context: Context, serverUrl: String, token: String) {
         if (_callState.value != CallState.Idle) return
         _callState.value = CallState.Connecting
         _transcription.value = ""
         _companionSpeech.value = ""
+        appContext = context.applicationContext
+
+        // Apply initial speakerphone state
+        applySpeakerphone(context, _isSpeakerphoneOn.value)
 
         // Fetch character configuration and build system prompt to send in handshake
         viewModelScope.launch(Dispatchers.IO) {
@@ -194,12 +265,12 @@ class VoiceCallViewModel(
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                     _callState.value = CallState.Error(t.message ?: "Connection failed")
-                    stopRecording()
+                    endCall()
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                     _callState.value = CallState.Idle
-                    stopRecording()
+                    endCall()
                 }
             })
         }
@@ -314,7 +385,10 @@ class VoiceCallViewModel(
         }
     }
 
-    fun endCall() {
+    fun endCall(context: Context? = null) {
+        val targetContext = context?.applicationContext ?: appContext
+        targetContext?.let { applySpeakerphone(it, false) }
+        _isCameraActive.value = false
         stopRecording()
         player?.release()
         player = null
@@ -458,6 +532,25 @@ fun VoiceCallScreen(
                     )
                 )
         )
+
+        // 3. Floating camera preview overlay in the top right (PIP)
+        val isCamActive by viewModel.isCameraActive.collectAsState()
+        if (isCamActive) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 90.dp, end = 24.dp)
+                    .size(width = 110.dp, height = 160.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                    .background(Color.Black)
+            ) {
+                CameraPreviewView(
+                    viewModel = viewModel,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
 
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -680,15 +773,36 @@ fun VoiceCallScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
-                    horizontalArrangement = Arrangement.Center,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
+                    if (isInCall) {
+                        val isSpeakerOn by viewModel.isSpeakerphoneOn.collectAsState()
+                        IconButton(
+                            onClick = { viewModel.toggleSpeakerphone(context) },
+                            modifier = Modifier
+                                .size(56.dp)
+                                .background(
+                                    if (isSpeakerOn) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f) 
+                                    else Color.White.copy(alpha = 0.15f),
+                                    CircleShape
+                                )
+                        ) {
+                            Icon(
+                                imageVector = if (isSpeakerOn) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+                                contentDescription = "Speakerphone",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+
                     // Call / Mic button
                     Box(
                         modifier = Modifier
                             .scale(pulseScale)
-                            .size(80.dp)
+                            .size(if (isInCall) 72.dp else 80.dp)
                             .clip(CircleShape)
                             .background(
                                 when (callState) {
@@ -718,33 +832,194 @@ fun VoiceCallScreen(
                                 imageVector = if (callState is CallState.Listening) Icons.Default.Mic else Icons.Default.MicOff,
                                 contentDescription = "Mic",
                                 tint = Color.White,
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(if (isInCall) 32.dp else 36.dp)
                             )
                         }
                     }
 
                     if (isInCall) {
-                        Spacer(modifier = Modifier.width(40.dp))
+                        val isCamActive by viewModel.isCameraActive.collectAsState()
+                        
+                        val cameraPermissionLauncher = rememberLauncherForActivityResult(
+                            contract = ActivityResultContracts.RequestPermission()
+                        ) { isGranted ->
+                            if (isGranted) {
+                                viewModel.toggleCamera()
+                            }
+                        }
+
+                        IconButton(
+                            onClick = {
+                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
+                                    == PackageManager.PERMISSION_GRANTED) {
+                                    viewModel.toggleCamera()
+                                } else {
+                                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                }
+                            },
+                            modifier = Modifier
+                                .size(56.dp)
+                                .background(
+                                    if (isCamActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f) 
+                                    else Color.White.copy(alpha = 0.15f),
+                                    CircleShape
+                                )
+                        ) {
+                            Icon(
+                                imageVector = if (isCamActive) Icons.Default.Videocam else Icons.Default.VideocamOff,
+                                contentDescription = "Camera",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
                         // End call button
                         IconButton(
                             onClick = {
-                                viewModel.endCall()
+                                viewModel.endCall(context)
                                 onBackClick()
                             },
                             modifier = Modifier
-                                .size(64.dp)
+                                .size(56.dp)
                                 .background(MaterialTheme.colorScheme.error, CircleShape)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.CallEnd,
                                 contentDescription = "End Call",
                                 tint = Color.White,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(28.dp)
                             )
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+fun CameraPreviewView(
+    viewModel: VoiceCallViewModel,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val isCameraActive by viewModel.isCameraActive.collectAsState()
+
+    if (isCameraActive) {
+        val previewView = remember { PreviewView(context) }
+        val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
+
+        LaunchedEffect(cameraProviderFuture, lifecycleOwner) {
+            val cameraProvider = withContext(Dispatchers.IO) {
+                try {
+                    cameraProviderFuture.get()
+                } catch (e: Exception) {
+                    null
+                }
+            } ?: return@LaunchedEffect
+
+            val preview = Preview.Builder().build().apply {
+                setSurfaceProvider(previewView.surfaceProvider)
+            }
+
+            var lastFrameTime = 0L
+            val imageAnalysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
+                .apply {
+                    setAnalyzer(java.util.concurrent.Executors.newSingleThreadExecutor()) { imageProxy ->
+                        val currentTime = System.currentTimeMillis()
+                        if (currentTime - lastFrameTime >= 2000) {
+                            lastFrameTime = currentTime
+                            try {
+                                val jpegBytes = imageProxy.toJpegBytes()
+                                if (jpegBytes != null) {
+                                    val base64String = Base64.encodeToString(jpegBytes, Base64.NO_WRAP)
+                                    viewModel.sendCameraFrame(base64String)
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                        imageProxy.close()
+                    }
+                }
+
+            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+
+            try {
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(
+                    lifecycleOwner,
+                    cameraSelector,
+                    preview,
+                    imageAnalysis
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        AndroidView(
+            factory = { previewView },
+            modifier = modifier
+        )
+    }
+}
+
+private fun ImageProxy.toJpegBytes(scaleToMax: Int = 512): ByteArray? {
+    try {
+        val yBuffer = planes[0].buffer
+        val uBuffer = planes[1].buffer
+        val vBuffer = planes[2].buffer
+
+        val ySize = yBuffer.remaining()
+        val uSize = uBuffer.remaining()
+        val vSize = vBuffer.remaining()
+
+        val nv21 = ByteArray(ySize + uSize + vSize)
+
+        yBuffer.get(nv21, 0, ySize)
+        vBuffer.get(nv21, ySize, vSize)
+        uBuffer.get(nv21, ySize + vSize, uSize)
+
+        val yuvImage = YuvImage(nv21, ImageFormat.NV21, this.width, this.height, null)
+        val out = ByteArrayOutputStream()
+        yuvImage.compressToJpeg(Rect(0, 0, this.width, this.height), 80, out)
+        val imageBytes = out.toByteArray()
+
+        val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size) ?: return null
+        
+        // Handle rotation correctly
+        val rotationDegrees = this.imageInfo.rotationDegrees
+        val finalBitmap = if (rotationDegrees != 0) {
+            val matrix = Matrix().apply { postRotate(rotationDegrees.toFloat()) }
+            Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        } else {
+            bitmap
+        }
+
+        val width = finalBitmap.width
+        val height = finalBitmap.height
+        val (newWidth, newHeight) = if (width > height) {
+            val ratio = width.toFloat() / height.toFloat()
+            val w = scaleToMax
+            val h = (scaleToMax / ratio).toInt()
+            w to h
+        } else {
+            val ratio = height.toFloat() / width.toFloat()
+            val h = scaleToMax
+            val w = (scaleToMax / ratio).toInt()
+            w to h
+        }
+
+        val scaledBitmap = Bitmap.createScaledBitmap(finalBitmap, newWidth, newHeight, true)
+        val scaledOut = ByteArrayOutputStream()
+        scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 70, scaledOut)
+        return scaledOut.toByteArray()
+    } catch (e: Exception) {
+        e.printStackTrace()
+        return null
     }
 }

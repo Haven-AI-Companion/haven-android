@@ -14,8 +14,12 @@ import xyz.ssfdre38.haven.data.database.AppDatabase
 import xyz.ssfdre38.haven.data.database.CharacterEntity
 import xyz.ssfdre38.haven.data.database.MessageEntity
 import xyz.ssfdre38.haven.data.network.HavenHttpClient
+import android.graphics.BitmapFactory
+import java.io.File
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 
 class ProactiveMessageWorker(
     appContext: Context,
@@ -110,6 +114,26 @@ class ProactiveMessageWorker(
                 )
             )
 
+            // Push message to server if character has conversationId
+            val conversationId = chosenChar.conversationId
+            if (!conversationId.isNullOrBlank()) {
+                val url = "${serverUrl.trimEnd('/')}/api/conversations/$conversationId/messages"
+                val bodyJson = org.json.JSONObject().apply {
+                    put("role", "assistant")
+                    put("content", cleanedReply)
+                }.toString()
+                val request = okhttp3.Request.Builder()
+                    .url(url)
+                    .post(bodyJson.toRequestBody("application/json; charset=utf-8".toMediaType()))
+                    .addHeader("Authorization", "Bearer $token")
+                    .build()
+                try {
+                    okhttp3.OkHttpClient().newCall(request).execute().close()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
             // Check if Quiet Time is active
             val quietTimeEnabled = sharedPrefs.getBoolean("quiet_time_enabled", false)
             val quietTimeStart = sharedPrefs.getString("quiet_time_start", "22:00") ?: "22:00"
@@ -143,7 +167,7 @@ class ProactiveMessageWorker(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val name = "Companion Check-ins"
             val descriptionText = "Notifications sent by your characters when they check in on you."
-            val importance = NotificationManager.IMPORTANCE_DEFAULT
+            val importance = NotificationManager.IMPORTANCE_HIGH
             val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
                 description = descriptionText
             }
@@ -163,18 +187,122 @@ class ProactiveMessageWorker(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Build notification using native chat bubble icon
+        val shortcutId = character.id.toString()
+        publishShortcut(context, character)
+
+        val userPerson = androidx.core.app.Person.Builder()
+            .setName("You")
+            .build()
+
+        val companionPerson = androidx.core.app.Person.Builder()
+            .setName(character.name)
+            .build()
+
+        val messagingStyle = NotificationCompat.MessagingStyle(userPerson)
+            .addMessage(messageText, System.currentTimeMillis(), companionPerson)
+            .setConversationTitle(character.name)
+            .setGroupConversation(false)
+
+        // Intent for the Bubble overlay
+        val bubbleIntent = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
+            putExtra("characterId", character.id)
+            putExtra("isBubble", true)
+        }
+        val bubblePendingIntent = PendingIntent.getActivity(
+            context,
+            character.id,
+            bubbleIntent,
+            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val iconCompat = if (character.avatarPath != null) {
+            val file = File(character.avatarPath)
+            if (file.exists()) {
+                val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+                if (bitmap != null) {
+                    androidx.core.graphics.drawable.IconCompat.createWithBitmap(bitmap)
+                } else {
+                    androidx.core.graphics.drawable.IconCompat.createWithResource(context, android.R.drawable.stat_notify_chat)
+                }
+            } else {
+                androidx.core.graphics.drawable.IconCompat.createWithResource(context, android.R.drawable.stat_notify_chat)
+            }
+        } else {
+            androidx.core.graphics.drawable.IconCompat.createWithResource(context, android.R.drawable.stat_notify_chat)
+        }
+
+        val bubbleMetadata = NotificationCompat.BubbleMetadata.Builder(
+            bubblePendingIntent,
+            iconCompat
+        )
+            .setDesiredHeight(600)
+            .setAutoExpandBubble(true)
+            .setSuppressNotification(true)
+            .build()
+
+        // Build notification utilizing native chat bubble style and metadata
+        val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+        val enableBubbles = sharedPrefs.getBoolean("enable_bubbles", true)
+
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_notify_chat)
-            .setContentTitle(character.name)
-            .setContentText(messageText)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(messageText))
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setShortcutId(shortcutId)
+            .setStyle(messagingStyle)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .setSilent(isSilent)
 
+        if (enableBubbles) {
+            builder.setBubbleMetadata(bubbleMetadata)
+        }
+
         notificationManager.notify(NOTIFICATION_ID_BASE + character.id, builder.build())
+    }
+
+    private fun publishShortcut(context: Context, character: CharacterEntity) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+
+        val shortcutManager = context.getSystemService(Context.SHORTCUT_SERVICE) as? android.content.pm.ShortcutManager
+        if (shortcutManager != null) {
+            val intent = Intent(context, MainActivity::class.java).apply {
+                action = Intent.ACTION_VIEW
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                putExtra("characterId", character.id)
+                putExtra("isBubble", true)
+            }
+
+            val icon = if (character.avatarPath != null) {
+                val file = File(character.avatarPath)
+                if (file.exists()) {
+                    val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+                    if (bitmap != null) {
+                        android.graphics.drawable.Icon.createWithBitmap(bitmap)
+                    } else {
+                        android.graphics.drawable.Icon.createWithResource(context, android.R.drawable.stat_notify_chat)
+                    }
+                } else {
+                    android.graphics.drawable.Icon.createWithResource(context, android.R.drawable.stat_notify_chat)
+                }
+            } else {
+                android.graphics.drawable.Icon.createWithResource(context, android.R.drawable.stat_notify_chat)
+            }
+
+            val shortcut = android.content.pm.ShortcutInfo.Builder(context, character.id.toString())
+                .setShortLabel(character.name)
+                .setLongLabel(character.name)
+                .setIcon(icon)
+                .setIntent(intent)
+                .setLongLived(true)
+                .build()
+
+            try {
+                shortcutManager.pushDynamicShortcut(shortcut)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     private fun isTimeBetween(current: String, start: String, end: String): Boolean {

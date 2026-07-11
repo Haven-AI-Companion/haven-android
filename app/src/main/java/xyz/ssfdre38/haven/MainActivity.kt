@@ -56,6 +56,12 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        try {
+            xyz.ssfdre38.haven.ui.widget.HavenAppWidgetProvider.triggerUpdate(this)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
         enableEdgeToEdge()
         setContent {
             HavenTheme {

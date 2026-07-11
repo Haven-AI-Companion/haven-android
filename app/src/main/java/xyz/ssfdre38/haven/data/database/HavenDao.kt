@@ -14,6 +14,9 @@ interface HavenDao {
     @Query("SELECT * FROM characters ORDER BY name ASC")
     fun getAllCharacters(): Flow<List<CharacterEntity>>
 
+    @Query("SELECT * FROM characters ORDER BY name ASC")
+    suspend fun getAllCharactersList(): List<CharacterEntity>
+
     @Query("SELECT * FROM characters WHERE id = :id")
     suspend fun getCharacterById(id: Int): CharacterEntity?
 
@@ -47,6 +50,9 @@ interface HavenDao {
     @Query("SELECT * FROM diary_entries WHERE characterId = :characterId ORDER BY dateString DESC")
     fun getDiaryEntries(characterId: Int): Flow<List<DiaryEntryEntity>>
 
+    @Query("DELETE FROM diary_entries WHERE characterId = :characterId")
+    suspend fun clearDiaryEntriesForCharacter(characterId: Int)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDiaryEntry(entry: DiaryEntryEntity): Long
 
@@ -58,6 +64,12 @@ interface HavenDao {
 
     @Query("SELECT * FROM group_chats WHERE id = :id")
     suspend fun getGroupChatById(id: Int): GroupChatEntity?
+
+    @Query("SELECT * FROM group_chats WHERE uuid = :uuid LIMIT 1")
+    suspend fun getGroupChatByUuid(uuid: String): GroupChatEntity?
+
+    @Query("SELECT * FROM characters WHERE name = :name LIMIT 1")
+    suspend fun getCharacterByName(name: String): CharacterEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertGroupChat(group: GroupChatEntity): Long

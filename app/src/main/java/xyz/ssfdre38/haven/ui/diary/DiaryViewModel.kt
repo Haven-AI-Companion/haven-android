@@ -93,6 +93,7 @@ class DiaryViewModel(
                                     content = finalContent
                                 )
                             )
+                            HavenHttpClient.saveDiary(serverUrl, token, characterName, todayDateStr, finalContent)
                             _isGenerating.value = false
                         }
                     } else {
@@ -105,6 +106,24 @@ class DiaryViewModel(
                     _error.value = "Failed to generate: ${e.message}"
                 }
             )
+        }
+    }
+
+    fun syncDiaries(serverUrl: String, token: String, characterName: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val serverDiaries = HavenHttpClient.getDiaries(serverUrl, token, characterName)
+            if (serverDiaries.isNotEmpty()) {
+                repository.clearDiaryEntriesForCharacter(characterId)
+                serverDiaries.forEach { obj ->
+                    repository.insertDiaryEntry(
+                        DiaryEntryEntity(
+                            characterId = characterId,
+                            dateString = obj.getString("dateString"),
+                            content = obj.getString("content")
+                        )
+                    )
+                }
+            }
         }
     }
 }

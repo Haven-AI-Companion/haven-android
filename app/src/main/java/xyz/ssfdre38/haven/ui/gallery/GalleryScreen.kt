@@ -1,5 +1,7 @@
 package xyz.ssfdre38.haven.ui.gallery
 
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,7 +16,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -52,31 +56,108 @@ fun GalleryScreen(
 
     var activeImageMessage by remember { mutableStateOf<MessageEntity?>(null) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("$characterName's Gallery", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
-            )
-        },
+    val mainGradient = remember {
+        listOf(Color(0xFF1E1035), Color(0xFF0C051A))
+    }
+
+    Box(
         modifier = modifier
-    ) { innerPadding ->
-        Box(
+            .fillMaxSize()
+            .background(Brush.verticalGradient(mainGradient))
+    ) {
+        // Floating premium background animations
+        val infiniteTransition = rememberInfiniteTransition(label = "background_orbs")
+        
+        val orb1X by infiniteTransition.animateFloat(
+            initialValue = -50f,
+            targetValue = 180f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(12000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "orb1X"
+        )
+        val orb1Y by infiniteTransition.animateFloat(
+            initialValue = -50f,
+            targetValue = 350f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(14000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "orb1Y"
+        )
+        
+        val orb2X by infiniteTransition.animateFloat(
+            initialValue = 220f,
+            targetValue = -60f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(16000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "orb2X"
+        )
+        val orb2Y by infiniteTransition.animateFloat(
+            initialValue = 450f,
+            targetValue = 60f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(11000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "orb2Y"
+        )
+
+        androidx.compose.foundation.Canvas(
             modifier = Modifier
-                .padding(innerPadding)
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
+                .blur(80.dp)
         ) {
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color(0xFF6366F1).copy(alpha = 0.15f), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(orb1X.dp.toPx(), orb1Y.dp.toPx()),
+                    radius = 300.dp.toPx()
+                ),
+                radius = 300.dp.toPx(),
+                center = androidx.compose.ui.geometry.Offset(orb1X.dp.toPx(), orb1Y.dp.toPx())
+            )
+            
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color(0xFFD946EF).copy(alpha = 0.12f), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(orb2X.dp.toPx(), orb2Y.dp.toPx()),
+                    radius = 280.dp.toPx()
+                ),
+                radius = 280.dp.toPx(),
+                center = androidx.compose.ui.geometry.Offset(orb2X.dp.toPx(), orb2Y.dp.toPx())
+            )
+        }
+
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("$characterName's Gallery", fontWeight = FontWeight.Bold, color = Color.White) },
+                    navigationIcon = {
+                        IconButton(onClick = onBackClick) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = Color.White
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent
+                    )
+                )
+            },
+            containerColor = Color.Transparent,
+            modifier = Modifier.fillMaxSize()
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize()
+            ) {
             if (imageMessages.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -117,6 +198,7 @@ fun GalleryScreen(
         }
     }
 }
+}
 
 @Composable
 fun GridImageCard(
@@ -129,8 +211,16 @@ fun GridImageCard(
             .fillMaxWidth()
             .aspectRatio(1f)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF16161E).copy(alpha = 0.45f)
+        ),
+        border = BorderStroke(
+            1.dp,
+            Brush.linearGradient(
+                listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.02f))
+            )
+        )
     ) {
         val file = remember(message.imagePath) {
             message.imagePath?.let { File(it) }

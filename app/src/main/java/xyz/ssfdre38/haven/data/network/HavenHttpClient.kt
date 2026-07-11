@@ -243,6 +243,31 @@ object HavenHttpClient {
     }
 
     /**
+     * Downloads a GLB model file from an HTTP URL and saves it to internal storage under vrm_models directory.
+     */
+    fun downloadGlb(context: Context, modelUrl: String, characterName: String): String? {
+        val request = okhttp3.Request.Builder().url(modelUrl).build()
+        try {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val bytes = response.body?.bytes()
+                    if (bytes != null) {
+                        val localDir = File(context.filesDir, "vrm_models").apply { mkdirs() }
+                        val file = File(localDir, "${characterName.replace("\\s+".toRegex(), "_")}_avatar_${System.currentTimeMillis()}.glb")
+                        java.io.FileOutputStream(file).use { fos ->
+                            fos.write(bytes)
+                        }
+                        return file.absolutePath
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return null
+    }
+
+    /**
      * Executes a server plugin tool using api/tools/execute.
      */
     fun executeTool(
@@ -436,5 +461,333 @@ object HavenHttpClient {
                 }
             }
         })
+    }
+
+    /**
+     * Pulls messages for a conversation ID from the server
+     */
+    fun getConversationMessages(
+        serverUrl: String,
+        token: String,
+        conversationId: String
+    ): List<JSONObject> {
+        val url = "${serverUrl.trimEnd('/')}/api/conversations/$conversationId/messages"
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return emptyList()
+                val body = response.body?.string() ?: ""
+                val array = JSONArray(body)
+                val list = mutableListOf<JSONObject>()
+                for (i in 0 until array.length()) {
+                    list.add(array.getJSONObject(i))
+                }
+                return list
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return emptyList()
+        }
+    }
+
+    /**
+     * Pulls memories for a companion from the server
+     */
+    fun getMemories(
+        serverUrl: String,
+        token: String,
+        companionName: String
+    ): List<JSONObject> {
+        val url = "${serverUrl.trimEnd('/')}/api/sync/memories?companion=${java.net.URLEncoder.encode(companionName, "UTF-8")}"
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return emptyList()
+                val body = response.body?.string() ?: ""
+                val array = JSONArray(body)
+                val list = mutableListOf<JSONObject>()
+                for (i in 0 until array.length()) {
+                    list.add(array.getJSONObject(i))
+                }
+                return list
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return emptyList()
+        }
+    }
+
+    /**
+     * Pushes a memory to the server
+     */
+    fun saveMemory(
+        serverUrl: String,
+        token: String,
+        companionName: String,
+        content: String,
+        category: String
+    ): Boolean {
+        val url = "${serverUrl.trimEnd('/')}/api/sync/memories"
+        val json = JSONObject().apply {
+            put("CompanionName", companionName)
+            put("Content", content)
+            put("Category", category)
+        }.toString()
+        val request = Request.Builder()
+            .url(url)
+            .post(json.toRequestBody(JSON_MEDIA_TYPE))
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        try {
+            client.newCall(request).execute().use { response ->
+                return response.isSuccessful
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return false
+        }
+    }
+
+    /**
+     * Deletes a memory on the server
+     */
+    fun deleteMemory(
+        serverUrl: String,
+        token: String,
+        companionName: String,
+        content: String
+    ): Boolean {
+        val url = "${serverUrl.trimEnd('/')}/api/sync/memories?companion=${java.net.URLEncoder.encode(companionName, "UTF-8")}&content=${java.net.URLEncoder.encode(content, "UTF-8")}"
+        val request = Request.Builder()
+            .url(url)
+            .delete()
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        try {
+            client.newCall(request).execute().use { response ->
+                return response.isSuccessful
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return false
+        }
+    }
+
+    /**
+     * Pulls diary entries for a companion from the server
+     */
+    fun getDiaries(
+        serverUrl: String,
+        token: String,
+        companionName: String
+    ): List<JSONObject> {
+        val url = "${serverUrl.trimEnd('/')}/api/sync/diaries?companion=${java.net.URLEncoder.encode(companionName, "UTF-8")}"
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return emptyList()
+                val body = response.body?.string() ?: ""
+                val array = JSONArray(body)
+                val list = mutableListOf<JSONObject>()
+                for (i in 0 until array.length()) {
+                    list.add(array.getJSONObject(i))
+                }
+                return list
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return emptyList()
+        }
+    }
+
+    /**
+     * Pushes a diary entry to the server
+     */
+    fun saveDiary(
+        serverUrl: String,
+        token: String,
+        companionName: String,
+        dateString: String,
+        content: String
+    ): Boolean {
+        val url = "${serverUrl.trimEnd('/')}/api/sync/diaries"
+        val json = JSONObject().apply {
+            put("CompanionName", companionName)
+            put("DateString", dateString)
+            put("Content", content)
+        }.toString()
+        val request = Request.Builder()
+            .url(url)
+            .post(json.toRequestBody(JSON_MEDIA_TYPE))
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        try {
+            client.newCall(request).execute().use { response ->
+                return response.isSuccessful
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return false
+        }
+    }
+
+    /**
+     * Pulls all group chats from the server
+     */
+    fun getGroups(
+        serverUrl: String,
+        token: String
+    ): List<JSONObject> {
+        val url = "${serverUrl.trimEnd('/')}/api/sync/groups"
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return emptyList()
+                val body = response.body?.string() ?: ""
+                val array = JSONArray(body)
+                val list = mutableListOf<JSONObject>()
+                for (i in 0 until array.length()) {
+                    list.add(array.getJSONObject(i))
+                }
+                return list
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return emptyList()
+        }
+    }
+
+    /**
+     * Pushes a group chat to the server
+     */
+    fun saveGroup(
+        serverUrl: String,
+        token: String,
+        id: String,
+        name: String,
+        characterNames: String
+    ): Boolean {
+        val url = "${serverUrl.trimEnd('/')}/api/sync/groups"
+        val json = JSONObject().apply {
+            put("Id", id)
+            put("Name", name)
+            put("CharacterNames", characterNames)
+        }.toString()
+        val request = Request.Builder()
+            .url(url)
+            .post(json.toRequestBody(JSON_MEDIA_TYPE))
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        try {
+            client.newCall(request).execute().use { response ->
+                return response.isSuccessful
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return false
+        }
+    }
+
+    /**
+     * Deletes a group chat on the server
+     */
+    fun deleteGroup(
+        serverUrl: String,
+        token: String,
+        id: String
+    ): Boolean {
+        val url = "${serverUrl.trimEnd('/')}/api/sync/groups/$id"
+        val request = Request.Builder()
+            .url(url)
+            .delete()
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        try {
+            client.newCall(request).execute().use { response ->
+                return response.isSuccessful
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return false
+        }
+    }
+
+    /**
+     * Pulls group messages from the server
+     */
+    fun getGroupMessages(
+        serverUrl: String,
+        token: String,
+        groupId: String
+    ): List<JSONObject> {
+        val url = "${serverUrl.trimEnd('/')}/api/sync/groups/$groupId/messages"
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return emptyList()
+                val body = response.body?.string() ?: ""
+                val array = JSONArray(body)
+                val list = mutableListOf<JSONObject>()
+                for (i in 0 until array.length()) {
+                    list.add(array.getJSONObject(i))
+                }
+                return list
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return emptyList()
+        }
+    }
+
+    /**
+     * Pushes a group message to the server
+     */
+    fun saveGroupMessage(
+        serverUrl: String,
+        token: String,
+        groupId: String,
+        sender: String,
+        characterName: String?,
+        content: String
+    ): Boolean {
+        val url = "${serverUrl.trimEnd('/')}/api/sync/groups/$groupId/messages"
+        val json = JSONObject().apply {
+            put("Sender", sender)
+            put("CharacterName", characterName)
+            put("Content", content)
+        }.toString()
+        val request = Request.Builder()
+            .url(url)
+            .post(json.toRequestBody(JSON_MEDIA_TYPE))
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        try {
+            client.newCall(request).execute().use { response ->
+                return response.isSuccessful
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return false
+        }
     }
 }

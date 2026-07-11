@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 
 class ChatViewModel(
     private val characterId: Int,
@@ -33,6 +35,60 @@ class ChatViewModel(
     // Holds the partial streamed response being built
     private var streamingMessageId: Int = -1
     private var streamBuffer = StringBuilder()
+
+    fun syncMessages(serverUrl: String, token: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val char = repository.getCharacterById(characterId) ?: return@launch
+            var conversationId = char.conversationId
+            if (conversationId.isNullOrBlank()) {
+                conversationId = java.util.UUID.randomUUID().toString()
+                repository.updateCharacter(char.copy(conversationId = conversationId))
+                saveCompanionToServer(serverUrl, token, char.copy(conversationId = conversationId))
+                return@launch
+            }
+            
+            val serverMsgs = HavenHttpClient.getConversationMessages(serverUrl, token, conversationId)
+            if (serverMsgs.isNotEmpty()) {
+                repository.clearMessagesForCharacter(characterId)
+                serverMsgs.forEach { obj ->
+                    val role = obj.getString("role")
+                    val content = obj.getString("content")
+                    val sender = if (role == "user") "user" else "character"
+                    repository.insertMessage(
+                        MessageEntity(
+                            characterId = characterId,
+                            sender = sender,
+                            text = content
+                        )
+                    )
+                }
+            }
+        }
+     }
+
+     private fun saveCompanionToServer(serverUrl: String, token: String, char: CharacterEntity) {
+         val url = "${serverUrl.trimEnd('/')}/api/companions"
+         val body = org.json.JSONObject().apply {
+             put("Name", char.name)
+             put("VoiceId", char.voiceId)
+             put("Description", char.description)
+             put("Personality", char.personality)
+             put("Scenario", char.scenario)
+             put("FirstMessage", char.firstMessage)
+             put("SystemPrompt", char.systemPrompt)
+             put("ConversationId", char.conversationId)
+         }.toString()
+         val request = okhttp3.Request.Builder()
+             .url(url)
+             .post(body.toRequestBody("application/json; charset=utf-8".toMediaType()))
+             .addHeader("Authorization", "Bearer $token")
+             .build()
+         try {
+             okhttp3.OkHttpClient().newCall(request).execute().close()
+         } catch (e: Exception) {
+             e.printStackTrace()
+         }
+     }
 
     fun sendMessage(context: Context, serverUrl: String, token: String, text: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -91,6 +147,7 @@ class ChatViewModel(
                 appendLine("[System Instruction: You can dynamically update your location, outfit, or expression/mood if the context changes by including '[Location: name]', '[Outfit: description]', or '[Mood: expression]' inside your <thought>...</thought> block. The app will automatically update your state! Example: '<thought>I am feeling hot. [Outfit: casual t-shirt and shorts] [Location: beach] [Mood: smiling]</thought> let's head down to the beach!' Only change these when it makes sense for the chat flow. State updates must go strictly inside <thought>...</thought> tags, never in the final chat message.]")
                 appendLine("[System Instruction: Format roleplay actions, physical gestures, and immediate/direct thoughts using asterisks (e.g. *smiles and waves*, *thinking to myself: this is interesting*). Do not use square brackets [like this] for roleplay actions or thoughts. Understand that $userName will also use asterisks for their actions and thoughts.]")
                 appendLine("[System Instruction: You have access to the 'generate_portrait' tool. You should invoke it whenever $userName asks for a picture, photo, selfie, or visual update, or when you decide on your own to show $userName what you are doing. To call the tool, you MUST output the tag <call>generate_portrait</call> immediately after your </thought> tag (before your conversational dialogue). Do not output any arguments. The app will automatically generate the image and display it to the user.]")
+                appendLine("[System Instruction: You have access to the 'generate_3d_avatar' tool. You should invoke it whenever $userName asks you to design, generate, wear, or change a 3D model/body, or when you decide to design a new 3D physical body for yourself. To call the tool, you MUST output the tag <call>generate_3d_avatar</call> immediately after your </thought> tag (before your conversational dialogue). Do not output any arguments. The app will automatically generate the 3D model and update your avatar background.]")
             }
             val fullPrompt = if (systemContext.isNotBlank()) "$systemContext\n\n$userName: $text" else text
 
@@ -98,6 +155,7 @@ class ChatViewModel(
             repository.insertMessage(
                 MessageEntity(characterId = characterId, sender = "user", text = text)
             )
+            xyz.ssfdre38.haven.ui.widget.HavenAppWidgetProvider.triggerUpdate(context)
 
             // Insert a placeholder message for character response (will update as tokens arrive)
             val placeholderMsgId = repository.insertMessage(
@@ -106,11 +164,13 @@ class ChatViewModel(
             streamingMessageId = placeholderMsgId
             streamBuffer.clear()
 
-            val conversationIdKey = "conversation_id_$characterId"
-            var conversationId = sharedPrefs.getString(conversationIdKey, null)
-            if (conversationId == null) {
+            var conversationId = char?.conversationId
+            if (conversationId.isNullOrBlank()) {
                 conversationId = java.util.UUID.randomUUID().toString()
-                sharedPrefs.edit().putString(conversationIdKey, conversationId).apply()
+                if (char != null) {
+                    repository.updateCharacter(char.copy(conversationId = conversationId))
+                    saveCompanionToServer(serverUrl, token, char.copy(conversationId = conversationId))
+                }
             }
 
             HavenHttpClient.streamChat(
@@ -140,7 +200,8 @@ class ChatViewModel(
                     // Parse thoughts for state updates
                     val thoughtRegex = "<\\s*thought\\s*>(.*?)<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
                     val toolCallRegex = "(?:\\[\\s*(?:Tool\\s*(?:Call\\s*)?:\\s*)?generate_portr?ait\\s*\\])|(?:<\\s*call\\s*>\\s*generate_portr?ait\\s*<\\s*/\\s*call\\s*>)|(?:<\\s*call\\s*:\\s*generate_portr?ait\\s*>)".toRegex(RegexOption.IGNORE_CASE)
-                    val cleanText = fullText.replace(thoughtRegex, "").replace(toolCallRegex, "").trim()
+                    val avatar3dRegex = "(?:\\[\\s*(?:Tool\\s*(?:Call\\s*)?:\\s*)?generate_3d_avatar\\s*\\])|(?:<\\s*call\\s*>\\s*generate_3d_avatar\\s*<\\s*/\\s*call\\s*>)|(?:<\\s*call\\s*:\\s*generate_3d_avatar\\s*>)".toRegex(RegexOption.IGNORE_CASE)
+                    val cleanText = fullText.replace(thoughtRegex, "").replace(toolCallRegex, "").replace(avatar3dRegex, "").trim()
                     var newOutfit: String? = null
                     var newLocation: String? = null
                     var newMood: String? = null
@@ -284,6 +345,69 @@ class ChatViewModel(
                                 }
                             }
                         }
+                    } else if (avatar3dRegex.containsMatchIn(fullText)) {
+                        val cleanedText = fullText.replace(toolCallRegex, "").replace(avatar3dRegex, "").trim()
+                        
+                        // Immediately clean up the message in the DB
+                        viewModelScope.launch(Dispatchers.IO) {
+                            val lastMsg = repository.getLastMessage(characterId)
+                            if (lastMsg != null && lastMsg.sender == "character") {
+                                repository.insertMessage(lastMsg.copy(text = cleanedText))
+                            }
+                        }
+
+                        // Trigger the 3D model generation tool
+                        viewModelScope.launch(Dispatchers.IO) {
+                            val currentChar = repository.getCharacterById(characterId)
+                            val prompt = if (currentChar != null) {
+                                val currentOutfitVal = newOutfit ?: currentChar.currentOutfit
+                                val currentLocationVal = newLocation ?: currentChar.currentLocation
+                                val currentMoodVal = newMood ?: currentChar.currentMood
+                                "${currentChar.name}, description: ${currentChar.description}, wearing ${currentOutfitVal.ifBlank { "casual attire" }}, location: ${currentLocationVal.ifBlank { "cozy room" }}, expression: ${currentMoodVal.ifBlank { "smiling" }}"
+                            } else {
+                                "companion avatar model"
+                            }
+                            
+                            val args = org.json.JSONObject().apply {
+                                put("description", prompt)
+                            }
+                            
+                            HavenHttpClient.executeTool(
+                                serverUrl = serverUrl,
+                                token = token,
+                                toolName = "generate_3d_avatar",
+                                arguments = args
+                            ) { result ->
+                                result.onSuccess { relativeUrl ->
+                                    val resolvedUrl = if (relativeUrl.startsWith("/")) {
+                                        val host = serverUrl.trimEnd('/')
+                                        if (host.startsWith("http")) "$host$relativeUrl" else "http://$host$relativeUrl"
+                                    } else {
+                                        relativeUrl
+                                    }
+                                    
+                                    viewModelScope.launch(Dispatchers.IO) {
+                                        val msg = repository.getLastMessage(characterId)
+                                        if (msg != null && msg.sender == "character") {
+                                            repository.insertMessage(msg.copy(text = "${msg.text}\n[3D Avatar Updated]"))
+                                        }
+                                        
+                                        try {
+                                            val localPath = HavenHttpClient.downloadGlb(context, resolvedUrl, currentChar?.name ?: "companion")
+                                            if (localPath != null) {
+                                                val char = repository.getCharacterById(characterId)
+                                                if (char != null) {
+                                                    repository.updateCharacter(char.copy(vrmModelPath = localPath))
+                                                    xyz.ssfdre38.haven.ui.widget.HavenAppWidgetProvider.triggerUpdate(context)
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     } else {
                         // Parse clean text for inline image URLs to download and save locally
                         val urlRegex = "(https?://[^\\s/]+/uploads/[\\w\\d-]+\\.(?:png|jpg|jpeg|webp))|(/uploads/[\\w\\d-]+\\.(?:png|jpg|jpeg|webp))".toRegex(RegexOption.IGNORE_CASE)
@@ -323,6 +447,7 @@ class ChatViewModel(
                     // Award XP for this interaction (10 XP per reply)
                     viewModelScope.launch(Dispatchers.IO) {
                         repository.addXpAndIncrementMessages(characterId, 10)
+                        xyz.ssfdre38.haven.ui.widget.HavenAppWidgetProvider.triggerUpdate(context)
                     }
 
                     // Background memory extraction — ask the model to extract key facts

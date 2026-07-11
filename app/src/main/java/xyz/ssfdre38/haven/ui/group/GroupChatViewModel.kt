@@ -94,11 +94,21 @@ class GroupChatViewModel(
             streamingMessageId = placeholderId
             streamBuffer.clear()
 
-            val conversationIdKey = "conversation_id_group_$groupId"
-            var conversationId = sharedPrefs.getString(conversationIdKey, null)
-            if (conversationId == null) {
-                conversationId = java.util.UUID.randomUUID().toString()
-                sharedPrefs.edit().putString(conversationIdKey, conversationId).apply()
+            val grp = _group.value
+            var groupUuid = grp?.uuid
+            if (groupUuid.isNullOrBlank() && grp != null) {
+                groupUuid = java.util.UUID.randomUUID().toString()
+                val updatedGrp = grp.copy(uuid = groupUuid)
+                repository.insertGroupChat(updatedGrp)
+                _group.value = updatedGrp
+                
+                // Push configuration to server
+                val characterNames = chars.map { it.name }.joinToString(",")
+                HavenHttpClient.saveGroup(serverUrl, token, groupUuid, grp.name, characterNames)
+            }
+
+            if (groupUuid != null) {
+                HavenHttpClient.saveGroupMessage(serverUrl, token, groupUuid, "user", null, text)
             }
 
             // 3. Compile prompt
@@ -109,7 +119,7 @@ class GroupChatViewModel(
                 serverUrl = serverUrl,
                 prompt = prompt,
                 token = token,
-                conversationId = conversationId,
+                conversationId = groupUuid,
                 displayName = userName,
                 onToken = { token ->
                     streamBuffer.append(token)
@@ -307,6 +317,13 @@ class GroupChatViewModel(
                         }
                     }
 
+                    // Push response to server
+                    if (groupUuid != null) {
+                        viewModelScope.launch(Dispatchers.IO) {
+                            HavenHttpClient.saveGroupMessage(serverUrl, token, groupUuid, "character", targetChar.name, cleanText)
+                        }
+                    }
+
                     // Award XP for this interaction
                     viewModelScope.launch(Dispatchers.IO) {
                         repository.addXpAndIncrementMessages(targetChar.id, 5)
@@ -398,11 +415,17 @@ class GroupChatViewModel(
             streamingMessageId = placeholderId
             streamBuffer.clear()
 
-            val conversationIdKey = "conversation_id_group_$groupId"
-            var conversationId = sharedPrefs.getString(conversationIdKey, null)
-            if (conversationId == null) {
-                conversationId = java.util.UUID.randomUUID().toString()
-                sharedPrefs.edit().putString(conversationIdKey, conversationId).apply()
+            val grp = _group.value
+            var groupUuid = grp?.uuid
+            if (groupUuid.isNullOrBlank() && grp != null) {
+                groupUuid = java.util.UUID.randomUUID().toString()
+                val updatedGrp = grp.copy(uuid = groupUuid)
+                repository.insertGroupChat(updatedGrp)
+                _group.value = updatedGrp
+                
+                // Push configuration to server
+                val characterNames = chars.map { it.name }.joinToString(",")
+                HavenHttpClient.saveGroup(serverUrl, token, groupUuid, grp.name, characterNames)
             }
 
             val prompt = compileBanterPrompt(targetChar, chars, userName)
@@ -411,7 +434,7 @@ class GroupChatViewModel(
                 serverUrl = serverUrl,
                 prompt = prompt,
                 token = token,
-                conversationId = conversationId,
+                conversationId = groupUuid,
                 displayName = userName,
                 onToken = { token ->
                     streamBuffer.append(token)
@@ -458,6 +481,13 @@ class GroupChatViewModel(
                                 }
                             }
                         }
+
+                    val cleanText = fullText.replace(thoughtRegex, "").trim()
+                    if (groupUuid != null) {
+                        viewModelScope.launch(Dispatchers.IO) {
+                            HavenHttpClient.saveGroupMessage(serverUrl, token, groupUuid, "character", targetChar.name, cleanText)
+                        }
+                    }
 
                     viewModelScope.launch(Dispatchers.IO) {
                         repository.addXpAndIncrementMessages(targetChar.id, 5)
@@ -580,5 +610,35 @@ class GroupChatViewModel(
             "take a look at this photo"
         )
         return phrases.any { cleanLower.contains(it) }
+    }
+
+    fun syncGroupMessages(serverUrl: String, token: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val grp = repository.getGroupChatById(groupId) ?: return@launch
+            val groupUuid = grp.uuid ?: return@launch
+            val serverMsgs = HavenHttpClient.getGroupMessages(serverUrl, token, groupUuid)
+            if (serverMsgs.isNotEmpty()) {
+                repository.clearGroupMessages(groupId)
+                serverMsgs.forEach { obj ->
+                    val sender = obj.getString("sender")
+                    val characterName = if (obj.has("characterName") && !obj.isNull("characterName")) obj.getString("characterName") else null
+                    val content = obj.getString("content")
+                    
+                    var characterId: Int? = null
+                    if (sender == "character" && characterName != null) {
+                        characterId = repository.getCharacterByName(characterName)?.id
+                    }
+                    
+                    repository.insertGroupMessage(
+                        GroupMessageEntity(
+                            groupId = groupId,
+                            sender = sender,
+                            characterId = characterId,
+                            text = content
+                        )
+                    )
+                }
+            }
+        }
     }
 }
