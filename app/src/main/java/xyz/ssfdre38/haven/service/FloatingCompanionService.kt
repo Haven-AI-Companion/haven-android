@@ -38,6 +38,7 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
     private var composeView: ComposeView? = null
     private val scope = CoroutineScope(Dispatchers.Main + Job())
     private var repository: DataRepository? = null
+    private var isUserDragging = false
 
     // LifecycleOwner implementation
     private val lifecycleRegistry = LifecycleRegistry(this)
@@ -104,11 +105,62 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
                     if (companionModelPath == null) return@LaunchedEffect
                     while (true) {
                         kotlinx.coroutines.delay((25000..50000).random().toLong())
+                        if (isUserDragging) continue
+                        
                         val gestureIndex = (1..2).random()
                         activeAnimationIndex = gestureIndex
                         
                         // Play gesture for 4 seconds, then blend back to standard idle
                         kotlinx.coroutines.delay(4000)
+                        activeAnimationIndex = 0
+                    }
+                }
+
+                // Autonomous Walking Behavior across the home screen
+                LaunchedEffect(companionModelPath) {
+                    if (companionModelPath == null) return@LaunchedEffect
+                    while (true) {
+                        // Wait a random duration between 40 to 80 seconds before walking
+                        kotlinx.coroutines.delay((40000..80000).random().toLong())
+                        if (isUserDragging) continue // skip auto-walk if user is actively dragging
+                        
+                        val displayMetrics = android.util.DisplayMetrics()
+                        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                            val bounds = wm.currentWindowMetrics.bounds
+                            displayMetrics.widthPixels = bounds.width()
+                        } else {
+                            @Suppress("DEPRECATION")
+                            wm.defaultDisplay.getMetrics(displayMetrics)
+                        }
+                        
+                        // Target a new random position on the screen
+                        val maxTargetX = (displayMetrics.widthPixels - 160).coerceAtLeast(100)
+                        val targetX = (30..maxTargetX).random()
+                        val startX = params.x
+                        val distance = Math.abs(targetX - startX)
+                        if (distance < 50) continue // Skip tiny walks
+                        
+                        // Set animation index 3 (standard locomotion/walk in VRMs)
+                        activeAnimationIndex = 3
+                        
+                        // Smoothly transition x layout coordinate over time
+                        val steps = (distance / 3).coerceAtLeast(15)
+                        val stepDelay = 30L
+                        val delta = (targetX - startX).toFloat() / steps
+                        
+                        for (step in 1..steps) {
+                            if (isUserDragging) break // Immediately abort walk if user grabs companion
+                            params.x = (startX + delta * step).toInt()
+                            try {
+                                windowManager?.updateViewLayout(composeView, params)
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                            kotlinx.coroutines.delay(stepDelay)
+                        }
+                        
+                        // Restore idle breathing state
                         activeAnimationIndex = 0
                     }
                 }
@@ -146,9 +198,11 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
                         initialTouchX = event.rawX
                         initialTouchY = event.rawY
                         touchDownTime = System.currentTimeMillis()
+                        isUserDragging = true
                         return true
                     }
                     MotionEvent.ACTION_UP -> {
+                        isUserDragging = false
                         val duration = System.currentTimeMillis() - touchDownTime
                         val diffX = Math.abs(event.rawX - initialTouchX)
                         val diffY = Math.abs(event.rawY - initialTouchY)
@@ -169,9 +223,14 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
                         return true
                     }
                     MotionEvent.ACTION_MOVE -> {
+                        isUserDragging = true
                         params.x = initialX + (event.rawX - initialTouchX).toInt()
                         params.y = initialY + (event.rawY - initialTouchY).toInt()
                         windowManager?.updateViewLayout(composeView, params)
+                        return true
+                    }
+                    MotionEvent.ACTION_CANCEL -> {
+                        isUserDragging = false
                         return true
                     }
                 }
