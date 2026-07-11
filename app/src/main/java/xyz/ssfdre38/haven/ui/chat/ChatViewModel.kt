@@ -396,7 +396,7 @@ class ChatViewModel(
                                 }
                             }
                         }
-                    } else if (avatar3dRegex.containsMatchIn(fullText)) {
+                    } else if (avatar3dRegex.containsMatchIn(fullText) || shouldAutoTrigger3DAvatar(cleanText)) {
                         val cleanedText = fullText.replace(toolCallRegex, "").replace(avatar3dRegex, "").trim()
                         
                         // Immediately clean up the message in the DB
@@ -807,6 +807,22 @@ ${character.value?.name ?: "Companion"}: $cleanText"""
             "sent you a photo", "sent you a picture", "sent a photo", "sent a picture",
             "took a photo", "took a picture", "took a selfie", "take a look at this picture",
             "take a look at this photo"
+        )
+        return phrases.any { cleanLower.contains(it) }
+    }
+
+    private fun shouldAutoTrigger3DAvatar(text: String): Boolean {
+        val cleanLower = text.lowercase()
+        val phrases = listOf(
+            "sends you a 3d model", "sending you a 3d model", "sends a 3d model", "sending a 3d model",
+            "here is my 3d model", "here's my 3d model", "here is the 3d model", "here's the 3d model",
+            "sends you a 3d avatar", "sending you a 3d avatar", "sends a 3d avatar", "sending a 3d avatar",
+            "here is my 3d avatar", "here's my 3d avatar", "here is the 3d avatar", "here's the 3d avatar",
+            "created a 3d model", "creating a 3d model", "created a 3d avatar", "creating a 3d avatar",
+            "designed a 3d model", "designed a 3d avatar", "generate a 3d model", "generate a 3d avatar",
+            "generating a 3d model", "generating a 3d avatar", "generates a 3d model", "generates a 3d avatar",
+            "updated my 3d model", "updated my 3d avatar", "updating my 3d model", "updating my 3d avatar",
+            "wearing a new 3d body", "wear a new 3d body"
         )
         return phrases.any { cleanLower.contains(it) }
     }
