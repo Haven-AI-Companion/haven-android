@@ -26,6 +26,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import xyz.ssfdre38.haven.data.DataRepository
 import xyz.ssfdre38.haven.data.DefaultDataRepository
 import xyz.ssfdre38.haven.data.database.AppDatabase
@@ -92,8 +93,25 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
                 
                 LaunchedEffect(Unit) {
                     repository?.getAllCharacters()?.collect { list ->
-                        val char = list.firstOrNull()
+                        val char = list.maxByOrNull { it.relationshipXp } ?: list.firstOrNull()
                         if (char != null) {
+                            if (char.vrmModelPath.isNullOrBlank() || !File(char.vrmModelPath).exists()) {
+                                scope.launch(Dispatchers.IO) {
+                                    try {
+                                        val defaultUrl = "https://raw.githubusercontent.com/vrm-c/UniVRM/master/Tests/Models/Alicia_vrm-0.51/AliciaSolid_vrm-0.51.vrm"
+                                        val localPath = xyz.ssfdre38.haven.data.network.HavenHttpClient.downloadGlb(
+                                            applicationContext,
+                                            defaultUrl,
+                                            char.name
+                                        )
+                                        if (localPath != null) {
+                                            repository?.updateCharacter(char.copy(vrmModelPath = localPath))
+                                        }
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    }
+                                }
+                            }
                             companionModelPath = char.vrmModelPath
                             mood = char.currentMood
                         }
