@@ -95,6 +95,30 @@ fun SettingsScreen(
     var quietTimeEnd by remember { mutableStateOf(sharedPrefs.getString("quiet_time_end", "07:00") ?: "07:00") }
     var enableBubbles by remember { mutableStateOf(sharedPrefs.getBoolean("enable_bubbles", true)) }
     var enableOverlay by remember { mutableStateOf(sharedPrefs.getBoolean("enable_overlay", false) && android.provider.Settings.canDrawOverlays(context)) }
+    
+    val database = remember { xyz.ssfdre38.haven.data.database.AppDatabase.getInstance(context) }
+    val dao = remember { database.havenDao() }
+    var activeCompanionVrmPath by remember { mutableStateOf<String?>(null) }
+    
+    LaunchedEffect(Unit) {
+        dao.getAllCharacters().collect { list ->
+            val activeChar = list.maxByOrNull { it.relationshipXp } ?: list.firstOrNull()
+            activeCompanionVrmPath = activeChar?.vrmModelPath
+            
+            // If the active companion has no VRM model, turn off the overlay automatically
+            val hasVrm = activeChar?.vrmModelPath?.let { java.io.File(it).exists() } == true
+            if (!hasVrm && sharedPrefs.getBoolean("enable_overlay", false)) {
+                sharedPrefs.edit().putBoolean("enable_overlay", false).apply()
+                enableOverlay = false
+                context.stopService(Intent(context, xyz.ssfdre38.haven.service.FloatingCompanionService::class.java))
+            }
+        }
+    }
+    
+    val hasVrmModel = remember(activeCompanionVrmPath) {
+        activeCompanionVrmPath?.let { java.io.File(it).exists() } == true
+    }
+    
     var testStatus by remember { mutableStateOf<String?>(null) }
     var isTesting by remember { mutableStateOf(false) }
 
@@ -406,12 +430,23 @@ fun SettingsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Floating 3D Companion Overlay",
-                    style = MaterialTheme.typography.bodyLarge
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Floating 3D Companion Overlay",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (hasVrmModel) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    )
+                    if (!hasVrmModel) {
+                        Text(
+                            text = "(No 3D model attached to active companion)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
                 Switch(
-                    checked = enableOverlay,
+                    checked = enableOverlay && hasVrmModel,
+                    enabled = hasVrmModel,
                     onCheckedChange = { checked ->
                         if (checked) {
                             sharedPrefs.edit().putBoolean("enable_overlay", true).apply()

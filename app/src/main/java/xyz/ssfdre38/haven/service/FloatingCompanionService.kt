@@ -95,23 +95,6 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
                     repository?.getAllCharacters()?.collect { list ->
                         val char = list.maxByOrNull { it.relationshipXp } ?: list.firstOrNull()
                         if (char != null) {
-                            if (char.vrmModelPath.isNullOrBlank() || !File(char.vrmModelPath).exists()) {
-                                scope.launch(Dispatchers.IO) {
-                                    try {
-                                        val defaultUrl = "https://raw.githubusercontent.com/vrm-c/UniVRM/master/Tests/Models/Alicia_vrm-0.51/AliciaSolid_vrm-0.51.vrm"
-                                        val localPath = xyz.ssfdre38.haven.data.network.HavenHttpClient.downloadGlb(
-                                            applicationContext,
-                                            defaultUrl,
-                                            char.name
-                                        )
-                                        if (localPath != null) {
-                                            repository?.updateCharacter(char.copy(vrmModelPath = localPath))
-                                        }
-                                    } catch (e: Exception) {
-                                        e.printStackTrace()
-                                    }
-                                }
-                            }
                             companionModelPath = char.vrmModelPath
                             mood = char.currentMood
                         }
@@ -184,7 +167,8 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
                 }
 
                 val path = companionModelPath
-                if (path != null && File(path).exists()) {
+                val fileExists = remember(path) { path?.let { File(it).exists() } == true }
+                if (fileExists && path != null) {
                     Box(modifier = Modifier.size(160.dp, 220.dp)) {
                         VrmAvatarView(
                             modelPath = path,
@@ -193,6 +177,11 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
                             animationIndex = activeAnimationIndex,
                             modifier = Modifier.fillMaxSize()
                         )
+                    }
+                } else if (path != null || companionModelPath != null) {
+                    // Turn off service dynamically if VRM model is missing
+                    LaunchedEffect(path) {
+                        stopSelf()
                     }
                 }
             }
