@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -239,6 +240,8 @@ fun LightboxViewer(
     message: MessageEntity,
     onDismiss: () -> Unit
 ) {
+    var showPrompt by remember { mutableStateOf(false) }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
@@ -263,26 +266,46 @@ fun LightboxViewer(
                 contentScale = ContentScale.Fit
             )
 
-            // Header close button
-            IconButton(
-                onClick = onDismiss,
+            // Header close and info buttons
+            Row(
                 modifier = Modifier
                     .statusBarsPadding()
                     .padding(16.dp)
-                    .align(Alignment.TopEnd)
-                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(50))
+                    .align(Alignment.TopEnd),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Close",
-                    tint = Color.White
-                )
+                if (message.text.isNotBlank()) {
+                    IconButton(
+                        onClick = { showPrompt = !showPrompt },
+                        modifier = Modifier
+                            .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(50))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "Toggle Prompt Info",
+                            tint = if (showPrompt) MaterialTheme.colorScheme.primary else Color.White
+                        )
+                    }
+                }
+
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(50))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = Color.White
+                    )
+                }
             }
 
-            // Prompt metadata card at the bottom (if text exists)
-            if (message.text.isNotBlank()) {
+            // Prompt metadata card at the bottom (if toggled and text exists)
+            if (showPrompt && message.text.isNotBlank()) {
                 Surface(
-                    color = Color.Black.copy(alpha = 0.7f),
+                    color = Color.Black.copy(alpha = 0.75f),
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
