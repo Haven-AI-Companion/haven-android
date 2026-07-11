@@ -37,8 +37,8 @@ object HavenHttpClient {
     ) {
         val url = "${serverUrl.trimEnd('/')}/api/auth/mobile/pair/confirm"
         val requestBodyJson = JSONObject().apply {
-            put("Code", pairingCode)
-            put("DeviceName", deviceName)
+            put("code", pairingCode)
+            put("device_name", deviceName)
         }.toString()
 
         val request = Request.Builder()
@@ -97,10 +97,10 @@ object HavenHttpClient {
             put("model", null)
             put("image", null)
             if (conversationId != null) {
-                put("conversationId", conversationId)
+                put("conversation_id", conversationId)
             }
             if (displayName != null) {
-                put("displayName", displayName)
+                put("display_name", displayName)
             }
         }.toString()
 
@@ -537,9 +537,9 @@ object HavenHttpClient {
     ): Boolean {
         val url = "${serverUrl.trimEnd('/')}/api/sync/memories"
         val json = JSONObject().apply {
-            put("CompanionName", companionName)
-            put("Content", content)
-            put("Category", category)
+            put("companion_name", companionName)
+            put("content", content)
+            put("category", category)
         }.toString()
         val request = Request.Builder()
             .url(url)
@@ -624,9 +624,9 @@ object HavenHttpClient {
     ): Boolean {
         val url = "${serverUrl.trimEnd('/')}/api/sync/diaries"
         val json = JSONObject().apply {
-            put("CompanionName", companionName)
-            put("DateString", dateString)
-            put("Content", content)
+            put("companion_name", companionName)
+            put("date_string", dateString)
+            put("content", content)
         }.toString()
         val request = Request.Builder()
             .url(url)
@@ -685,9 +685,9 @@ object HavenHttpClient {
     ): Boolean {
         val url = "${serverUrl.trimEnd('/')}/api/sync/groups"
         val json = JSONObject().apply {
-            put("Id", id)
-            put("Name", name)
-            put("CharacterNames", characterNames)
+            put("id", id)
+            put("name", name)
+            put("character_names", characterNames)
         }.toString()
         val request = Request.Builder()
             .url(url)
@@ -772,9 +772,9 @@ object HavenHttpClient {
     ): Boolean {
         val url = "${serverUrl.trimEnd('/')}/api/sync/groups/$groupId/messages"
         val json = JSONObject().apply {
-            put("Sender", sender)
-            put("CharacterName", characterName)
-            put("Content", content)
+            put("sender", sender)
+            put("character_name", characterName)
+            put("content", content)
         }.toString()
         val request = Request.Builder()
             .url(url)

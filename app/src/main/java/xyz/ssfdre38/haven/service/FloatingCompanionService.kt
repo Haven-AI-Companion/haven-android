@@ -58,6 +58,7 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
         savedStateRegistryController.performAttach()
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
+        lifecycleRegistry.currentState = Lifecycle.State.STARTED
         
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val database = AppDatabase.getInstance(applicationContext)
@@ -78,6 +79,7 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
 
         // Initialize Compose view
         composeView = ComposeView(this).apply {
+            setViewCompositionStrategy(androidx.compose.ui.platform.ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setViewTreeLifecycleOwner(this@FloatingCompanionService)
             setViewTreeSavedStateRegistryOwner(this@FloatingCompanionService)
             setViewTreeViewModelStoreOwner(this@FloatingCompanionService)
@@ -116,6 +118,8 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
             private var initialY = 0
             private var initialTouchX = 0f
             private var initialTouchY = 0f
+            private var lastClickTime: Long = 0
+            private var touchDownTime: Long = 0
 
             override fun onTouch(v: View?, event: MotionEvent?): Boolean {
                 if (event == null) return false
@@ -125,6 +129,27 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
                         initialY = params.y
                         initialTouchX = event.rawX
                         initialTouchY = event.rawY
+                        touchDownTime = System.currentTimeMillis()
+                        return true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        val duration = System.currentTimeMillis() - touchDownTime
+                        val diffX = Math.abs(event.rawX - initialTouchX)
+                        val diffY = Math.abs(event.rawY - initialTouchY)
+                        if (duration < 250 && diffX < 10 && diffY < 10) {
+                            val currentTime = System.currentTimeMillis()
+                            if (currentTime - lastClickTime < 300) {
+                                try {
+                                    val intent = Intent(this@FloatingCompanionService, xyz.ssfdre38.haven.MainActivity::class.java).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                                    }
+                                    startActivity(intent)
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                            lastClickTime = currentTime
+                        }
                         return true
                     }
                     MotionEvent.ACTION_MOVE -> {
@@ -153,6 +178,8 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
     }
 
     override fun onDestroy() {
+        lifecycleRegistry.currentState = Lifecycle.State.STARTED
+        lifecycleRegistry.currentState = Lifecycle.State.CREATED
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         super.onDestroy()
         scope.cancel()

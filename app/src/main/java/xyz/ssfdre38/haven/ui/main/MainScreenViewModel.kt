@@ -226,11 +226,25 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
             val host = sharedPrefs.getString("ash_host", "") ?: ""
             val port = sharedPrefs.getString("ash_port", "") ?: ""
             val token = sharedPrefs.getString("auth_token", "") ?: ""
-            if (host.isNotBlank() && token.isNotBlank()) {
+            val characterNames = characterIds.mapNotNull { dataRepository.getCharacterById(it)?.name }.joinToString(",")
+            
+            val success = if (host.isNotBlank() && token.isNotBlank()) {
                 val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
                 val serverUrl = "$formattedHost:${port.trim()}"
-                val characterNames = characterIds.mapNotNull { dataRepository.getCharacterById(it)?.name }.joinToString(",")
                 HavenHttpClient.saveGroup(serverUrl, token, uuid, name, characterNames)
+            } else false
+            
+            if (!success) {
+                val payload = org.json.JSONObject().apply {
+                    put("id", uuid)
+                    put("name", name)
+                    put("character_names", characterNames)
+                }
+                xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                    context,
+                    xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_SAVE_GROUP,
+                    payload
+                )
             }
         }
     }
@@ -244,10 +258,22 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
             val host = sharedPrefs.getString("ash_host", "") ?: ""
             val port = sharedPrefs.getString("ash_port", "") ?: ""
             val token = sharedPrefs.getString("auth_token", "") ?: ""
-            if (host.isNotBlank() && token.isNotBlank()) {
+            
+            val success = if (host.isNotBlank() && token.isNotBlank()) {
                 val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
                 val serverUrl = "$formattedHost:${port.trim()}"
                 HavenHttpClient.deleteGroup(serverUrl, token, groupUuid)
+            } else false
+            
+            if (!success) {
+                val payload = org.json.JSONObject().apply {
+                    put("id", groupUuid)
+                }
+                xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                    context,
+                    xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_DELETE_GROUP,
+                    payload
+                )
             }
         }
     }
@@ -265,9 +291,9 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
             
             val serverGroups = HavenHttpClient.getGroups(serverUrl, token)
             serverGroups.forEach { obj ->
-                val uuid = obj.getString("id")
+                val uuid = if (obj.has("id")) obj.getString("id") else obj.getString("uuid")
                 val name = obj.getString("name")
-                val characterNamesStr = obj.getString("characterNames")
+                val characterNamesStr = if (obj.has("character_names")) obj.getString("character_names") else obj.getString("characterNames")
                 
                 val existing = dataRepository.getGroupChatByUuid(uuid)
                 if (existing == null) {
@@ -329,13 +355,29 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                         list.add(
                             CharacterEntity(
                                 name = obj.getString("name"),
-                                avatarPath = if (obj.has("avatarPath") && !obj.isNull("avatarPath")) obj.getString("avatarPath") else null,
-                                voiceId = if (obj.has("voiceId") && !obj.isNull("voiceId")) obj.getString("voiceId") else "en_US-amy-medium",
+                                avatarPath = when {
+                                    obj.has("avatar_path") && !obj.isNull("avatar_path") -> obj.getString("avatar_path")
+                                    obj.has("avatarPath") && !obj.isNull("avatarPath") -> obj.getString("avatarPath")
+                                    else -> null
+                                },
+                                voiceId = when {
+                                    obj.has("voice_id") && !obj.isNull("voice_id") -> obj.getString("voice_id")
+                                    obj.has("voiceId") && !obj.isNull("voiceId") -> obj.getString("voiceId")
+                                    else -> "en_US-amy-medium"
+                                },
                                 description = if (obj.has("description") && !obj.isNull("description")) obj.getString("description") else "",
                                 personality = if (obj.has("personality") && !obj.isNull("personality")) obj.getString("personality") else "",
                                 scenario = if (obj.has("scenario") && !obj.isNull("scenario")) obj.getString("scenario") else "",
-                                firstMessage = if (obj.has("firstMessage") && !obj.isNull("firstMessage")) obj.getString("firstMessage") else "",
-                                systemPrompt = if (obj.has("systemPrompt") && !obj.isNull("systemPrompt")) obj.getString("systemPrompt") else ""
+                                firstMessage = when {
+                                    obj.has("first_message") && !obj.isNull("first_message") -> obj.getString("first_message")
+                                    obj.has("firstMessage") && !obj.isNull("firstMessage") -> obj.getString("firstMessage")
+                                    else -> ""
+                                },
+                                systemPrompt = when {
+                                    obj.has("system_prompt") && !obj.isNull("system_prompt") -> obj.getString("system_prompt")
+                                    obj.has("systemPrompt") && !obj.isNull("systemPrompt") -> obj.getString("systemPrompt")
+                                    else -> ""
+                                }
                             )
                         )
                     }

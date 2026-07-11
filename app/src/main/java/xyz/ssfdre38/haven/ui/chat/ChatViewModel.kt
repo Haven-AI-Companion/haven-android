@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaType
@@ -120,14 +121,14 @@ class ChatViewModel(
      private fun saveCompanionToServer(serverUrl: String, token: String, char: CharacterEntity) {
          val url = "${serverUrl.trimEnd('/')}/api/companions"
          val body = org.json.JSONObject().apply {
-             put("Name", char.name)
-             put("VoiceId", char.voiceId)
-             put("Description", char.description)
-             put("Personality", char.personality)
-             put("Scenario", char.scenario)
-             put("FirstMessage", char.firstMessage)
-             put("SystemPrompt", char.systemPrompt)
-             put("ConversationId", char.conversationId)
+             put("name", char.name)
+             put("voice_id", char.voiceId)
+             put("description", char.description)
+             put("personality", char.personality)
+             put("scenario", char.scenario)
+             put("first_message", char.firstMessage)
+             put("system_prompt", char.systemPrompt)
+             put("conversation_id", char.conversationId)
          }.toString()
          val request = okhttp3.Request.Builder()
              .url(url)
@@ -149,6 +150,7 @@ class ChatViewModel(
             val char = repository.getCharacterById(characterId)
             // Fetch memories BEFORE buildString (suspend call must be in coroutine body)
             val memories = repository.getRecentMemories(characterId, 20)
+            val diaries = repository.getDiaryEntries(characterId).first().take(5)
             val level = if (char != null) (char.relationshipXp / 100) + 1 else 1
             val relationshipTitle = when {
                 level >= 20 -> "Partner"
@@ -192,6 +194,13 @@ class ChatViewModel(
                         appendLine()
                         appendLine("[Memories you have about $userName:]")
                         memories.forEach { appendLine("- ${it.content}") }
+                    }
+
+                    // Inject diary entries (past reflections)
+                    if (diaries.isNotEmpty()) {
+                        appendLine()
+                        appendLine("[Your past diary entries and daily reflections:]")
+                        diaries.forEach { appendLine("- On ${it.dateString}: ${it.content}") }
                     }
                 }
                 

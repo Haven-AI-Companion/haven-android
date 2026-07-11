@@ -93,7 +93,19 @@ class DiaryViewModel(
                                     content = finalContent
                                 )
                             )
-                            HavenHttpClient.saveDiary(serverUrl, token, characterName, todayDateStr, finalContent)
+                            val success = HavenHttpClient.saveDiary(serverUrl, token, characterName, todayDateStr, finalContent)
+                            if (!success) {
+                                val payload = org.json.JSONObject().apply {
+                                    put("companion_name", characterName)
+                                    put("date_string", todayDateStr)
+                                    put("content", finalContent)
+                                }
+                                xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                                    context,
+                                    xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_SAVE_DIARY,
+                                    payload
+                                )
+                            }
                             _isGenerating.value = false
                         }
                     } else {
@@ -118,7 +130,7 @@ class DiaryViewModel(
                     repository.insertDiaryEntry(
                         DiaryEntryEntity(
                             characterId = characterId,
-                            dateString = obj.getString("dateString"),
+                            dateString = if (obj.has("date_string")) obj.getString("date_string") else obj.getString("dateString"),
                             content = obj.getString("content")
                         )
                     )

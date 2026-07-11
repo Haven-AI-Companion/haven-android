@@ -14,6 +14,7 @@ import androidx.work.WorkManager
 import xyz.ssfdre38.haven.data.work.ProactiveMessageWorker
 import xyz.ssfdre38.haven.theme.HavenTheme
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -68,6 +69,16 @@ class MainActivity : ComponentActivity() {
             val overlayEnabled = prefs.getBoolean("enable_overlay", false)
             if (overlayEnabled && android.provider.Settings.canDrawOverlays(this)) {
                 startService(android.content.Intent(this, xyz.ssfdre38.haven.service.FloatingCompanionService::class.java))
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // Initialize offline sync queueing
+        try {
+            xyz.ssfdre38.haven.data.sync.SyncQueueManager.registerNetworkCallback(this)
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                xyz.ssfdre38.haven.data.sync.SyncQueueManager.processQueue(applicationContext)
             }
         } catch (e: Exception) {
             e.printStackTrace()

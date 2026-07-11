@@ -104,11 +104,36 @@ class GroupChatViewModel(
                 
                 // Push configuration to server
                 val characterNames = chars.map { it.name }.joinToString(",")
-                HavenHttpClient.saveGroup(serverUrl, token, groupUuid, grp.name, characterNames)
+                val success = HavenHttpClient.saveGroup(serverUrl, token, groupUuid, grp.name, characterNames)
+                if (!success) {
+                    val payload = org.json.JSONObject().apply {
+                        put("id", groupUuid)
+                        put("name", grp.name)
+                        put("character_names", characterNames)
+                    }
+                    xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                        context,
+                        xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_SAVE_GROUP,
+                        payload
+                    )
+                }
             }
 
             if (groupUuid != null) {
-                HavenHttpClient.saveGroupMessage(serverUrl, token, groupUuid, "user", null, text)
+                val success = HavenHttpClient.saveGroupMessage(serverUrl, token, groupUuid, "user", null, text)
+                if (!success) {
+                    val payload = org.json.JSONObject().apply {
+                        put("group_id", groupUuid)
+                        put("sender", "user")
+                        put("character_name", null)
+                        put("content", text)
+                    }
+                    xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                        context,
+                        xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_SAVE_GROUP_MESSAGE,
+                        payload
+                    )
+                }
             }
 
             // 3. Compile prompt
@@ -320,7 +345,20 @@ class GroupChatViewModel(
                     // Push response to server
                     if (groupUuid != null) {
                         viewModelScope.launch(Dispatchers.IO) {
-                            HavenHttpClient.saveGroupMessage(serverUrl, token, groupUuid, "character", targetChar.name, cleanText)
+                            val success = HavenHttpClient.saveGroupMessage(serverUrl, token, groupUuid, "character", targetChar.name, cleanText)
+                            if (!success) {
+                                val payload = org.json.JSONObject().apply {
+                                    put("group_id", groupUuid)
+                                    put("sender", "character")
+                                    put("character_name", targetChar.name)
+                                    put("content", cleanText)
+                                }
+                                xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                                    context,
+                                    xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_SAVE_GROUP_MESSAGE,
+                                    payload
+                                )
+                            }
                         }
                     }
 
@@ -425,7 +463,19 @@ class GroupChatViewModel(
                 
                 // Push configuration to server
                 val characterNames = chars.map { it.name }.joinToString(",")
-                HavenHttpClient.saveGroup(serverUrl, token, groupUuid, grp.name, characterNames)
+                val success = HavenHttpClient.saveGroup(serverUrl, token, groupUuid, grp.name, characterNames)
+                if (!success) {
+                    val payload = org.json.JSONObject().apply {
+                        put("id", groupUuid)
+                        put("name", grp.name)
+                        put("character_names", characterNames)
+                    }
+                    xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                        context,
+                        xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_SAVE_GROUP,
+                        payload
+                    )
+                }
             }
 
             val prompt = compileBanterPrompt(targetChar, chars, userName)
@@ -485,7 +535,20 @@ class GroupChatViewModel(
                     val cleanText = fullText.replace(thoughtRegex, "").trim()
                     if (groupUuid != null) {
                         viewModelScope.launch(Dispatchers.IO) {
-                            HavenHttpClient.saveGroupMessage(serverUrl, token, groupUuid, "character", targetChar.name, cleanText)
+                            val success = HavenHttpClient.saveGroupMessage(serverUrl, token, groupUuid, "character", targetChar.name, cleanText)
+                            if (!success) {
+                                val payload = org.json.JSONObject().apply {
+                                    put("group_id", groupUuid)
+                                    put("sender", "character")
+                                    put("character_name", targetChar.name)
+                                    put("content", cleanText)
+                                }
+                                xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                                    context,
+                                    xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_SAVE_GROUP_MESSAGE,
+                                    payload
+                                )
+                            }
                         }
                     }
 
@@ -621,7 +684,11 @@ class GroupChatViewModel(
                 repository.clearGroupMessages(groupId)
                 serverMsgs.forEach { obj ->
                     val sender = obj.getString("sender")
-                    val characterName = if (obj.has("characterName") && !obj.isNull("characterName")) obj.getString("characterName") else null
+                    val characterName = when {
+                        obj.has("character_name") && !obj.isNull("character_name") -> obj.getString("character_name")
+                        obj.has("characterName") && !obj.isNull("characterName") -> obj.getString("characterName")
+                        else -> null
+                    }
                     val content = obj.getString("content")
                     
                     var characterId: Int? = null

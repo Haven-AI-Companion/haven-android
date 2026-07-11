@@ -220,8 +220,22 @@ fun MemoryVaultScreen(
                                 coroutineScope.launch(Dispatchers.IO) {
                                     repository.deleteMemory(memory)
                                     val charName = character?.name
-                                    if (charName != null && serverUrl.isNotBlank() && token.isNotBlank()) {
-                                        HavenHttpClient.deleteMemory(serverUrl, token, charName, memory.content)
+                                    if (charName != null) {
+                                        val success = if (serverUrl.isNotBlank() && token.isNotBlank()) {
+                                            HavenHttpClient.deleteMemory(serverUrl, token, charName, memory.content)
+                                        } else false
+                                        
+                                        if (!success) {
+                                            val payload = org.json.JSONObject().apply {
+                                                put("companion_name", charName)
+                                                put("content", memory.content)
+                                            }
+                                            xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                                                context,
+                                                xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_DELETE_MEMORY,
+                                                payload
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -283,8 +297,23 @@ fun MemoryVaultScreen(
                                         )
                                     )
                                     val charName = character?.name
-                                    if (charName != null && serverUrl.isNotBlank() && token.isNotBlank()) {
-                                        HavenHttpClient.saveMemory(serverUrl, token, charName, fact, selectedCategory)
+                                    if (charName != null) {
+                                        val success = if (serverUrl.isNotBlank() && token.isNotBlank()) {
+                                            HavenHttpClient.saveMemory(serverUrl, token, charName, fact, selectedCategory)
+                                        } else false
+                                        
+                                        if (!success) {
+                                            val payload = org.json.JSONObject().apply {
+                                                put("companion_name", charName)
+                                                put("content", fact)
+                                                put("category", selectedCategory)
+                                            }
+                                            xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                                                context,
+                                                xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_SAVE_MEMORY,
+                                                payload
+                                            )
+                                        }
                                     }
                                 }
                                 customFactText = ""
