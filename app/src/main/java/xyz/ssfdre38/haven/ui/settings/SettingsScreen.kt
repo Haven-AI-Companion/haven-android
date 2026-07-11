@@ -414,6 +414,7 @@ fun SettingsScreen(
                     checked = enableOverlay,
                     onCheckedChange = { checked ->
                         if (checked) {
+                            sharedPrefs.edit().putBoolean("enable_overlay", true).apply()
                             if (!android.provider.Settings.canDrawOverlays(context)) {
                                 val intent = Intent(
                                     android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -423,7 +424,6 @@ fun SettingsScreen(
                                 Toast.makeText(context, "Grant 'Display over other apps' permission to enable", Toast.LENGTH_LONG).show()
                             } else {
                                 enableOverlay = true
-                                sharedPrefs.edit().putBoolean("enable_overlay", true).apply()
                                 context.startService(Intent(context, xyz.ssfdre38.haven.service.FloatingCompanionService::class.java))
                             }
                         } else {

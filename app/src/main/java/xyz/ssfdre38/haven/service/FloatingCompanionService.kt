@@ -131,8 +131,18 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
             }
         })
 
-        windowManager?.addView(composeView, params)
-        lifecycleRegistry.currentState = Lifecycle.State.RESUMED
+        // Safely add view only if overlay permissions are still granted
+        try {
+            if (android.provider.Settings.canDrawOverlays(this)) {
+                windowManager?.addView(composeView, params)
+                lifecycleRegistry.currentState = Lifecycle.State.RESUMED
+            } else {
+                stopSelf()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            stopSelf()
+        }
     }
 
     override fun onDestroy() {
