@@ -21,6 +21,7 @@ import java.io.File
 fun VrmAvatarView(
     modelPath: String,
     mood: String,
+    isSpeaking: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val modelFile = remember(modelPath) { File(modelPath) }
@@ -56,8 +57,34 @@ fun VrmAvatarView(
         weights
     }
 
+    // Speech Viseme / Lip Sync Animation
+    var speakMouthOpenFactor by remember { mutableStateOf(0f) }
+    LaunchedEffect(isSpeaking) {
+        if (isSpeaking) {
+            while (true) {
+                // Randomize open/close duration and target open factor to look natural
+                val openTarget = 0.4f + (0..50).random() / 100f
+                // Ease open
+                val steps = 4
+                for (i in 1..steps) {
+                    speakMouthOpenFactor = (openTarget / steps) * i
+                    kotlinx.coroutines.delay(30)
+                }
+                kotlinx.coroutines.delay((50..120).random().toLong())
+                // Ease close
+                for (i in steps downTo 0) {
+                    speakMouthOpenFactor = (openTarget / steps) * i
+                    kotlinx.coroutines.delay(20)
+                }
+                kotlinx.coroutines.delay((30..80).random().toLong())
+            }
+        } else {
+            speakMouthOpenFactor = 0f
+        }
+    }
+
     // Auto-blinking animation effect running in the background
-    LaunchedEffect(modelNodeRef, baseWeights) {
+    LaunchedEffect(modelNodeRef, baseWeights, speakMouthOpenFactor) {
         val node = modelNodeRef ?: return@LaunchedEffect
         scope.launch {
             while (true) {
@@ -69,20 +96,41 @@ fun VrmAvatarView(
 
                 // Blink down: set eye-blink morph target weight (index 0) to 1.0
                 val blinkWeights = baseWeights.clone()
+                if (blinkWeights.size > 14) {
+                    blinkWeights[10] = speakMouthOpenFactor
+                    blinkWeights[14] = speakMouthOpenFactor * 0.3f
+                } else if (blinkWeights.size > 6) {
+                    blinkWeights[6] = speakMouthOpenFactor
+                }
                 blinkWeights[0] = 1.0f
                 node.setMorphWeights(blinkWeights, offset = 0)
                 
                 delay(120) // eyes closed duration
                 
                 // Blink up: restore base mood weights
-                node.setMorphWeights(baseWeights, offset = 0)
+                val restoreWeights = baseWeights.clone()
+                if (restoreWeights.size > 14) {
+                    restoreWeights[10] = speakMouthOpenFactor
+                    restoreWeights[14] = speakMouthOpenFactor * 0.3f
+                } else if (restoreWeights.size > 6) {
+                    restoreWeights[6] = speakMouthOpenFactor
+                }
+                node.setMorphWeights(restoreWeights, offset = 0)
             }
         }
     }
 
     // Update morph targets whenever mood/weights change
-    LaunchedEffect(modelNodeRef, baseWeights) {
-        modelNodeRef?.setMorphWeights(baseWeights, offset = 0)
+    LaunchedEffect(modelNodeRef, baseWeights, speakMouthOpenFactor) {
+        val node = modelNodeRef ?: return@LaunchedEffect
+        val currentWeights = baseWeights.clone()
+        if (currentWeights.size > 14) {
+            currentWeights[10] = speakMouthOpenFactor // Viseme A
+            currentWeights[14] = speakMouthOpenFactor * 0.3f // Viseme O
+        } else if (currentWeights.size > 6) {
+            currentWeights[6] = speakMouthOpenFactor // fallback viseme
+        }
+        node.setMorphWeights(currentWeights, offset = 0)
     }
 
     val cameraNode = rememberCameraNode(engine) {

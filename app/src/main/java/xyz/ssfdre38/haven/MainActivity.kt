@@ -62,6 +62,17 @@ class MainActivity : ComponentActivity() {
             e.printStackTrace()
         }
 
+        // Start overlay companion service on boot if enabled
+        try {
+            val prefs = getSharedPreferences("haven_prefs", MODE_PRIVATE)
+            val overlayEnabled = prefs.getBoolean("enable_overlay", false)
+            if (overlayEnabled && android.provider.Settings.canDrawOverlays(this)) {
+                startService(android.content.Intent(this, xyz.ssfdre38.haven.service.FloatingCompanionService::class.java))
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
         enableEdgeToEdge()
         setContent {
             HavenTheme {

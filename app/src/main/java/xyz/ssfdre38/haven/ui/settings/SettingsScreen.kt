@@ -1,6 +1,7 @@
 package xyz.ssfdre38.haven.ui.settings
 
 import android.content.Context
+import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -93,8 +94,25 @@ fun SettingsScreen(
     var quietTimeStart by remember { mutableStateOf(sharedPrefs.getString("quiet_time_start", "22:00") ?: "22:00") }
     var quietTimeEnd by remember { mutableStateOf(sharedPrefs.getString("quiet_time_end", "07:00") ?: "07:00") }
     var enableBubbles by remember { mutableStateOf(sharedPrefs.getBoolean("enable_bubbles", true)) }
+    var enableOverlay by remember { mutableStateOf(sharedPrefs.getBoolean("enable_overlay", false) && android.provider.Settings.canDrawOverlays(context)) }
     var testStatus by remember { mutableStateOf<String?>(null) }
     var isTesting by remember { mutableStateOf(false) }
+
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.currentStateFlow.collect { state ->
+            if (state == androidx.lifecycle.Lifecycle.State.RESUMED) {
+                val hasPerm = android.provider.Settings.canDrawOverlays(context)
+                val prefEnabled = sharedPrefs.getBoolean("enable_overlay", false)
+                enableOverlay = prefEnabled && hasPerm
+                if (prefEnabled && hasPerm) {
+                    context.startService(Intent(context, xyz.ssfdre38.haven.service.FloatingCompanionService::class.java))
+                } else if (!hasPerm) {
+                    context.stopService(Intent(context, xyz.ssfdre38.haven.service.FloatingCompanionService::class.java))
+                }
+            }
+        }
+    }
 
     val mainGradient = remember {
         listOf(Color(0xFF1E1035), Color(0xFF0C051A))
@@ -382,6 +400,42 @@ fun SettingsScreen(
             }
 
             Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Floating 3D Companion Overlay",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Switch(
+                    checked = enableOverlay,
+                    onCheckedChange = { checked ->
+                        if (checked) {
+                            if (!android.provider.Settings.canDrawOverlays(context)) {
+                                val intent = Intent(
+                                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    android.net.Uri.parse("package:${context.packageName}")
+                                )
+                                context.startActivity(intent)
+                                Toast.makeText(context, "Grant 'Display over other apps' permission to enable", Toast.LENGTH_LONG).show()
+                            } else {
+                                enableOverlay = true
+                                sharedPrefs.edit().putBoolean("enable_overlay", true).apply()
+                                context.startService(Intent(context, xyz.ssfdre38.haven.service.FloatingCompanionService::class.java))
+                            }
+                        } else {
+                            enableOverlay = false
+                            sharedPrefs.edit().putBoolean("enable_overlay", false).apply()
+                            context.stopService(Intent(context, xyz.ssfdre38.haven.service.FloatingCompanionService::class.java))
+                        }
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "Quiet Time Scheduler",
                 style = MaterialTheme.typography.titleMedium,
@@ -627,6 +681,7 @@ fun SettingsScreen(
                         putString("quiet_time_start", quietTimeStart.trim())
                         putString("quiet_time_end", quietTimeEnd.trim())
                         putBoolean("enable_bubbles", enableBubbles)
+                        putBoolean("enable_overlay", enableOverlay)
                         apply()
                     }
                     Toast.makeText(context, "Settings saved successfully", Toast.LENGTH_SHORT).show()

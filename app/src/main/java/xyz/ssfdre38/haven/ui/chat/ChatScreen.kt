@@ -75,12 +75,13 @@ fun ChatScreen(
     onVoiceCallClick: () -> Unit = {},
     onMemoryVaultClick: () -> Unit = {},
     modifier: Modifier = Modifier,
-    viewModel: ChatViewModel = viewModel(key = "chat_$characterId") { ChatViewModel(characterId, repository) }
+    chatViewModel: ChatViewModel = viewModel(key = "chat_$characterId") { ChatViewModel(characterId, repository) }
 ) {
     val context = LocalContext.current
-    val character by viewModel.character.collectAsStateWithLifecycle()
-    val messages by viewModel.messages.collectAsStateWithLifecycle()
-    val isGenerating by viewModel.isGenerating.collectAsStateWithLifecycle()
+    val character by chatViewModel.character.collectAsStateWithLifecycle()
+    val messages by chatViewModel.messages.collectAsStateWithLifecycle()
+    val isGenerating by chatViewModel.isGenerating.collectAsStateWithLifecycle()
+    val isSpeaking by chatViewModel.isSpeaking.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
 
     var inputText by remember { mutableStateOf("") }
@@ -120,7 +121,7 @@ fun ChatScreen(
         val token = prefs.getString("auth_token", null)
         if (!ashHost.isNullOrBlank() && !token.isNullOrBlank()) {
             val serverUrl = "${ashHost.trimEnd('/')}:$ashPort"
-            viewModel.syncMessages(serverUrl, token)
+            chatViewModel.syncMessages(serverUrl, token)
         }
     }
 
@@ -170,6 +171,7 @@ fun ChatScreen(
                 VrmAvatarView(
                     modelPath = vrmFile.absolutePath,
                     mood = localChar.currentMood,
+                    isSpeaking = isSpeaking,
                     modifier = Modifier.fillMaxSize()
                 )
             } else if (localChar.avatarPath != null) {
@@ -273,7 +275,7 @@ fun ChatScreen(
                                     val outfit = char.currentOutfit.ifBlank { "casual clothing" }
                                     val moodStr = if (char.currentMood.isNotBlank()) "${char.currentMood} expression, " else ""
                                     val imagePrompt = "${char.name}, digital art portrait, highly detailed, ${moodStr}standing in $loc, wearing $outfit"
-                                    viewModel.generateImage(context, sdHost, imagePrompt)
+                                    chatViewModel.generateImage(context, sdHost, imagePrompt)
                                 }
                             },
                             enabled = !isGenerating
@@ -352,7 +354,7 @@ fun ChatScreen(
                                             val outfit = char.currentOutfit.ifBlank { "casual clothing" }
                                             val moodStr = if (char.currentMood.isNotBlank()) "${char.currentMood} expression, " else ""
                                             val imagePrompt = "${char.name}, digital art portrait, highly detailed, ${moodStr}standing in $loc, wearing $outfit"
-                                            viewModel.generateImage(context, sdHost, imagePrompt)
+                                            chatViewModel.generateImage(context, sdHost, imagePrompt)
                                         }
                                     },
                                     enabled = !isGenerating,
@@ -431,9 +433,9 @@ fun ChatScreen(
                             inputText = ""
                             selectedImageUri = null
                             if (capturedUri != null) {
-                                viewModel.sendPhotoMessage(context, serverUrl, token, text, capturedUri)
+                                chatViewModel.sendPhotoMessage(context, serverUrl, token, text, capturedUri)
                             } else {
-                                viewModel.sendMessage(context, serverUrl, token, text)
+                                chatViewModel.sendMessage(context, serverUrl, token, text)
                             }
                         }
                     }
@@ -551,10 +553,11 @@ fun ChatScreen(
                             val token = prefs.getString("auth_token", "") ?: ""
                             if (ashHost.isNotBlank()) {
                                 val serverUrl = "${ashHost.trimEnd('/')}:$ashPort"
-                                viewModel.regenerateLastMessage(context, serverUrl, token)
+                                chatViewModel.regenerateLastMessage(context, serverUrl, token)
                             }
                         },
-                        speakText = speakText
+                        speakText = speakText,
+                        onPlayAudio = { chatViewModel.playAudio(it) }
                     )
                 }
             }
@@ -709,6 +712,7 @@ fun MessageBubble(
     isLastMessage: Boolean,
     onRegenerateClick: () -> Unit,
     speakText: (String) -> Unit,
+    onPlayAudio: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isUser = message.sender == "user"
@@ -848,19 +852,8 @@ fun MessageBubble(
                     Spacer(modifier = Modifier.width(6.dp))
                     IconButton(
                         onClick = {
-                            try {
-                                android.media.MediaPlayer().apply {
-                                    setDataSource(message.audioPath)
-                                    prepareAsync()
-                                    setOnPreparedListener { start() }
-                                    setOnCompletionListener { release() }
-                                    setOnErrorListener { _, _, _ ->
-                                        release()
-                                        true
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                e.printStackTrace()
+                            if (message.audioPath != null) {
+                                onPlayAudio(message.audioPath)
                             }
                         },
                         modifier = Modifier.size(28.dp)
@@ -906,20 +899,7 @@ fun MessageBubble(
                     IconButton(
                         onClick = {
                             if (message.audioPath != null) {
-                                try {
-                                    android.media.MediaPlayer().apply {
-                                        setDataSource(message.audioPath)
-                                        prepareAsync()
-                                        setOnPreparedListener { start() }
-                                        setOnCompletionListener { release() }
-                                        setOnErrorListener { _, _, _ ->
-                                            release()
-                                            true
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                }
+                                onPlayAudio(message.audioPath)
                             } else {
                                 speakText(contentParsed.cleanText)
                             }

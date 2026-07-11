@@ -32,6 +32,57 @@ class ChatViewModel(
     private val _isGenerating = MutableStateFlow(false)
     val isGenerating: StateFlow<Boolean> = _isGenerating.asStateFlow()
 
+    private val _isSpeaking = MutableStateFlow(false)
+    val isSpeaking: StateFlow<Boolean> = _isSpeaking.asStateFlow()
+
+    private var activePlayer: android.media.MediaPlayer? = null
+
+    fun playAudio(audioUrl: String) {
+        viewModelScope.launch(Dispatchers.Main) {
+            try {
+                activePlayer?.stop()
+                activePlayer?.release()
+            } catch (e: Exception) {}
+            
+            try {
+                activePlayer = android.media.MediaPlayer().apply {
+                    setDataSource(audioUrl)
+                    prepareAsync()
+                    setOnPreparedListener {
+                        start()
+                        _isSpeaking.value = true
+                    }
+                    setOnCompletionListener {
+                        _isSpeaking.value = false
+                        release()
+                    }
+                    setOnErrorListener { _, _, _ ->
+                        _isSpeaking.value = false
+                        release()
+                        true
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _isSpeaking.value = false
+            }
+        }
+    }
+
+    fun stopAudio() {
+        try {
+            activePlayer?.stop()
+            activePlayer?.release()
+            activePlayer = null
+        } catch (e: Exception) {}
+        _isSpeaking.value = false
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopAudio()
+    }
+
     // Holds the partial streamed response being built
     private var streamingMessageId: Int = -1
     private var streamBuffer = StringBuilder()
@@ -510,20 +561,7 @@ ${character.value?.name ?: "Companion"}: $cleanText"""
                                 // Auto-play audio response
                                 val autoSpeak = sharedPrefs.getBoolean("auto_speak", true)
                                 if (autoSpeak) {
-                                    try {
-                                        android.media.MediaPlayer().apply {
-                                            setDataSource(resolvedUrl)
-                                            prepareAsync()
-                                            setOnPreparedListener { start() }
-                                            setOnCompletionListener { release() }
-                                            setOnErrorListener { _, _, _ ->
-                                                release()
-                                                true
-                                            }
-                                        }
-                                    } catch (e: Exception) {
-                                        e.printStackTrace()
-                                    }
+                                    playAudio(resolvedUrl)
                                 }
 
                                 viewModelScope.launch(Dispatchers.IO) {
