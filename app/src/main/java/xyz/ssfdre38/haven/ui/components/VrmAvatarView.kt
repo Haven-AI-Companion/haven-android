@@ -141,6 +141,8 @@ fun VrmAvatarView(
 
     SceneView(
         modifier = modifier.fillMaxSize(),
+        surfaceType = io.github.sceneview.SurfaceType.TextureSurface,
+        isOpaque = false,
         engine = engine,
         modelLoader = modelLoader,
         cameraNode = cameraNode,

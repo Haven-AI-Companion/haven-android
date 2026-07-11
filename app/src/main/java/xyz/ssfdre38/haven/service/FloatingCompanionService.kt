@@ -81,6 +81,7 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
 
         // Initialize Compose view
         composeView = ComposeView(this).apply {
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
             setViewCompositionStrategy(androidx.compose.ui.platform.ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setViewTreeLifecycleOwner(this@FloatingCompanionService)
             setViewTreeSavedStateRegistryOwner(this@FloatingCompanionService)
