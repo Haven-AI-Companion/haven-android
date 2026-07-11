@@ -31,9 +31,10 @@ import xyz.ssfdre38.haven.data.DataRepository
 import xyz.ssfdre38.haven.data.DefaultDataRepository
 import xyz.ssfdre38.haven.data.database.AppDatabase
 import xyz.ssfdre38.haven.ui.components.VrmAvatarView
+import xyz.ssfdre38.agent.AgentService
 import java.io.File
 
-class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOwner, ViewModelStoreOwner {
+class FloatingCompanionService : AgentService(), LifecycleOwner, SavedStateRegistryOwner, ViewModelStoreOwner {
 
     private var windowManager: WindowManager? = null
     private var composeView: ComposeView? = null
@@ -52,8 +53,6 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
     // ViewModelStoreOwner implementation
     private val store = ViewModelStore()
     override val viewModelStore: ViewModelStore = store
-
-    override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()

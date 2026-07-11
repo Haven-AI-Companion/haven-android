@@ -201,19 +201,9 @@ class ChatViewModel(
                     appendLine("Current Body Shape: $bodyShape")
                     appendLine("Current Clothing State: $clothingState")
 
-                    // Fetch and inject hardware battery status to give companion physical device awareness
-                    val batteryManager = context.getSystemService(android.content.Context.BATTERY_SERVICE) as? android.os.BatteryManager
-                    val batteryLevel = batteryManager?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
-                    val isCharging = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                        batteryManager?.isCharging ?: false
-                    } else {
-                        val filter = android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED)
-                        val intent = context.registerReceiver(null, filter)
-                        val status = intent?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1) ?: -1
-                        status == android.os.BatteryManager.BATTERY_STATUS_CHARGING || status == android.os.BatteryManager.BATTERY_STATUS_FULL
-                    }
-                    if (batteryLevel >= 0) {
-                        appendLine("Device Status: Your physical host device has $batteryLevel% battery remaining${if (isCharging) " (Currently Charging)" else " (Discharging)"}. Act naturally if your battery is critically low or if the user points it out.")
+                    val agentCtx = xyz.ssfdre38.agent.AgentContext.current(context)
+                    if (agentCtx.batteryLevel >= 0) {
+                        appendLine("Device Status: Your physical host device has ${agentCtx.batteryLevel}% battery remaining${if (agentCtx.isCharging) " (Currently Charging)" else " (Discharging)"}. Act naturally if your battery is critically low or if the user points it out.")
                     }
 
                     // Inject long-term memories
@@ -232,8 +222,8 @@ class ChatViewModel(
                 }
                 
                 // Inject real time context
-                val currentTimeStr = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault()).format(java.util.Date())
-                appendLine("Current Time of Day: $currentTimeStr")
+                val agentCtx = xyz.ssfdre38.agent.AgentContext.current(context)
+                appendLine("Current Time of Day: ${agentCtx.localTime}")
                 
                 appendLine()
                 appendLine("[System Rule: Before responding, you MUST write down your inner thoughts, plans, or reasoning inside <thought>...</thought> tags, followed by your actual response to $userName. Do not omit the tags.]")
