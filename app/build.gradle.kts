@@ -129,4 +129,7 @@ dependencies {
 
   // Sceneview for 3D GLB/GLTF and VRM Model Rendering
   implementation("io.github.sceneview:sceneview:4.21.0")
+
+  // Android Agent Framework Local SDK Module
+  implementation(project(":agent-sdk"))
 }
