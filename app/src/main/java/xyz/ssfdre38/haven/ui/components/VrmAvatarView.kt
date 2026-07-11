@@ -22,6 +22,7 @@ fun VrmAvatarView(
     modelPath: String,
     mood: String,
     isSpeaking: Boolean = false,
+    animationIndex: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val modelFile = remember(modelPath) { File(modelPath) }
@@ -157,10 +158,10 @@ fun VrmAvatarView(
             }
             
             // Trigger animation and update state reference
-            LaunchedEffect(modelNode) {
+            LaunchedEffect(modelNode, animationIndex) {
                 modelNodeRef = modelNode
                 try {
-                    modelNode.playAnimation(animationIndex = 0, loop = true)
+                    modelNode.playAnimation(animationIndex = animationIndex, loop = true)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }

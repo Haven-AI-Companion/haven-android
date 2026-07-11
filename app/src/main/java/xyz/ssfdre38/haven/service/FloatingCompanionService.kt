@@ -87,6 +87,7 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
             setContent {
                 var companionModelPath by remember { mutableStateOf<String?>(null) }
                 var mood by remember { mutableStateOf("neutral") }
+                var activeAnimationIndex by remember { mutableStateOf(0) }
                 
                 LaunchedEffect(Unit) {
                     repository?.getAllCharacters()?.collect { list ->
@@ -98,6 +99,20 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
                     }
                 }
 
+                // Periodically trigger idle gestures (index 1 or 2) in the background to simulate autonomous behavior
+                LaunchedEffect(companionModelPath) {
+                    if (companionModelPath == null) return@LaunchedEffect
+                    while (true) {
+                        kotlinx.coroutines.delay((25000..50000).random().toLong())
+                        val gestureIndex = (1..2).random()
+                        activeAnimationIndex = gestureIndex
+                        
+                        // Play gesture for 4 seconds, then blend back to standard idle
+                        kotlinx.coroutines.delay(4000)
+                        activeAnimationIndex = 0
+                    }
+                }
+
                 val path = companionModelPath
                 if (path != null && File(path).exists()) {
                     Box(modifier = Modifier.size(160.dp, 220.dp)) {
@@ -105,6 +120,7 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
                             modelPath = path,
                             mood = mood,
                             isSpeaking = false,
+                            animationIndex = activeAnimationIndex,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
