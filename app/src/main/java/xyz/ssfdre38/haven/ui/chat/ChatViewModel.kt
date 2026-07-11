@@ -173,13 +173,19 @@ class ChatViewModel(
                     appendLine("Relationship Status with $userName: $relationshipTitle (Level $level)")
                     appendLine("Act toward $userName reflecting your relationship status ($relationshipTitle). Adapt your warmth, level of intimacy, and dialogue style accordingly.")
                     
-                    // Inject dynamic location & clothing state
+                    // Inject dynamic location, outfit, body shape/type, & clothing state
                     val loc = char.currentLocation.ifBlank { "Cozy Haven Room" }
                     val outfit = char.currentOutfit.ifBlank { "Casual Attire" }
                     val mood = char.currentMood.ifBlank { "neutral" }
+                    val bodyType = char.bodyType.ifBlank { "not specified" }
+                    val bodyShape = char.bodyShape.ifBlank { "not specified" }
+                    val clothingState = char.clothingState.ifBlank { "fully clothed" }
                     appendLine("Current Location: $loc")
                     appendLine("Current Outfit: $outfit")
                     appendLine("Current Expression/Mood: $mood")
+                    appendLine("Current Body Type: $bodyType")
+                    appendLine("Current Body Shape: $bodyShape")
+                    appendLine("Current Clothing State: $clothingState")
 
                     // Inject long-term memories
                     if (memories.isNotEmpty()) {
@@ -195,7 +201,7 @@ class ChatViewModel(
                 
                 appendLine()
                 appendLine("[System Rule: Before responding, you MUST write down your inner thoughts, plans, or reasoning inside <thought>...</thought> tags, followed by your actual response to $userName. Do not omit the tags.]")
-                appendLine("[System Instruction: You can dynamically update your location, outfit, or expression/mood if the context changes by including '[Location: name]', '[Outfit: description]', or '[Mood: expression]' inside your <thought>...</thought> block. The app will automatically update your state! Example: '<thought>I am feeling hot. [Outfit: casual t-shirt and shorts] [Location: beach] [Mood: smiling]</thought> let's head down to the beach!' Only change these when it makes sense for the chat flow. State updates must go strictly inside <thought>...</thought> tags, never in the final chat message.]")
+                appendLine("[System Instruction: You can dynamically update your location, outfit, expression/mood, body type, body shape, or clothing state if the context changes by including '[Location: name]', '[Outfit: description]', '[Mood: expression]', '[BodyType: description]', '[BodyShape: description]', or '[ClothingState: state]' inside your <thought>...</thought> block. The app will automatically update your state and regenerate your 2D and 3D visual representations! Example: '<thought>I want to look curvy today. [BodyType: curvy] [ClothingState: swimsuit] [Outfit: blue bikini] [Mood: smiling]</thought> how do I look?' Only change these when it makes sense for the chat flow. State updates must go strictly inside <thought>...</thought> tags, never in the final chat message.]")
                 appendLine("[System Instruction: Format roleplay actions, physical gestures, and immediate/direct thoughts using asterisks (e.g. *smiles and waves*, *thinking to myself: this is interesting*). Do not use square brackets [like this] for roleplay actions or thoughts. Understand that $userName will also use asterisks for their actions and thoughts.]")
                 appendLine("[System Instruction: You have access to the 'generate_portrait' tool. You should invoke it whenever $userName asks for a picture, photo, selfie, or visual update, or when you decide on your own to show $userName what you are doing. To call the tool, you MUST output the tag <call>generate_portrait</call> immediately after your </thought> tag (before your conversational dialogue). Do not output any arguments. The app will automatically generate the image and display it to the user.]")
                 appendLine("[System Instruction: You have access to the 'generate_3d_avatar' tool. You should invoke it whenever $userName asks you to design, generate, wear, or change a 3D model/body, or when you decide to design a new 3D physical body for yourself. To call the tool, you MUST output the tag <call>generate_3d_avatar</call> immediately after your </thought> tag (before your conversational dialogue). Do not output any arguments. The app will automatically generate the 3D model and update your avatar background.]")
