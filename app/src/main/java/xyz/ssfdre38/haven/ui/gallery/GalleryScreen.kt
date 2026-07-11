@@ -13,6 +13,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Download
+import android.content.ContentValues
+import android.provider.MediaStore
+import android.os.Build
+import android.os.Environment
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -266,7 +273,7 @@ fun LightboxViewer(
                 contentScale = ContentScale.Fit
             )
 
-            // Header close and info buttons
+            // Header close, download, and info buttons
             Row(
                 modifier = Modifier
                     .statusBarsPadding()
@@ -285,6 +292,37 @@ fun LightboxViewer(
                             imageVector = Icons.Default.Info,
                             contentDescription = "Toggle Prompt Info",
                             tint = if (showPrompt) MaterialTheme.colorScheme.primary else Color.White
+                        )
+                    }
+                }
+
+                if (message.imagePath != null) {
+                    val context = LocalContext.current
+                    IconButton(
+                        onClick = {
+                            val imgFile = File(message.imagePath)
+                            if (imgFile.exists()) {
+                                val success = saveImageToGallery(
+                                    context = context,
+                                    sourceFile = imgFile,
+                                    displayName = "Haven_${imgFile.name}"
+                                )
+                                if (success) {
+                                    Toast.makeText(context, "Saved to Pictures/Haven!", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "Failed to save image", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                Toast.makeText(context, "Image file not found", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier
+                            .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(50))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Download,
+                            contentDescription = "Save to Gallery",
+                            tint = Color.White
                         )
                     }
                 }
@@ -330,5 +368,42 @@ fun LightboxViewer(
                 }
             }
         }
+    }
+}
+
+private fun saveImageToGallery(context: android.content.Context, sourceFile: File, displayName: String): Boolean {
+    val resolver = context.contentResolver
+    val imageDetails = ContentValues().apply {
+        put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+        put(MediaStore.MediaColumns.MIME_TYPE, "image/webp")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Haven")
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+    }
+
+    val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+    } else {
+        MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+    }
+
+    val uri = resolver.insert(collection, imageDetails) ?: return false
+
+    return try {
+        resolver.openOutputStream(uri)?.use { out ->
+            sourceFile.inputStream().use { input ->
+                input.copyTo(out)
+            }
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            imageDetails.clear()
+            imageDetails.put(MediaStore.MediaColumns.IS_PENDING, 0)
+            resolver.update(uri, imageDetails, null, null)
+        }
+        true
+    } catch (e: Exception) {
+        resolver.delete(uri, null, null)
+        false
     }
 }
