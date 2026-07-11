@@ -289,6 +289,8 @@ class ChatViewModel(
                                         val args = org.json.JSONObject().apply {
                                             put("description", outfitPrompt)
                                         }
+                                        
+                                        // 1. Generate new 2D portrait
                                         HavenHttpClient.executeTool(
                                             serverUrl = serverUrl,
                                             token = token,
@@ -315,6 +317,41 @@ class ChatViewModel(
                                                         }
                                                     } catch (e: Exception) {
                                                         e.printStackTrace()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        
+                                        // 2. If 3D model is active, generate and download the updated 3D mesh
+                                        if (!updatedChar.vrmModelPath.isNullOrBlank()) {
+                                            HavenHttpClient.executeTool(
+                                                serverUrl = serverUrl,
+                                                token = token,
+                                                toolName = "generate_3d_avatar",
+                                                arguments = args
+                                            ) { result ->
+                                                result.onSuccess { relativeUrl ->
+                                                    val resolvedUrl = if (relativeUrl.startsWith("/")) {
+                                                        val host = serverUrl.trimEnd('/')
+                                                        if (host.startsWith("http")) "$host$relativeUrl" else "http://$host$relativeUrl"
+                                                    } else {
+                                                        relativeUrl
+                                                    }
+                                                    viewModelScope.launch(Dispatchers.IO) {
+                                                        try {
+                                                            val localPath = HavenHttpClient.downloadGlb(context, resolvedUrl, updatedChar.name)
+                                                            if (localPath != null) {
+                                                                val latestChar = repository.getCharacterById(characterId)
+                                                                if (latestChar != null) {
+                                                                    repository.updateCharacter(
+                                                                        latestChar.copy(vrmModelPath = localPath)
+                                                                    )
+                                                                    xyz.ssfdre38.haven.ui.widget.HavenAppWidgetProvider.triggerUpdate(context)
+                                                                }
+                                                            }
+                                                        } catch (e: Exception) {
+                                                            e.printStackTrace()
+                                                        }
                                                     }
                                                 }
                                             }
