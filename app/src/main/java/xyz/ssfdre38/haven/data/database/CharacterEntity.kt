@@ -22,5 +22,8 @@ data class CharacterEntity(
     val messageCount: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
     val conversationId: String? = null,
-    val vrmModelPath: String? = null
+    val vrmModelPath: String? = null,
+    val bodyType: String = "",
+    val bodyShape: String = "",
+    val clothingState: String = ""
 )

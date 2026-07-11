@@ -256,6 +256,9 @@ class ChatViewModel(
                     var newOutfit: String? = null
                     var newLocation: String? = null
                     var newMood: String? = null
+                    var newBodyType: String? = null
+                    var newBodyShape: String? = null
+                    var newClothingState: String? = null
 
                     // Extract [Outfit: ...] from fullText for maximum robustness
                     val outfitRegex = "\\[\\s*Out\\s*fit\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
@@ -272,20 +275,61 @@ class ChatViewModel(
                     val moodMatch = moodRegex.find(fullText)
                     newMood = moodMatch?.groups[1]?.value?.trim()
 
-                    if (newOutfit != null || newLocation != null || newMood != null) {
+                    // Extract [BodyType: ...] from fullText
+                    val bodyTypeRegex = "\\[\\s*Body\\s*Type\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+                    val bodyTypeMatch = bodyTypeRegex.find(fullText)
+                    newBodyType = bodyTypeMatch?.groups[1]?.value?.trim()
+
+                    // Extract [BodyShape: ...] from fullText
+                    val bodyShapeRegex = "\\[\\s*Body\\s*Shape\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+                    val bodyShapeMatch = bodyShapeRegex.find(fullText)
+                    newBodyShape = bodyShapeMatch?.groups[1]?.value?.trim()
+
+                    // Extract [ClothingState: ...] from fullText
+                    val clothingStateRegex = "\\[\\s*Clothing\\s*State\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+                    val clothingStateMatch = clothingStateRegex.find(fullText)
+                    newClothingState = clothingStateMatch?.groups[1]?.value?.trim()
+
+                    if (newOutfit != null || newLocation != null || newMood != null || newBodyType != null || newBodyShape != null || newClothingState != null) {
                             viewModelScope.launch(Dispatchers.IO) {
                                 val currentChar = repository.getCharacterById(characterId)
                                 if (currentChar != null) {
                                     val outfitChanged = newOutfit != null && newOutfit != currentChar.currentOutfit
+                                    val bodyTypeChanged = newBodyType != null && newBodyType != currentChar.bodyType
+                                    val bodyShapeChanged = newBodyShape != null && newBodyShape != currentChar.bodyShape
+                                    val clothingStateChanged = newClothingState != null && newClothingState != currentChar.clothingState
+                                    val appearanceChanged = outfitChanged || bodyTypeChanged || bodyShapeChanged || clothingStateChanged
+
                                     val updatedChar = currentChar.copy(
                                         currentOutfit = newOutfit ?: currentChar.currentOutfit,
                                         currentLocation = newLocation ?: currentChar.currentLocation,
-                                        currentMood = newMood ?: currentChar.currentMood
+                                        currentMood = newMood ?: currentChar.currentMood,
+                                        bodyType = newBodyType ?: currentChar.bodyType,
+                                        bodyShape = newBodyShape ?: currentChar.bodyShape,
+                                        clothingState = newClothingState ?: currentChar.clothingState
                                     )
                                     repository.updateCharacter(updatedChar)
 
-                                    if (outfitChanged) {
-                                        val outfitPrompt = "${updatedChar.name}, description: ${updatedChar.description}, wearing ${updatedChar.currentOutfit}, location: ${updatedChar.currentLocation}, expression: ${updatedChar.currentMood}"
+                                    if (appearanceChanged) {
+                                        val bodyTypeVal = updatedChar.bodyType
+                                        val bodyShapeVal = updatedChar.bodyShape
+                                        val clothingStateVal = updatedChar.clothingState
+
+                                        val bodyDetailsList = mutableListOf<String>()
+                                        if (bodyTypeVal.isNotBlank()) bodyDetailsList.add("body type: $bodyTypeVal")
+                                        if (bodyShapeVal.isNotBlank()) bodyDetailsList.add("body shape: $bodyShapeVal")
+                                        if (clothingStateVal.isNotBlank()) bodyDetailsList.add("clothing state: $clothingStateVal")
+                                        val bodyDetails = bodyDetailsList.joinToString(", ")
+                                        val detailsPart = if (bodyDetails.isNotBlank()) ", $bodyDetails" else ""
+
+                                        val isNaked = clothingStateVal.contains("naked", ignoreCase = true) ||
+                                                clothingStateVal.contains("nude", ignoreCase = true) ||
+                                                clothingStateVal.contains("unclothed", ignoreCase = true) ||
+                                                clothingStateVal.contains("clothes off", ignoreCase = true)
+
+                                        val wearingText = if (isNaked) "nothing, clothes off" else updatedChar.currentOutfit.ifBlank { "casual attire" }
+
+                                        val outfitPrompt = "${updatedChar.name}, description: ${updatedChar.description}$detailsPart, wearing $wearingText, location: ${updatedChar.currentLocation}, expression: ${updatedChar.currentMood}"
                                         val args = org.json.JSONObject().apply {
                                             put("description", outfitPrompt)
                                         }
@@ -382,7 +426,25 @@ class ChatViewModel(
                                 val currentOutfitVal = newOutfit ?: currentChar.currentOutfit
                                 val currentLocationVal = newLocation ?: currentChar.currentLocation
                                 val currentMoodVal = newMood ?: currentChar.currentMood
-                                "${currentChar.name}, description: ${currentChar.description}, wearing ${currentOutfitVal.ifBlank { "casual attire" }}, location: ${currentLocationVal.ifBlank { "cozy room" }}, expression: ${currentMoodVal.ifBlank { "smiling" }}"
+                                val bodyTypeVal = newBodyType ?: currentChar.bodyType
+                                val bodyShapeVal = newBodyShape ?: currentChar.bodyShape
+                                val clothingStateVal = newClothingState ?: currentChar.clothingState
+
+                                val bodyDetailsList = mutableListOf<String>()
+                                if (bodyTypeVal.isNotBlank()) bodyDetailsList.add("body type: $bodyTypeVal")
+                                if (bodyShapeVal.isNotBlank()) bodyDetailsList.add("body shape: $bodyShapeVal")
+                                if (clothingStateVal.isNotBlank()) bodyDetailsList.add("clothing state: $clothingStateVal")
+                                val bodyDetails = bodyDetailsList.joinToString(", ")
+                                val detailsPart = if (bodyDetails.isNotBlank()) ", $bodyDetails" else ""
+
+                                val isNaked = clothingStateVal.contains("naked", ignoreCase = true) ||
+                                        clothingStateVal.contains("nude", ignoreCase = true) ||
+                                        clothingStateVal.contains("unclothed", ignoreCase = true) ||
+                                        clothingStateVal.contains("clothes off", ignoreCase = true)
+
+                                val wearingText = if (isNaked) "nothing, clothes off" else currentOutfitVal.ifBlank { "casual attire" }
+
+                                "${currentChar.name}, description: ${currentChar.description}$detailsPart, wearing $wearingText, location: ${currentLocationVal.ifBlank { "cozy room" }}, expression: ${currentMoodVal.ifBlank { "smiling" }}"
                             } else {
                                 "companion in a cozy room"
                             }
@@ -451,7 +513,25 @@ class ChatViewModel(
                                 val currentOutfitVal = newOutfit ?: currentChar.currentOutfit
                                 val currentLocationVal = newLocation ?: currentChar.currentLocation
                                 val currentMoodVal = newMood ?: currentChar.currentMood
-                                "${currentChar.name}, description: ${currentChar.description}, wearing ${currentOutfitVal.ifBlank { "casual attire" }}, location: ${currentLocationVal.ifBlank { "cozy room" }}, expression: ${currentMoodVal.ifBlank { "smiling" }}"
+                                val bodyTypeVal = newBodyType ?: currentChar.bodyType
+                                val bodyShapeVal = newBodyShape ?: currentChar.bodyShape
+                                val clothingStateVal = newClothingState ?: currentChar.clothingState
+
+                                val bodyDetailsList = mutableListOf<String>()
+                                if (bodyTypeVal.isNotBlank()) bodyDetailsList.add("body type: $bodyTypeVal")
+                                if (bodyShapeVal.isNotBlank()) bodyDetailsList.add("body shape: $bodyShapeVal")
+                                if (clothingStateVal.isNotBlank()) bodyDetailsList.add("clothing state: $clothingStateVal")
+                                val bodyDetails = bodyDetailsList.joinToString(", ")
+                                val detailsPart = if (bodyDetails.isNotBlank()) ", $bodyDetails" else ""
+
+                                val isNaked = clothingStateVal.contains("naked", ignoreCase = true) ||
+                                        clothingStateVal.contains("nude", ignoreCase = true) ||
+                                        clothingStateVal.contains("unclothed", ignoreCase = true) ||
+                                        clothingStateVal.contains("clothes off", ignoreCase = true)
+
+                                val wearingText = if (isNaked) "nothing, clothes off" else currentOutfitVal.ifBlank { "casual attire" }
+
+                                "${currentChar.name}, description: ${currentChar.description}$detailsPart, wearing $wearingText, location: ${currentLocationVal.ifBlank { "cozy room" }}, expression: ${currentMoodVal.ifBlank { "smiling" }}"
                             } else {
                                 "companion avatar model"
                             }
