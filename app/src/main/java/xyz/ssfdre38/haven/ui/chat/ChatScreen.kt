@@ -365,6 +365,64 @@ fun ChatScreen(
                                         )
                                     }
                                 )
+                                val prefs = remember { context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE) }
+                                val isOverlayActive = prefs.getBoolean("enable_overlay", false) && android.provider.Settings.canDrawOverlays(context)
+                                
+                                DropdownMenuItem(
+                                    text = { Text(if (isOverlayActive) "Close Floating Companion" else "Show Floating Companion") },
+                                    onClick = {
+                                        expanded = false
+                                        if (isOverlayActive) {
+                                            prefs.edit().putBoolean("enable_overlay", false).apply()
+                                            context.stopService(android.content.Intent(context, xyz.ssfdre38.haven.service.FloatingCompanionService::class.java))
+                                        } else {
+                                            prefs.edit().putBoolean("enable_overlay", true).apply()
+                                            if (!android.provider.Settings.canDrawOverlays(context)) {
+                                                val intent = android.content.Intent(
+                                                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                                    android.net.Uri.parse("package:${context.packageName}")
+                                                ).apply {
+                                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                }
+                                                context.startActivity(intent)
+                                            } else {
+                                                context.startService(android.content.Intent(context, xyz.ssfdre38.haven.service.FloatingCompanionService::class.java))
+                                            }
+                                        }
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = if (isOverlayActive) Icons.Default.Close else Icons.Default.Cloud,
+                                            contentDescription = "Floating Companion"
+                                        )
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Bubble Conversation") },
+                                    onClick = {
+                                        expanded = false
+                                        character?.let { char ->
+                                            val lastMsgText = messages.lastOrNull { it.sender == "character" }?.text?.take(200) ?: "Let's chat!"
+                                            try {
+                                                xyz.ssfdre38.haven.data.work.ProactiveMessageWorker.showNotification(
+                                                    context = context,
+                                                    character = char,
+                                                    messageText = lastMsgText,
+                                                    isSilent = false
+                                                )
+                                            } catch (e: Exception) {
+                                                e.printStackTrace()
+                                                Toast.makeText(context, "Error launching bubble: ${e.message}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.PlayCircle,
+                                            contentDescription = "Bubble Conversation"
+                                        )
+                                    }
+                                )
                             }
                         }
                     }
