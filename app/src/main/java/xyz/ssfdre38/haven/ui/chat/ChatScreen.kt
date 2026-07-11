@@ -162,30 +162,19 @@ fun ChatScreen(
             .fillMaxSize()
             .then(bgModifier)
     ) {
-        // Full-screen character 3D avatar or static background image (for immersion)
+        // Full-screen static background image (for immersion)
         val localChar = character
-        if (localChar != null) {
-            val vrmPath = localChar.vrmModelPath
-            val vrmFile = if (vrmPath != null) remember(vrmPath) { File(vrmPath) } else null
-            if (vrmFile != null && vrmFile.exists()) {
-                VrmAvatarView(
-                    modelPath = vrmFile.absolutePath,
-                    mood = localChar.currentMood,
-                    isSpeaking = isSpeaking,
-                    modifier = Modifier.fillMaxSize()
+        if (localChar != null && localChar.avatarPath != null) {
+            val bgFile = remember(localChar.avatarPath) { File(localChar.avatarPath) }
+            if (bgFile.exists()) {
+                androidx.compose.foundation.Image(
+                    painter = coil.compose.rememberAsyncImagePainter(model = bgFile),
+                    contentDescription = "Background",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    alignment = Alignment.Center,
+                    alpha = 0.3f
                 )
-            } else if (localChar.avatarPath != null) {
-                val bgFile = remember(localChar.avatarPath) { File(localChar.avatarPath) }
-                if (bgFile.exists()) {
-                    androidx.compose.foundation.Image(
-                        painter = coil.compose.rememberAsyncImagePainter(model = bgFile),
-                        contentDescription = "Background",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                        alignment = Alignment.Center,
-                        alpha = 0.3f
-                    )
-                }
             }
         }
 
