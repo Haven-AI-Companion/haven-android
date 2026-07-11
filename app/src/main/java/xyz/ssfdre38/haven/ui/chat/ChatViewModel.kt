@@ -101,16 +101,28 @@ class ChatViewModel(
             
             val serverMsgs = HavenHttpClient.getConversationMessages(serverUrl, token, conversationId)
             if (serverMsgs.isNotEmpty()) {
+                val localMsgs = repository.getMessagesForCharacter(characterId).first()
                 repository.clearMessagesForCharacter(characterId)
-                serverMsgs.forEach { obj ->
+                serverMsgs.forEachIndexed { index, obj ->
                     val role = obj.getString("role")
                     val content = obj.getString("content")
                     val sender = if (role == "user") "user" else "character"
+                    
+                    val matchingLocal = localMsgs.getOrNull(index)
+                    var imagePath: String? = null
+                    var audioPath: String? = null
+                    if (matchingLocal != null && (matchingLocal.text == content || matchingLocal.text.startsWith(content))) {
+                        imagePath = matchingLocal.imagePath
+                        audioPath = matchingLocal.audioPath
+                    }
+
                     repository.insertMessage(
                         MessageEntity(
                             characterId = characterId,
                             sender = sender,
-                            text = content
+                            text = content,
+                            imagePath = imagePath,
+                            audioPath = audioPath
                         )
                     )
                 }
@@ -516,7 +528,15 @@ class ChatViewModel(
                                                 // Dynamically update the companion's profile avatar to this new image
                                                 val char = repository.getCharacterById(characterId)
                                                 if (char != null) {
-                                                    repository.updateCharacter(char.copy(avatarPath = localPath))
+                                                    val updatedChar = char.copy(avatarPath = localPath)
+                                                    repository.updateCharacter(updatedChar)
+                                                    
+                                                    // Push the updated shortcut/avatar to the Android system to refresh the active Chat Bubble icon!
+                                                    try {
+                                                        xyz.ssfdre38.haven.data.work.ProactiveMessageWorker.publishShortcut(context, updatedChar)
+                                                    } catch (e: Exception) {
+                                                        e.printStackTrace()
+                                                    }
                                                 }
                                             }
                                         } catch (e: Exception) {
@@ -631,10 +651,18 @@ class ChatViewModel(
                                             )
                                         }
                                         // Dynamically update the companion's profile avatar to this new image
-                                        val char = repository.getCharacterById(characterId)
-                                        if (char != null) {
-                                            repository.updateCharacter(char.copy(avatarPath = localPath))
-                                        }
+                                         val char = repository.getCharacterById(characterId)
+                                         if (char != null) {
+                                             val updatedChar = char.copy(avatarPath = localPath)
+                                             repository.updateCharacter(updatedChar)
+                                             
+                                             // Push the updated shortcut/avatar to the Android system to refresh the active Chat Bubble icon!
+                                             try {
+                                                 xyz.ssfdre38.haven.data.work.ProactiveMessageWorker.publishShortcut(context, updatedChar)
+                                             } catch (e: Exception) {
+                                                 e.printStackTrace()
+                                             }
+                                         }
                                     }
                                 } catch (e: Exception) {
                                     e.printStackTrace()
@@ -768,7 +796,13 @@ ${character.value?.name ?: "Companion"}: $cleanText"""
                                 // Dynamically update the companion's profile avatar to this new image
                                 val char = repository.getCharacterById(characterId)
                                 if (char != null) {
-                                    repository.updateCharacter(char.copy(avatarPath = imagePath))
+                                     val updatedChar = char.copy(avatarPath = imagePath)
+                                     repository.updateCharacter(updatedChar)
+                                     try {
+                                         xyz.ssfdre38.haven.data.work.ProactiveMessageWorker.publishShortcut(context, updatedChar)
+                                     } catch (e: Exception) {
+                                         e.printStackTrace()
+                                     }
                                 }
                             }
                         },

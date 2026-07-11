@@ -29,6 +29,50 @@ class ProactiveMessageWorker(
     companion object {
         const val CHANNEL_ID = "haven_proactive_messages"
         const val NOTIFICATION_ID_BASE = 5000
+
+        fun publishShortcut(context: Context, character: CharacterEntity) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+
+            val shortcutManager = context.getSystemService(Context.SHORTCUT_SERVICE) as? android.content.pm.ShortcutManager
+            if (shortcutManager != null) {
+                val intent = Intent(context, xyz.ssfdre38.haven.MainActivity::class.java).apply {
+                    action = Intent.ACTION_VIEW
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    putExtra("characterId", character.id)
+                    putExtra("isBubble", true)
+                }
+
+                val icon = if (character.avatarPath != null) {
+                    val file = File(character.avatarPath)
+                    if (file.exists()) {
+                        val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+                        if (bitmap != null) {
+                            android.graphics.drawable.Icon.createWithBitmap(bitmap)
+                        } else {
+                            android.graphics.drawable.Icon.createWithResource(context, android.R.drawable.stat_notify_chat)
+                        }
+                    } else {
+                        android.graphics.drawable.Icon.createWithResource(context, android.R.drawable.stat_notify_chat)
+                    }
+                } else {
+                    android.graphics.drawable.Icon.createWithResource(context, android.R.drawable.stat_notify_chat)
+                }
+
+                val shortcut = android.content.pm.ShortcutInfo.Builder(context, character.id.toString())
+                    .setShortLabel(character.name)
+                    .setLongLabel(character.name)
+                    .setIcon(icon)
+                    .setIntent(intent)
+                    .setLongLived(true)
+                    .build()
+
+                try {
+                    shortcutManager.pushDynamicShortcut(shortcut)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
     }
 
     override suspend fun doWork(): Result {
@@ -261,49 +305,7 @@ class ProactiveMessageWorker(
         notificationManager.notify(NOTIFICATION_ID_BASE + character.id, builder.build())
     }
 
-    private fun publishShortcut(context: Context, character: CharacterEntity) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
-
-        val shortcutManager = context.getSystemService(Context.SHORTCUT_SERVICE) as? android.content.pm.ShortcutManager
-        if (shortcutManager != null) {
-            val intent = Intent(context, MainActivity::class.java).apply {
-                action = Intent.ACTION_VIEW
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                putExtra("characterId", character.id)
-                putExtra("isBubble", true)
-            }
-
-            val icon = if (character.avatarPath != null) {
-                val file = File(character.avatarPath)
-                if (file.exists()) {
-                    val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-                    if (bitmap != null) {
-                        android.graphics.drawable.Icon.createWithBitmap(bitmap)
-                    } else {
-                        android.graphics.drawable.Icon.createWithResource(context, android.R.drawable.stat_notify_chat)
-                    }
-                } else {
-                    android.graphics.drawable.Icon.createWithResource(context, android.R.drawable.stat_notify_chat)
-                }
-            } else {
-                android.graphics.drawable.Icon.createWithResource(context, android.R.drawable.stat_notify_chat)
-            }
-
-            val shortcut = android.content.pm.ShortcutInfo.Builder(context, character.id.toString())
-                .setShortLabel(character.name)
-                .setLongLabel(character.name)
-                .setIcon(icon)
-                .setIntent(intent)
-                .setLongLived(true)
-                .build()
-
-            try {
-                shortcutManager.pushDynamicShortcut(shortcut)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
+    // publishShortcut moved to companion object for general accessibility
 
     private fun isTimeBetween(current: String, start: String, end: String): Boolean {
         val curMinutes = timeToMinutes(current)
