@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.*
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
@@ -31,7 +32,7 @@ import xyz.ssfdre38.haven.data.database.AppDatabase
 import xyz.ssfdre38.haven.ui.components.VrmAvatarView
 import java.io.File
 
-class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOwner {
+class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOwner, ViewModelStoreOwner {
 
     private var windowManager: WindowManager? = null
     private var composeView: ComposeView? = null
@@ -46,12 +47,17 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
     override val savedStateRegistry: SavedStateRegistry = savedStateRegistryController.savedStateRegistry
 
+    // ViewModelStoreOwner implementation
+    private val store = ViewModelStore()
+    override val viewModelStore: ViewModelStore = store
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
-        lifecycleRegistry.currentState = Lifecycle.State.CREATED
+        savedStateRegistryController.performAttach()
         savedStateRegistryController.performRestore(null)
+        lifecycleRegistry.currentState = Lifecycle.State.CREATED
         
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val database = AppDatabase.getInstance(applicationContext)
@@ -74,6 +80,7 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
         composeView = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@FloatingCompanionService)
             setViewTreeSavedStateRegistryOwner(this@FloatingCompanionService)
+            setViewTreeViewModelStoreOwner(this@FloatingCompanionService)
 
             setContent {
                 var companionModelPath by remember { mutableStateOf<String?>(null) }
@@ -149,6 +156,7 @@ class FloatingCompanionService : Service(), LifecycleOwner, SavedStateRegistryOw
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         super.onDestroy()
         scope.cancel()
+        store.clear()
         if (composeView != null) {
             windowManager?.removeView(composeView)
         }
