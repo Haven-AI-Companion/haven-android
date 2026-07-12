@@ -221,7 +221,7 @@ class GroupChatViewModel(
                                                 }
                                                 viewModelScope.launch(Dispatchers.IO) {
                                                     try {
-                                                        val localPath = HavenHttpClient.downloadImage(context, resolvedUrl)
+                                                        val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, targetChar.name)
                                                         if (localPath != null) {
                                                             val latestChar = repository.getCharacterById(targetChar.id)
                                                             if (latestChar != null) {
@@ -297,7 +297,7 @@ class GroupChatViewModel(
                                         
                                         // Download and save the portrait
                                         try {
-                                            val localPath = HavenHttpClient.downloadImage(context, resolvedUrl)
+                                            val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, targetChar.name)
                                             if (localPath != null) {
                                                 val finalMsg = repository.getLastGroupMessage(groupId)
                                                 if (finalMsg != null && finalMsg.sender == "character") {
@@ -326,7 +326,7 @@ class GroupChatViewModel(
                             
                             viewModelScope.launch(Dispatchers.IO) {
                                 try {
-                                    val localPath = HavenHttpClient.downloadImage(context, resolvedUrl)
+                                    val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, targetChar.name)
                                     if (localPath != null) {
                                         val lastMsg = repository.getLastGroupMessage(groupId)
                                         if (lastMsg != null && lastMsg.sender == "character") {
@@ -718,7 +718,7 @@ class GroupChatViewModel(
                         }
                         viewModelScope.launch(Dispatchers.IO) {
                             try {
-                                val localPath = HavenHttpClient.downloadImage(context, resolvedUrl)
+                                val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, characterName ?: "companion")
                                 if (localPath != null) {
                                     repository.insertGroupMessage(
                                         GroupMessageEntity(

@@ -219,20 +219,36 @@ object HavenHttpClient {
     /**
      * Downloads an image from an HTTP URL and saves it to internal storage, returning the local file path.
      */
-    fun downloadImage(context: Context, imageUrl: String): String? {
+    fun downloadImage(context: Context, imageUrl: String, companionName: String): String? {
         val request = okhttp3.Request.Builder().url(imageUrl).build()
         try {
             client.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
                     val bytes = response.body?.bytes()
                     if (bytes != null) {
-                        val imagesDir = File(context.filesDir, "generated")
+                        val imagesDir = File(context.filesDir, "companion/images")
                         if (!imagesDir.exists()) imagesDir.mkdirs()
-                        val file = File(imagesDir, "gen_${UUID.randomUUID()}.png")
-                        java.io.FileOutputStream(file).use { fos ->
-                            fos.write(bytes)
+                        
+                        val sdf = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
+                        val dateTime = sdf.format(java.util.Date())
+                        val cleanName = companionName.replace("[^a-zA-Z0-9]".toRegex(), "_")
+                        val file = File(imagesDir, "${cleanName}_$dateTime.png")
+                        
+                        // Convert WebP/JPG/PNG bytes to PNG format via Bitmap decompression
+                        val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        if (bitmap != null) {
+                            java.io.FileOutputStream(file).use { fos ->
+                                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, fos)
+                            }
+                            bitmap.recycle()
+                            return file.absolutePath
+                        } else {
+                            // Fallback to writing bytes directly if bitmap decoding fails
+                            java.io.FileOutputStream(file).use { fos ->
+                                fos.write(bytes)
+                            }
+                            return file.absolutePath
                         }
-                        return file.absolutePath
                     }
                 }
             }

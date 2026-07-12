@@ -139,7 +139,7 @@ class ChatViewModel(
                             }
                             viewModelScope.launch(Dispatchers.IO) {
                                 try {
-                                    val localPath = HavenHttpClient.downloadImage(context, resolvedUrl)
+                                    val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, char.name)
                                     if (localPath != null) {
                                         repository.insertMessage(
                                             MessageEntity(
@@ -416,7 +416,7 @@ class ChatViewModel(
                                                 }
                                                 viewModelScope.launch(Dispatchers.IO) {
                                                     try {
-                                                        val localPath = HavenHttpClient.downloadImage(context, resolvedUrl)
+                                                        val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, updatedChar.name)
                                                         if (localPath != null) {
                                                             val latestChar = repository.getCharacterById(characterId)
                                                             if (latestChar != null) {
@@ -542,7 +542,7 @@ class ChatViewModel(
                                         
                                         // Download and save the portrait
                                         try {
-                                            val localPath = HavenHttpClient.downloadImage(context, resolvedUrl)
+                                            val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, currentChar?.name ?: "companion")
                                             if (localPath != null) {
                                                 val finalMsg = repository.getLastMessage(characterId)
                                                 if (finalMsg != null && finalMsg.sender == "character") {
@@ -665,7 +665,8 @@ class ChatViewModel(
                             
                             viewModelScope.launch(Dispatchers.IO) {
                                 try {
-                                    val localPath = HavenHttpClient.downloadImage(context, resolvedUrl)
+                                    val char = repository.getCharacterById(characterId)
+                                    val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, char?.name ?: "companion")
                                     if (localPath != null) {
                                         val lastMsg = repository.getLastMessage(characterId)
                                         if (lastMsg != null && lastMsg.sender == "character") {
