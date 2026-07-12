@@ -39,6 +39,16 @@ import xyz.ssfdre38.haven.data.DataRepository
 import xyz.ssfdre38.haven.data.database.MessageEntity
 import java.io.File
 
+/**
+ * Structured model representing an item in the companion's gallery.
+ * Combines physical files found in internal storage with optional prompt metadata from the message database.
+ */
+data class GalleryItem(
+    val file: File,
+    val prompt: String? = null,
+    val messageId: Int? = null
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GalleryScreen(
@@ -56,13 +66,46 @@ fun GalleryScreen(
         }
     }
 
-    // Collect all messages and filter out those containing images
+    // Collect all messages from database to cross-reference image metadata
     val messages by repository.getMessagesForCharacter(characterId).collectAsState(initial = emptyList())
-    val imageMessages = remember(messages) {
-        messages.filter { it.imagePath != null }
+    
+    val context = LocalContext.current
+    var galleryItems by remember { mutableStateOf<List<GalleryItem>>(emptyList()) }
+
+    // Re-compile gallery items by combining database records with physical files on disk
+    LaunchedEffect(messages, characterName) {
+        val items = mutableListOf<GalleryItem>()
+        
+        // 1. Add all images associated with database messages
+        val dbItems = messages.filter { it.imagePath != null }.map { msg ->
+            GalleryItem(
+                file = File(msg.imagePath!!),
+                prompt = msg.text,
+                messageId = msg.id
+            )
+        }
+        items.addAll(dbItems)
+        
+        // 2. Scan companion images directory and add files not already present (database clears fallback)
+        if (characterName != "Companion") {
+            val cleanName = characterName.replace("[^a-zA-Z0-9]".toRegex(), "_")
+            val companionDir = File(context.filesDir, "companion/images/$cleanName")
+            if (companionDir.exists() && companionDir.isDirectory) {
+                val files = companionDir.listFiles { file ->
+                    file.isFile && (file.name.endsWith(".png") || file.name.endsWith(".jpg") || file.name.endsWith(".webp"))
+                }
+                files?.forEach { file ->
+                    if (items.none { it.file.absolutePath == file.absolutePath }) {
+                        items.add(GalleryItem(file = file))
+                    }
+                }
+            }
+        }
+        
+        galleryItems = items.sortedByDescending { it.file.lastModified() }
     }
 
-    var activeImageMessage by remember { mutableStateOf<MessageEntity?>(null) }
+    var activeItem by remember { mutableStateOf<GalleryItem?>(null) }
 
     val mainGradient = remember {
         listOf(Color(0xFF1E1035), Color(0xFF0C051A))
@@ -120,22 +163,13 @@ fun GalleryScreen(
                 .blur(80.dp)
         ) {
             drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(Color(0xFF6366F1).copy(alpha = 0.15f), Color.Transparent),
-                    center = androidx.compose.ui.geometry.Offset(orb1X.dp.toPx(), orb1Y.dp.toPx()),
-                    radius = 300.dp.toPx()
-                ),
-                radius = 300.dp.toPx(),
+                color = Color(0xFFBB86FC).copy(alpha = 0.12f),
+                radius = 350.dp.toPx(),
                 center = androidx.compose.ui.geometry.Offset(orb1X.dp.toPx(), orb1Y.dp.toPx())
             )
-            
             drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(Color(0xFFD946EF).copy(alpha = 0.12f), Color.Transparent),
-                    center = androidx.compose.ui.geometry.Offset(orb2X.dp.toPx(), orb2Y.dp.toPx()),
-                    radius = 280.dp.toPx()
-                ),
-                radius = 280.dp.toPx(),
+                color = Color(0xFF03DAC6).copy(alpha = 0.08f),
+                radius = 300.dp.toPx(),
                 center = androidx.compose.ui.geometry.Offset(orb2X.dp.toPx(), orb2Y.dp.toPx())
             )
         }
@@ -143,18 +177,25 @@ fun GalleryScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("$characterName's Gallery", fontWeight = FontWeight.Bold, color = Color.White) },
+                    title = {
+                        Text(
+                            text = "$characterName's Gallery",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                    },
                     navigationIcon = {
                         IconButton(onClick = onBackClick) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back",
-                                tint = Color.White
+                                contentDescription = "Back to Chat"
                             )
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent
+                        containerColor = Color.Transparent,
+                        titleContentColor = Color.White,
+                        navigationIconContentColor = Color.White
                     )
                 )
             },
@@ -166,51 +207,51 @@ fun GalleryScreen(
                     .padding(innerPadding)
                     .fillMaxSize()
             ) {
-            if (imageMessages.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "No generated images yet.\nTap the image icon in chat to generate a custom portrait!",
-                        textAlign = TextAlign.Center,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-                        modifier = Modifier.padding(32.dp)
-                    )
-                }
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(imageMessages, key = { it.id }) { msg ->
-                        GridImageCard(
-                            message = msg,
-                            onClick = { activeImageMessage = msg }
+                if (galleryItems.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No generated images yet.\nTap the image icon in chat to generate a custom portrait!",
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                            modifier = Modifier.padding(32.dp)
                         )
                     }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(galleryItems, key = { it.file.absolutePath }) { item ->
+                            GridImageCard(
+                                item = item,
+                                onClick = { activeItem = item }
+                            )
+                        }
+                    }
                 }
-            }
 
-            // Lightbox dialog for fullscreen viewing
-            activeImageMessage?.let { msg ->
-                LightboxViewer(
-                    message = msg,
-                    onDismiss = { activeImageMessage = null }
-                )
+                // Lightbox dialog for fullscreen viewing
+                activeItem?.let { item ->
+                    LightboxViewer(
+                        item = item,
+                        onDismiss = { activeItem = null }
+                    )
+                }
             }
         }
     }
 }
-}
 
 @Composable
 fun GridImageCard(
-    message: MessageEntity,
+    item: GalleryItem,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -230,18 +271,13 @@ fun GridImageCard(
             )
         )
     ) {
-        val file = remember(message.imagePath) {
-            message.imagePath?.let { File(it) }
-        }
-        val context = androidx.compose.ui.platform.LocalContext.current
-        val request = remember(file?.absolutePath, file?.lastModified()) {
-            file?.let {
-                coil.request.ImageRequest.Builder(context)
-                    .data(it)
-                    .memoryCacheKey(it.absolutePath + "_" + it.lastModified())
-                    .diskCacheKey(it.absolutePath + "_" + it.lastModified())
-                    .build()
-            }
+        val context = LocalContext.current
+        val request = remember(item.file.absolutePath, item.file.lastModified()) {
+            coil.request.ImageRequest.Builder(context)
+                .data(item.file)
+                .memoryCacheKey(item.file.absolutePath + "_" + item.file.lastModified())
+                .diskCacheKey(item.file.absolutePath + "_" + item.file.lastModified())
+                .build()
         }
         AsyncImage(
             model = request,
@@ -254,7 +290,7 @@ fun GridImageCard(
 
 @Composable
 fun LightboxViewer(
-    message: MessageEntity,
+    item: GalleryItem,
     onDismiss: () -> Unit
 ) {
     var showPrompt by remember { mutableStateOf(false) }
@@ -271,18 +307,13 @@ fun LightboxViewer(
                 .background(Color.Black)
         ) {
             // Main high resolution image
-            val file = remember(message.imagePath) {
-                message.imagePath?.let { File(it) }
-            }
-            val context = androidx.compose.ui.platform.LocalContext.current
-            val request = remember(file?.absolutePath, file?.lastModified()) {
-                file?.let {
-                    coil.request.ImageRequest.Builder(context)
-                        .data(it)
-                        .memoryCacheKey(it.absolutePath + "_" + it.lastModified())
-                        .diskCacheKey(it.absolutePath + "_" + it.lastModified())
-                        .build()
-                }
+            val context = LocalContext.current
+            val request = remember(item.file.absolutePath, item.file.lastModified()) {
+                coil.request.ImageRequest.Builder(context)
+                    .data(item.file)
+                    .memoryCacheKey(item.file.absolutePath + "_" + item.file.lastModified())
+                    .diskCacheKey(item.file.absolutePath + "_" + item.file.lastModified())
+                    .build()
             }
             AsyncImage(
                 model = request,
@@ -302,7 +333,7 @@ fun LightboxViewer(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (message.text.isNotBlank()) {
+                if (!item.prompt.isNullOrBlank()) {
                     IconButton(
                         onClick = { showPrompt = !showPrompt },
                         modifier = Modifier
@@ -316,24 +347,19 @@ fun LightboxViewer(
                     }
                 }
 
-                if (message.imagePath != null) {
+                if (item.file.exists()) {
                     val context = LocalContext.current
                     IconButton(
                         onClick = {
-                            val imgFile = File(message.imagePath)
-                            if (imgFile.exists()) {
-                                val success = saveImageToGallery(
-                                    context = context,
-                                    sourceFile = imgFile,
-                                    displayName = "Haven_${imgFile.name}"
-                                )
-                                if (success) {
-                                    Toast.makeText(context, "Saved to Pictures/Haven!", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    Toast.makeText(context, "Failed to save image", Toast.LENGTH_SHORT).show()
-                                }
+                            val success = saveImageToGallery(
+                                context = context,
+                                sourceFile = item.file,
+                                displayName = "Haven_${item.file.name}"
+                            )
+                            if (success) {
+                                Toast.makeText(context, "Saved to Pictures/Haven!", Toast.LENGTH_SHORT).show()
                             } else {
-                                Toast.makeText(context, "Image file not found", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Failed to save image", Toast.LENGTH_SHORT).show()
                             }
                         },
                         modifier = Modifier
@@ -361,7 +387,7 @@ fun LightboxViewer(
             }
 
             // Prompt metadata card at the bottom (if toggled and text exists)
-            if (showPrompt && message.text.isNotBlank()) {
+            if (showPrompt && !item.prompt.isNullOrBlank()) {
                 Surface(
                     color = Color.Black.copy(alpha = 0.75f),
                     modifier = Modifier
@@ -380,7 +406,7 @@ fun LightboxViewer(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = message.text,
+                            text = item.prompt,
                             style = MaterialTheme.typography.bodyMedium,
                             color = Color.White
                         )
@@ -395,7 +421,7 @@ private fun saveImageToGallery(context: android.content.Context, sourceFile: Fil
     val resolver = context.contentResolver
     val imageDetails = ContentValues().apply {
         put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
-        put(MediaStore.MediaColumns.MIME_TYPE, "image/webp")
+        put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Haven")
             put(MediaStore.MediaColumns.IS_PENDING, 1)

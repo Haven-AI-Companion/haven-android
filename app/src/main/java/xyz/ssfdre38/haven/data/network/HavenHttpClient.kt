@@ -226,12 +226,12 @@ object HavenHttpClient {
                 if (response.isSuccessful) {
                     val bytes = response.body?.bytes()
                     if (bytes != null) {
-                        val imagesDir = File(context.filesDir, "companion/images")
+                        val cleanName = companionName.replace("[^a-zA-Z0-9]".toRegex(), "_")
+                        val imagesDir = File(context.filesDir, "companion/images/$cleanName")
                         if (!imagesDir.exists()) imagesDir.mkdirs()
                         
                         val sdf = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
                         val dateTime = sdf.format(java.util.Date())
-                        val cleanName = companionName.replace("[^a-zA-Z0-9]".toRegex(), "_")
                         val file = File(imagesDir, "${cleanName}_$dateTime.png")
                         
                         // Convert WebP/JPG/PNG bytes to PNG format via Bitmap decompression
