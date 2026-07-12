@@ -335,6 +335,7 @@ fun GroupMessageBubble(
         }
 
         Column(
+            modifier = Modifier.weight(1f, fill = false),
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
         ) {
             if (!isUser && speaker != null) {

@@ -801,6 +801,7 @@ fun MessageBubble(
         }
 
         Column(
+            modifier = Modifier.weight(1f, fill = false),
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
         ) {
             // Parse message text for thoughts
