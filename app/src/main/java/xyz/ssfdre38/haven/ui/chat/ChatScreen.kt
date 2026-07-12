@@ -107,10 +107,17 @@ fun ChatScreen(
     }
 
     // Auto-scroll to latest message
+    var previousSize by remember { mutableStateOf(messages.size) }
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+            val delta = messages.size - previousSize
+            if (delta == 1) {
+                listState.animateScrollToItem(messages.size - 1)
+            } else {
+                listState.scrollToItem(messages.size - 1)
+            }
         }
+        previousSize = messages.size
     }
 
     // Sync chat logs from server
@@ -167,8 +174,15 @@ fun ChatScreen(
         if (localChar != null && localChar.avatarPath != null) {
             val bgFile = remember(localChar.avatarPath) { File(localChar.avatarPath) }
             if (bgFile.exists()) {
+                val request = remember(bgFile.absolutePath, bgFile.lastModified()) {
+                    coil.request.ImageRequest.Builder(context)
+                        .data(bgFile)
+                        .memoryCacheKey(bgFile.absolutePath + "_" + bgFile.lastModified())
+                        .diskCacheKey(bgFile.absolutePath + "_" + bgFile.lastModified())
+                        .build()
+                }
                 androidx.compose.foundation.Image(
-                    painter = coil.compose.rememberAsyncImagePainter(model = bgFile),
+                    painter = coil.compose.rememberAsyncImagePainter(model = request),
                     contentDescription = "Background",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,

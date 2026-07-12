@@ -73,10 +73,17 @@ fun GroupChatScreen(
         prefs.getString("auth_token", "") ?: ""
     }
 
+    var previousSize by remember { mutableStateOf(messages.size) }
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+            val delta = messages.size - previousSize
+            if (delta == 1) {
+                listState.animateScrollToItem(messages.size - 1)
+            } else {
+                listState.scrollToItem(messages.size - 1)
+            }
         }
+        previousSize = messages.size
     }
 
     LaunchedEffect(serverUrl, token) {

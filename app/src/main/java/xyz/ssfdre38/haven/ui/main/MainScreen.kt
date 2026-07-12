@@ -1147,8 +1147,17 @@ fun CharacterAvatar(
         character.avatarPath?.let { File(it).exists() } == true
     }
     if (fileExists && character.avatarPath != null) {
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val imgFile = remember(character.avatarPath) { File(character.avatarPath) }
+        val request = remember(imgFile.absolutePath, imgFile.lastModified()) {
+            coil.request.ImageRequest.Builder(context)
+                .data(imgFile)
+                .memoryCacheKey(imgFile.absolutePath + "_" + imgFile.lastModified())
+                .diskCacheKey(imgFile.absolutePath + "_" + imgFile.lastModified())
+                .build()
+        }
         AsyncImage(
-            model = File(character.avatarPath),
+            model = request,
             contentDescription = character.name,
             modifier = modifier
                 .clip(CircleShape)

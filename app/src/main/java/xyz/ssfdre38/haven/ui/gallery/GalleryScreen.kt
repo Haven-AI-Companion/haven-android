@@ -233,8 +233,18 @@ fun GridImageCard(
         val file = remember(message.imagePath) {
             message.imagePath?.let { File(it) }
         }
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val request = remember(file?.absolutePath, file?.lastModified()) {
+            file?.let {
+                coil.request.ImageRequest.Builder(context)
+                    .data(it)
+                    .memoryCacheKey(it.absolutePath + "_" + it.lastModified())
+                    .diskCacheKey(it.absolutePath + "_" + it.lastModified())
+                    .build()
+            }
+        }
         AsyncImage(
-            model = file,
+            model = request,
             contentDescription = "Generated portfolio artwork",
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
@@ -264,8 +274,18 @@ fun LightboxViewer(
             val file = remember(message.imagePath) {
                 message.imagePath?.let { File(it) }
             }
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val request = remember(file?.absolutePath, file?.lastModified()) {
+                file?.let {
+                    coil.request.ImageRequest.Builder(context)
+                        .data(it)
+                        .memoryCacheKey(it.absolutePath + "_" + it.lastModified())
+                        .diskCacheKey(it.absolutePath + "_" + it.lastModified())
+                        .build()
+                }
+            }
             AsyncImage(
-                model = file,
+                model = request,
                 contentDescription = "Fullscreen view",
                 modifier = Modifier
                     .fillMaxSize()
