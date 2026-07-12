@@ -675,7 +675,7 @@ class GroupChatViewModel(
         return phrases.any { cleanLower.contains(it) }
     }
 
-    fun syncGroupMessages(serverUrl: String, token: String) {
+    fun syncGroupMessages(context: Context, serverUrl: String, token: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val grp = repository.getGroupChatById(groupId) ?: return@launch
             val groupUuid = grp.uuid ?: return@launch
@@ -696,14 +696,46 @@ class GroupChatViewModel(
                         characterId = repository.getCharacterByName(characterName)?.id
                     }
                     
-                    repository.insertGroupMessage(
+                    val msgId = repository.insertGroupMessage(
                         GroupMessageEntity(
                             groupId = groupId,
                             sender = sender,
                             characterId = characterId,
                             text = content
                         )
-                    )
+                    ).toInt()
+
+                    // Parse clean text for inline image URLs to download and save locally
+                    val urlRegex = "(https?://[^\\s/]+/uploads/[\\w\\d-]+\\.(?:png|jpg|jpeg|webp))|(/uploads/[\\w\\d-]+\\.(?:png|jpg|jpeg|webp))".toRegex(RegexOption.IGNORE_CASE)
+                    val urlMatch = urlRegex.find(content)
+                    if (urlMatch != null) {
+                        val rawUrl = urlMatch.value
+                        val resolvedUrl = if (rawUrl.startsWith("/")) {
+                            val host = serverUrl.trimEnd('/')
+                            if (host.startsWith("http")) "$host$rawUrl" else "http://$host$rawUrl"
+                        } else {
+                            rawUrl
+                        }
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try {
+                                val localPath = HavenHttpClient.downloadImage(context, resolvedUrl)
+                                if (localPath != null) {
+                                    repository.insertGroupMessage(
+                                        GroupMessageEntity(
+                                            id = msgId,
+                                            groupId = groupId,
+                                            sender = sender,
+                                            characterId = characterId,
+                                            text = content,
+                                            imagePath = localPath
+                                        )
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                    }
                 }
             }
         }

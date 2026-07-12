@@ -128,7 +128,7 @@ fun ChatScreen(
         val token = prefs.getString("auth_token", null)
         if (!ashHost.isNullOrBlank() && !token.isNullOrBlank()) {
             val serverUrl = "${ashHost.trimEnd('/')}:$ashPort"
-            chatViewModel.syncMessages(serverUrl, token)
+            chatViewModel.syncMessages(context, serverUrl, token)
         }
     }
 

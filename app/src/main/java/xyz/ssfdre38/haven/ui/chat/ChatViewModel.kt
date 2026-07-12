@@ -88,7 +88,7 @@ class ChatViewModel(
     private var streamingMessageId: Int = -1
     private var streamBuffer = StringBuilder()
 
-    fun syncMessages(serverUrl: String, token: String) {
+    fun syncMessages(context: Context, serverUrl: String, token: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val char = repository.getCharacterById(characterId) ?: return@launch
             var conversationId = char.conversationId
@@ -116,7 +116,7 @@ class ChatViewModel(
                         audioPath = matchingLocal.audioPath
                     }
 
-                    repository.insertMessage(
+                    val msgId = repository.insertMessage(
                         MessageEntity(
                             characterId = characterId,
                             sender = sender,
@@ -124,7 +124,40 @@ class ChatViewModel(
                             imagePath = imagePath,
                             audioPath = audioPath
                         )
-                    )
+                    ).toInt()
+
+                    if (imagePath == null) {
+                        val urlRegex = "(https?://[^\\s/]+/uploads/[\\w\\d-]+\\.(?:png|jpg|jpeg|webp))|(/uploads/[\\w\\d-]+\\.(?:png|jpg|jpeg|webp))".toRegex(RegexOption.IGNORE_CASE)
+                        val urlMatch = urlRegex.find(content)
+                        if (urlMatch != null) {
+                            val rawUrl = urlMatch.value
+                            val resolvedUrl = if (rawUrl.startsWith("/")) {
+                                val host = serverUrl.trimEnd('/')
+                                if (host.startsWith("http")) "$host$rawUrl" else "http://$host$rawUrl"
+                            } else {
+                                rawUrl
+                            }
+                            viewModelScope.launch(Dispatchers.IO) {
+                                try {
+                                    val localPath = HavenHttpClient.downloadImage(context, resolvedUrl)
+                                    if (localPath != null) {
+                                        repository.insertMessage(
+                                            MessageEntity(
+                                                id = msgId,
+                                                characterId = characterId,
+                                                sender = sender,
+                                                text = content,
+                                                imagePath = localPath,
+                                                audioPath = audioPath
+                                            )
+                                        )
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

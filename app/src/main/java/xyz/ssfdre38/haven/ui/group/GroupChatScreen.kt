@@ -88,7 +88,7 @@ fun GroupChatScreen(
 
     LaunchedEffect(serverUrl, token) {
         if (serverUrl.isNotBlank() && token.isNotBlank()) {
-            viewModel.syncGroupMessages(serverUrl, token)
+            viewModel.syncGroupMessages(context, serverUrl, token)
         }
     }
 
