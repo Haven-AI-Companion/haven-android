@@ -11,9 +11,11 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Search
 import android.content.ContentValues
 import android.provider.MediaStore
 import android.os.Build
@@ -106,6 +108,23 @@ fun GalleryScreen(
     }
 
     var activeItem by remember { mutableStateOf<GalleryItem?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
+    var sortNewestFirst by remember { mutableStateOf(true) }
+
+    val filteredItems = remember(galleryItems, searchQuery, sortNewestFirst) {
+        val filtered = if (searchQuery.isBlank()) {
+            galleryItems
+        } else {
+            galleryItems.filter { item ->
+                item.prompt?.contains(searchQuery, ignoreCase = true) == true
+            }
+        }
+        if (sortNewestFirst) {
+            filtered.sortedByDescending { it.file.lastModified() }
+        } else {
+            filtered.sortedBy { it.file.lastModified() }
+        }
+    }
 
     val mainGradient = remember {
         listOf(Color(0xFF1E1035), Color(0xFF0C051A))
@@ -221,18 +240,80 @@ fun GalleryScreen(
                         )
                     }
                 } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(galleryItems, key = { it.file.absolutePath }) { item ->
-                            GridImageCard(
-                                item = item,
-                                onClick = { activeItem = item }
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Search and Filter Bar Row
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                placeholder = { Text("Search by prompt...", color = Color.White.copy(alpha = 0.5f)) },
+                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.White.copy(alpha = 0.5f)) },
+                                trailingIcon = {
+                                    if (searchQuery.isNotEmpty()) {
+                                        IconButton(onClick = { searchQuery = "" }) {
+                                            Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color.White)
+                                        }
+                                    }
+                                },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedPlaceholderColor = Color.White.copy(alpha = 0.5f),
+                                    unfocusedPlaceholderColor = Color.White.copy(alpha = 0.5f)
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
                             )
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            IconButton(
+                                onClick = { sortNewestFirst = !sortNewestFirst },
+                                modifier = Modifier
+                                    .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                                    .size(56.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Sort,
+                                    contentDescription = "Toggle Sort Order",
+                                    tint = Color.White
+                                )
+                            }
+                        }
+
+                        if (filteredItems.isEmpty()) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No matching images found.",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                                )
+                            }
+                        } else {
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(2),
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(filteredItems, key = { it.file.absolutePath }) { item ->
+                                    GridImageCard(
+                                        item = item,
+                                        onClick = { activeItem = item }
+                                    )
+                                }
+                            }
                         }
                     }
                 }

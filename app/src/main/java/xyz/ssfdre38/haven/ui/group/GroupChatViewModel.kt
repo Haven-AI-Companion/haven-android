@@ -165,7 +165,7 @@ class GroupChatViewModel(
                     val fullText = streamBuffer.toString().trim()
                     
                     // Parse thoughts for state updates (outfit, location, mood) for the active speaker
-                    val thoughtRegex = "<\\s*thought\\s*>(.*?)<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
+                    val thoughtRegex = "<\\s*thought\\s*>(.*)<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
                     val toolCallRegex = "(?:\\[\\s*(?:Tool\\s*(?:Call\\s*)?:\\s*)?generate_portr?ait\\s*\\])|(?:<\\s*call\\s*>\\s*generate_portr?ait\\s*<\\s*/\\s*call\\s*>)|(?:<\\s*call\\s*:\\s*generate_portr?ait\\s*>)".toRegex(RegexOption.IGNORE_CASE)
                     val cleanText = fullText.replace(thoughtRegex, "").replace(toolCallRegex, "").trim()
                     var newOutfit: String? = null
@@ -504,7 +504,7 @@ class GroupChatViewModel(
                     _isGenerating.value = false
                     val fullText = streamBuffer.toString().trim()
                     
-                    val thoughtRegex = "<\\s*thought\\s*>(.*?)<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
+                    val thoughtRegex = "<\\s*thought\\s*>(.*)<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
                     // Extract [Outfit: ...] from fullText for maximum robustness
                     val outfitRegex = "\\[\\s*Out\\s*fit\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
                     val outfitMatch = outfitRegex.find(fullText)
@@ -622,7 +622,7 @@ class GroupChatViewModel(
         var text = rawText
         
         // 1. Remove completed thought blocks
-        val completedThoughtRegex = "<\\s*thought\\s*>.*?<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
+        val completedThoughtRegex = "<\\s*thought\\s*>.*<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
         text = text.replace(completedThoughtRegex, "")
         
         // 2. Remove completed call blocks

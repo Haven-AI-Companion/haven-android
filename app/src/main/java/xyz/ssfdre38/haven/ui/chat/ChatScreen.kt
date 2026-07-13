@@ -4,6 +4,8 @@ import xyz.ssfdre38.haven.ui.components.VrmAvatarView
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.border
 import android.content.Context
 import android.net.Uri
 import android.widget.Toast
@@ -20,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -33,6 +36,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontStyle
@@ -43,6 +47,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -82,7 +87,18 @@ fun ChatScreen(
     val messages by chatViewModel.messages.collectAsStateWithLifecycle()
     val isGenerating by chatViewModel.isGenerating.collectAsStateWithLifecycle()
     val isSpeaking by chatViewModel.isSpeaking.collectAsStateWithLifecycle()
-    val listState = rememberLazyListState()
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = if (chatViewModel.scrollIndex != -1) chatViewModel.scrollIndex else 0,
+        initialFirstVisibleItemScrollOffset = if (chatViewModel.scrollIndex != -1) chatViewModel.scrollOffset else 0
+    )
+
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+            .collect { (index, offset) ->
+                chatViewModel.scrollIndex = index
+                chatViewModel.scrollOffset = offset
+            }
+    }
 
     var inputText by remember { mutableStateOf("") }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
@@ -104,6 +120,22 @@ fun ChatScreen(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         selectedImageUri = uri
+    }
+
+    val requestPortrait = {
+        val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+        val sdHost = prefs.getString("sd_host", null)
+        if (sdHost.isNullOrBlank()) {
+            Toast.makeText(context, "Configure Stable Diffusion server in Settings first", Toast.LENGTH_SHORT).show()
+        } else {
+            character?.let { char ->
+                val loc = char.currentLocation.ifBlank { "cozy room" }
+                val outfit = char.currentOutfit.ifBlank { "casual clothing" }
+                val moodStr = if (char.currentMood.isNotBlank()) "${char.currentMood} expression, " else ""
+                val imagePrompt = "${char.name}, digital art portrait, highly detailed, ${moodStr}standing in $loc, wearing $outfit"
+                chatViewModel.generateImage(context, sdHost, imagePrompt)
+            }
+        }
     }
 
     // Auto-scroll to latest message
@@ -199,9 +231,26 @@ fun ChatScreen(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         character?.let { char ->
+                            val avatarPulseAnim = rememberInfiniteTransition(label = "avatar_pulse")
+                            val avatarScale by avatarPulseAnim.animateFloat(
+                                initialValue = 1f,
+                                targetValue = if (isSpeaking) 1.12f else 1f,
+                                animationSpec = infiniteRepeatable(
+                                    animation = tween(500, easing = FastOutSlowInEasing),
+                                    repeatMode = RepeatMode.Reverse
+                                ),
+                                label = "avatarScale"
+                            )
                             xyz.ssfdre38.haven.ui.main.CharacterAvatar(
                                 character = char,
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier
+                                    .scale(avatarScale)
+                                    .size(36.dp)
+                                    .border(
+                                        if (isSpeaking) 1.5.dp else 0.dp,
+                                        if (isSpeaking) Color(0xFF4CAF50) else Color.Transparent,
+                                        CircleShape
+                                    )
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
@@ -216,6 +265,16 @@ fun ChatScreen(
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.primary
                                     )
+                                } else if (isSpeaking) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "Speaking...",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color(0xFF4CAF50)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        MiniAudioVisualizer()
+                                    }
                                 }
                             }
                         }
@@ -266,21 +325,7 @@ fun ChatScreen(
                             )
                         }
                         IconButton(
-                            onClick = {
-                                val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
-                                val sdHost = prefs.getString("sd_host", null)
-                                if (sdHost.isNullOrBlank()) {
-                                    Toast.makeText(context, "Configure Stable Diffusion server in Settings first", Toast.LENGTH_SHORT).show()
-                                    return@IconButton
-                                }
-                                character?.let { char ->
-                                    val loc = char.currentLocation.ifBlank { "cozy room" }
-                                    val outfit = char.currentOutfit.ifBlank { "casual clothing" }
-                                    val moodStr = if (char.currentMood.isNotBlank()) "${char.currentMood} expression, " else ""
-                                    val imagePrompt = "${char.name}, digital art portrait, highly detailed, ${moodStr}standing in $loc, wearing $outfit"
-                                    chatViewModel.generateImage(context, sdHost, imagePrompt)
-                                }
-                            },
+                            onClick = { requestPortrait() },
                             enabled = !isGenerating
                         ) {
                             Icon(
@@ -346,19 +391,7 @@ fun ChatScreen(
                                     text = { Text("Request Portrait") },
                                     onClick = {
                                         expanded = false
-                                        val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
-                                        val sdHost = prefs.getString("sd_host", null)
-                                        if (sdHost.isNullOrBlank()) {
-                                            Toast.makeText(context, "Configure Stable Diffusion server in Settings first", Toast.LENGTH_SHORT).show()
-                                            return@DropdownMenuItem
-                                        }
-                                        character?.let { char ->
-                                            val loc = char.currentLocation.ifBlank { "cozy room" }
-                                            val outfit = char.currentOutfit.ifBlank { "casual clothing" }
-                                            val moodStr = if (char.currentMood.isNotBlank()) "${char.currentMood} expression, " else ""
-                                            val imagePrompt = "${char.name}, digital art portrait, highly detailed, ${moodStr}standing in $loc, wearing $outfit"
-                                            chatViewModel.generateImage(context, sdHost, imagePrompt)
-                                        }
+                                        requestPortrait()
                                     },
                                     enabled = !isGenerating,
                                     leadingIcon = {
@@ -515,6 +548,20 @@ fun ChatScreen(
                                 tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
                             )
                         }
+
+                        // AI Portrait Generation Button!
+                        IconButton(
+                            onClick = { requestPortrait() },
+                            enabled = !isGenerating,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.AutoAwesome,
+                                contentDescription = "Request Portrait",
+                                tint = if (isGenerating) Color.White.copy(alpha = 0.3f) else MaterialTheme.colorScheme.primary
+                            )
+                        }
+
                         Spacer(modifier = Modifier.width(4.dp))
                         OutlinedTextField(
                             value = inputText,
@@ -787,6 +834,9 @@ fun MessageBubble(
         if (host.startsWith("http")) "$host:$port" else "http://$host:$port"
     }
 
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val bubbleMaxWidth = remember(configuration.screenWidthDp) { (configuration.screenWidthDp * 0.72f).dp }
+
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
@@ -819,7 +869,7 @@ fun MessageBubble(
                     model = imgFile,
                     contentDescription = "Generated image",
                     modifier = Modifier
-                        .widthIn(max = 260.dp)
+                        .widthIn(max = bubbleMaxWidth)
                         .clip(RoundedCornerShape(16.dp))
                         .clickable { onImageClick(imgFile) },
                     contentScale = ContentScale.FillWidth
@@ -833,7 +883,7 @@ fun MessageBubble(
                     model = contentParsed.imageUrl,
                     contentDescription = "Inline generated portrait",
                     modifier = Modifier
-                        .widthIn(max = 260.dp)
+                        .widthIn(max = bubbleMaxWidth)
                         .clip(RoundedCornerShape(16.dp))
                         .clickable { onImageClick(contentParsed.imageUrl) },
                     contentScale = ContentScale.FillWidth
@@ -848,7 +898,7 @@ fun MessageBubble(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
                     modifier = Modifier
                         .padding(bottom = 6.dp)
-                        .widthIn(max = 260.dp),
+                        .widthIn(max = bubbleMaxWidth),
                     border = androidx.compose.foundation.BorderStroke(
                         1.dp,
                         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f)
@@ -900,7 +950,7 @@ fun MessageBubble(
                         else
                             Color(0xFF1A1A1A).copy(alpha = 0.7f), // Glassmorphic Companion dark grey
                         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                        modifier = Modifier.widthIn(max = 280.dp)
+                        modifier = Modifier.widthIn(max = bubbleMaxWidth)
                     ) {
                         Text(
                             text = formatMessageText(contentParsed.cleanText, isUser),
@@ -914,9 +964,7 @@ fun MessageBubble(
                     Spacer(modifier = Modifier.width(6.dp))
                     IconButton(
                         onClick = {
-                            if (message.audioPath != null) {
-                                onPlayAudio(message.audioPath)
-                            }
+                            onPlayAudio(message.audioPath)
                         },
                         modifier = Modifier.size(28.dp)
                     ) {
@@ -969,7 +1017,7 @@ fun MessageBubble(
                         modifier = Modifier.size(24.dp)
                     ) {
                         Icon(
-                            imageVector = if (message.audioPath != null) Icons.Filled.PlayCircle else Icons.Default.VolumeUp,
+                            imageVector = if (message.audioPath != null) Icons.Filled.PlayCircle else Icons.AutoMirrored.Filled.VolumeUp,
                             contentDescription = "Speak Text",
                             tint = Color.White.copy(alpha = 0.5f),
                             modifier = Modifier.size(14.dp)
@@ -1091,6 +1139,50 @@ fun formatMessageText(text: String, isUser: Boolean): androidx.compose.ui.text.A
                 }
             }
         }
+    }
+}
+
+@Composable
+fun MiniAudioVisualizer() {
+    val infiniteTransition = rememberInfiniteTransition(label = "mini_visualizer")
+    
+    val height1 by infiniteTransition.animateFloat(
+        initialValue = 4f,
+        targetValue = 12f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(400, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "bar1"
+    )
+    val height2 by infiniteTransition.animateFloat(
+        initialValue = 12f,
+        targetValue = 4f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(350, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "bar2"
+    )
+    val height3 by infiniteTransition.animateFloat(
+        initialValue = 6f,
+        targetValue = 14f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(450, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "bar3"
+    )
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.Bottom,
+        modifier = Modifier.height(14.dp)
+    ) {
+        val barColor = Color(0xFF4CAF50)
+        Box(modifier = Modifier.size(width = 2.dp, height = height1.dp).background(barColor, RoundedCornerShape(1.dp)))
+        Box(modifier = Modifier.size(width = 2.dp, height = height2.dp).background(barColor, RoundedCornerShape(1.dp)))
+        Box(modifier = Modifier.size(width = 2.dp, height = height3.dp).background(barColor, RoundedCornerShape(1.dp)))
     }
 }
 

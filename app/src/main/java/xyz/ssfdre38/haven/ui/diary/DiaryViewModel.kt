@@ -60,7 +60,7 @@ class DiaryViewModel(
 
             val chatLogs = recentMessages.joinToString("\n") { msg ->
                 val sender = if (msg.sender == "user") "User" else characterName
-                val thoughtRegex = "<\\s*thought\\s*>(.*?)<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
+                val thoughtRegex = "<\\s*thought\\s*>(.*)<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
                 val cleanText = msg.text.replace(thoughtRegex, "").trim()
                 "$sender: $cleanText"
             }

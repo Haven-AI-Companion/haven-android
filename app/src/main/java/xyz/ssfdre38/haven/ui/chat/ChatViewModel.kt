@@ -38,6 +38,9 @@ class ChatViewModel(
 
     private var activePlayer: android.media.MediaPlayer? = null
 
+    var scrollIndex: Int = -1
+    var scrollOffset: Int = 0
+
     fun playAudio(audioUrl: String) {
         viewModelScope.launch(Dispatchers.Main) {
             try {
@@ -315,7 +318,7 @@ class ChatViewModel(
                     val fullText = streamBuffer.toString().trim()
                     
                     // Parse thoughts for state updates
-                    val thoughtRegex = "<\\s*thought\\s*>(.*?)<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
+                    val thoughtRegex = "<\\s*thought\\s*>(.*)<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
                     val toolCallRegex = "(?:\\[\\s*(?:Tool\\s*(?:Call\\s*)?:\\s*)?generate_portr?ait\\s*\\])|(?:<\\s*call\\s*>\\s*generate_portr?ait\\s*<\\s*/\\s*call\\s*>)|(?:<\\s*call\\s*:\\s*generate_portr?ait\\s*>)".toRegex(RegexOption.IGNORE_CASE)
                     val avatar3dRegex = "(?:\\[\\s*(?:Tool\\s*(?:Call\\s*)?:\\s*)?generate_3d_avatar\\s*\\])|(?:<\\s*call\\s*>\\s*generate_3d_avatar\\s*<\\s*/\\s*call\\s*>)|(?:<\\s*call\\s*:\\s*generate_3d_avatar\\s*>)".toRegex(RegexOption.IGNORE_CASE)
                     val cleanText = fullText.replace(thoughtRegex, "").replace(toolCallRegex, "").replace(avatar3dRegex, "").trim()
@@ -964,7 +967,7 @@ ${character.value?.name ?: "Companion"}: $cleanText"""
         var text = rawText
         
         // 1. Remove completed thought blocks
-        val completedThoughtRegex = "<\\s*thought\\s*>.*?<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
+        val completedThoughtRegex = "<\\s*thought\\s*>.*<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
         text = text.replace(completedThoughtRegex, "")
         
         // 2. Remove completed call blocks
