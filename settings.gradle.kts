@@ -31,6 +31,7 @@ plugins {
 
 rootProject.name = "Haven"
 include(":app")
+include(":shared")
 
 include(":agent-sdk")
 project(":agent-sdk").projectDir = file("../android-agent-framework/agent-sdk")
