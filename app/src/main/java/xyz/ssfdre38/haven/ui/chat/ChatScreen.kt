@@ -293,7 +293,8 @@ fun ChatScreen(
                     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
                     val isTabletOrWide = configuration.screenWidthDp >= 600 || isLandscape
 
-                    // Voice call (always visible as key quick action)
+                    // 1. Direct App Bar Actions:
+                    // Voice call (always visible)
                     IconButton(onClick = onVoiceCallClick) {
                         Icon(
                             imageVector = Icons.Default.Call,
@@ -302,21 +303,20 @@ fun ChatScreen(
                         )
                     }
 
+                    // Request Portrait (always visible)
+                    IconButton(
+                        onClick = { requestPortrait() },
+                        enabled = !isGenerating
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Image,
+                            contentDescription = "Request Portrait",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    // Gallery (direct button on tablets/landscape, otherwise in more menu)
                     if (isTabletOrWide) {
-                        IconButton(onClick = { onDiaryClick(character?.name ?: "Companion") }) {
-                            Icon(
-                                imageVector = Icons.Default.Book,
-                                contentDescription = "View Journal",
-                                tint = MaterialTheme.colorScheme.onBackground
-                            )
-                        }
-                        IconButton(onClick = onMemoryVaultClick) {
-                            Icon(
-                                imageVector = Icons.Default.Psychology,
-                                contentDescription = "Memory Vault",
-                                tint = MaterialTheme.colorScheme.onBackground
-                            )
-                        }
                         IconButton(onClick = onGalleryClick) {
                             Icon(
                                 imageVector = Icons.Default.PhotoLibrary,
@@ -324,56 +324,51 @@ fun ChatScreen(
                                 tint = MaterialTheme.colorScheme.onBackground
                             )
                         }
-                        IconButton(
-                            onClick = { requestPortrait() },
-                            enabled = !isGenerating
-                        ) {
+                    }
+
+                    // 2. Three-dot Dropdown Menu (Universal - visible on all devices)
+                    var expanded by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { expanded = true }) {
                             Icon(
-                                imageVector = Icons.Default.Image,
-                                contentDescription = "Generate Image",
-                                tint = MaterialTheme.colorScheme.primary
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "More Actions",
+                                tint = MaterialTheme.colorScheme.onBackground
                             )
                         }
-                    } else {
-                        var expanded by remember { mutableStateOf(false) }
-                        Box {
-                            IconButton(onClick = { expanded = true }) {
-                                Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "More Actions",
-                                    tint = MaterialTheme.colorScheme.onBackground
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = expanded,
-                                onDismissRequest = { expanded = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("View Journal") },
-                                    onClick = {
-                                        expanded = false
-                                        onDiaryClick(character?.name ?: "Companion")
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Default.Book,
-                                            contentDescription = "Journal"
-                                        )
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Memory Vault") },
-                                    onClick = {
-                                        expanded = false
-                                        onMemoryVaultClick()
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Default.Psychology,
-                                            contentDescription = "Memory"
-                                        )
-                                    }
-                                )
+                        DropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("View Journal") },
+                                onClick = {
+                                    expanded = false
+                                    onDiaryClick(character?.name ?: "Companion")
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Book,
+                                        contentDescription = "Journal"
+                                    )
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Memory Vault") },
+                                onClick = {
+                                    expanded = false
+                                    onMemoryVaultClick()
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Psychology,
+                                        contentDescription = "Memory"
+                                    )
+                                }
+                            )
+                            
+                            // Only show Gallery in more menu on mobile screens
+                            if (!isTabletOrWide) {
                                 DropdownMenuItem(
                                     text = { Text("View Gallery") },
                                     onClick = {
@@ -387,79 +382,66 @@ fun ChatScreen(
                                         )
                                     }
                                 )
-                                DropdownMenuItem(
-                                    text = { Text("Request Portrait") },
-                                    onClick = {
-                                        expanded = false
-                                        requestPortrait()
-                                    },
-                                    enabled = !isGenerating,
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Default.Image,
-                                            contentDescription = "Portrait"
-                                        )
-                                    }
-                                )
-                                val prefs = remember { context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE) }
-                                val isOverlayActive = prefs.getBoolean("enable_overlay", false) && android.provider.Settings.canDrawOverlays(context)
-                                
-                                DropdownMenuItem(
-                                    text = { Text(if (isOverlayActive) "Close Floating Companion" else "Show Floating Companion") },
-                                    onClick = {
-                                        expanded = false
-                                        if (isOverlayActive) {
-                                            prefs.edit().putBoolean("enable_overlay", false).apply()
-                                            context.stopService(android.content.Intent(context, xyz.ssfdre38.haven.service.FloatingCompanionService::class.java))
-                                        } else {
-                                            prefs.edit().putBoolean("enable_overlay", true).apply()
-                                            if (!android.provider.Settings.canDrawOverlays(context)) {
-                                                val intent = android.content.Intent(
-                                                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                                    android.net.Uri.parse("package:${context.packageName}")
-                                                ).apply {
-                                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                                                }
-                                                context.startActivity(intent)
-                                            } else {
-                                                context.startService(android.content.Intent(context, xyz.ssfdre38.haven.service.FloatingCompanionService::class.java))
-                                            }
-                                        }
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = if (isOverlayActive) Icons.Default.Close else Icons.Default.Cloud,
-                                            contentDescription = "Floating Companion"
-                                        )
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Bubble Conversation") },
-                                    onClick = {
-                                        expanded = false
-                                        character?.let { char ->
-                                            val lastMsgText = messages.lastOrNull { it.sender == "character" }?.text?.take(200) ?: "Let's chat!"
-                                            try {
-                                                xyz.ssfdre38.haven.data.work.ProactiveMessageWorker.showNotification(
-                                                    context = context,
-                                                    character = char,
-                                                    messageText = lastMsgText,
-                                                    isSilent = false
-                                                )
-                                            } catch (e: Exception) {
-                                                e.printStackTrace()
-                                                Toast.makeText(context, "Error launching bubble: ${e.message}", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Default.PlayCircle,
-                                            contentDescription = "Bubble Conversation"
-                                        )
-                                    }
-                                )
                             }
+                            
+                            val prefs = remember { context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE) }
+                            val isOverlayActive = prefs.getBoolean("enable_overlay", false) && android.provider.Settings.canDrawOverlays(context)
+                            
+                            DropdownMenuItem(
+                                text = { Text(if (isOverlayActive) "Close Floating Companion" else "Show Floating Companion") },
+                                onClick = {
+                                    expanded = false
+                                    if (isOverlayActive) {
+                                        prefs.edit().putBoolean("enable_overlay", false).apply()
+                                        context.stopService(android.content.Intent(context, xyz.ssfdre38.haven.service.FloatingCompanionService::class.java))
+                                    } else {
+                                        prefs.edit().putBoolean("enable_overlay", true).apply()
+                                        if (!android.provider.Settings.canDrawOverlays(context)) {
+                                            val intent = android.content.Intent(
+                                                android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                                android.net.Uri.parse("package:${context.packageName}")
+                                            ).apply {
+                                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            }
+                                            context.startActivity(intent)
+                                        } else {
+                                            context.startService(android.content.Intent(context, xyz.ssfdre38.haven.service.FloatingCompanionService::class.java))
+                                        }
+                                    }
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (isOverlayActive) Icons.Default.Close else Icons.Default.Cloud,
+                                        contentDescription = "Floating Companion"
+                                    )
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Bubble Conversation") },
+                                onClick = {
+                                    expanded = false
+                                    character?.let { char ->
+                                        val lastMsgText = messages.lastOrNull { it.sender == "character" }?.text?.take(200) ?: "Let's chat!"
+                                        try {
+                                            xyz.ssfdre38.haven.data.work.ProactiveMessageWorker.showNotification(
+                                                context = context,
+                                                character = char,
+                                                messageText = lastMsgText,
+                                                isSilent = false
+                                            )
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                            Toast.makeText(context, "Error launching bubble: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayCircle,
+                                        contentDescription = "Bubble Conversation"
+                                    )
+                                }
+                            )
                         }
                     }
                 },
