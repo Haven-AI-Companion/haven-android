@@ -513,7 +513,11 @@ class ChatViewModel(
 
                                 val wearingText = if (isNaked) "nothing, clothes off" else currentOutfitVal.ifBlank { "casual attire" }
 
-                                "${currentChar.name}, description: ${currentChar.description}$detailsPart, wearing $wearingText, location: ${currentLocationVal.ifBlank { "cozy room" }}, expression: ${currentMoodVal.ifBlank { "smiling" }}"
+                                val actionRegex = "\\*([^*]+)\\*".toRegex()
+                                val actions = actionRegex.findAll(fullText).map { it.groupValues[1] }.joinToString(", ")
+                                val actionPart = if (actions.isNotBlank()) ", action: $actions" else ""
+
+                                "${currentChar.name}, description: ${currentChar.description}$detailsPart, wearing $wearingText, location: ${currentLocationVal.ifBlank { "cozy room" }}, expression: ${currentMoodVal.ifBlank { "smiling" }}$actionPart"
                             } else {
                                 "companion in a cozy room"
                             }
