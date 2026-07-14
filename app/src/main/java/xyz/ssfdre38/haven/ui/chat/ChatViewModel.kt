@@ -277,6 +277,37 @@ class ChatViewModel(
                     val agentCtx = xyz.ssfdre38.agent.AgentContext.current(context)
                     appendLine("Current Time of Day: ${agentCtx.localTime}")
                 }
+
+                // Inject city location context (if enabled)
+                val shareCity = sharedPrefs.getBoolean("share_city_location", false)
+                if (shareCity) {
+                    val tzId = java.util.TimeZone.getDefault().id
+                    val city = tzId.substringAfterLast('/').replace('_', ' ')
+                    if (city.isNotBlank() && city != tzId) {
+                        appendLine("User Location: Near $city")
+                    }
+                }
+
+                // Inject app theme context (if enabled)
+                val shareTheme = sharedPrefs.getBoolean("share_app_theme", false)
+                if (shareTheme) {
+                    val isDark = (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+                    appendLine("App Vibe: The user is currently running this app in ${if (isDark) "Dark Mode (dim, cozy screen lighting)" else "Light Mode (bright, daylight screen lighting)"}.")
+                }
+
+                // Inject active media/music context (if enabled)
+                val shareMedia = sharedPrefs.getBoolean("share_active_media", false)
+                if (shareMedia) {
+                    val tracker = xyz.ssfdre38.haven.data.receiver.MediaTracker
+                    if (tracker.isPlaying && !tracker.currentTrack.isNullOrBlank()) {
+                        appendLine("Device Audio: The user is currently listening to \"${tracker.currentTrack}\"${if (!tracker.currentArtist.isNullOrBlank()) " by ${tracker.currentArtist}" else ""}.")
+                    } else {
+                        val audioManager = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+                        if (audioManager.isMusicActive) {
+                            appendLine("Device Audio: Background music is currently active/playing on the user's device.")
+                        }
+                    }
+                }
             }
             val fullPrompt = if (systemContext.isNotBlank()) "$systemContext\n\n$userName: $text" else text
 

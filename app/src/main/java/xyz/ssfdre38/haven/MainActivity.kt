@@ -84,6 +84,13 @@ class MainActivity : ComponentActivity() {
             e.printStackTrace()
         }
 
+        // Register broadcast listener for music tracking
+        try {
+            xyz.ssfdre38.haven.data.receiver.MediaTracker.register(this)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
         enableEdgeToEdge()
         setContent {
             HavenTheme {

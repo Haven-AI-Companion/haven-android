@@ -100,6 +100,9 @@ fun SettingsScreen(
     var shareLocalTime by remember { mutableStateOf(sharedPrefs.getBoolean("share_local_time", true)) }
     var enableLongTermMemory by remember { mutableStateOf(sharedPrefs.getBoolean("enable_long_term_memory", true)) }
     var freezeRelationshipLevel by remember { mutableStateOf(sharedPrefs.getBoolean("freeze_relationship_level", false)) }
+    var shareActiveMedia by remember { mutableStateOf(sharedPrefs.getBoolean("share_active_media", false)) }
+    var shareCityLocation by remember { mutableStateOf(sharedPrefs.getBoolean("share_city_location", false)) }
+    var shareAppTheme by remember { mutableStateOf(sharedPrefs.getBoolean("share_app_theme", false)) }
     var showPrivacyDialog by remember { mutableStateOf(false) }
     
     val database = remember { xyz.ssfdre38.haven.data.database.AppDatabase.getInstance(context) }
@@ -567,6 +570,72 @@ fun SettingsScreen(
                                     onCheckedChange = { freezeRelationshipLevel = it }
                                 )
                             }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Share Active Media / Music",
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    Text(
+                                        text = "Share active media playing in the background (artist/title).",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = shareActiveMedia,
+                                    onCheckedChange = { shareActiveMedia = it }
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Share City Location",
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    Text(
+                                        text = "Provide nearest major city from timezone for geographic context.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = shareCityLocation,
+                                    onCheckedChange = { shareCityLocation = it }
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Share App Theme Style",
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    Text(
+                                        text = "Provide Dark Mode / Light Mode status.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = shareAppTheme,
+                                    onCheckedChange = { shareAppTheme = it }
+                                )
+                            }
                         }
                     },
                     confirmButton = {
@@ -873,6 +942,9 @@ fun SettingsScreen(
                         putBoolean("share_local_time", shareLocalTime)
                         putBoolean("enable_long_term_memory", enableLongTermMemory)
                         putBoolean("freeze_relationship_level", freezeRelationshipLevel)
+                        putBoolean("share_active_media", shareActiveMedia)
+                        putBoolean("share_city_location", shareCityLocation)
+                        putBoolean("share_app_theme", shareAppTheme)
                         apply()
                     }
                     Toast.makeText(context, "Settings saved successfully", Toast.LENGTH_SHORT).show()
