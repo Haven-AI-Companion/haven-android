@@ -7,8 +7,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.border
 import android.content.Context
+import android.content.ContentValues
+import android.provider.MediaStore
+import android.os.Build
 import android.net.Uri
 import android.widget.Toast
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -29,6 +36,7 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Psychology
@@ -775,20 +783,135 @@ fun FullscreenImageViewer(
                 contentScale = ContentScale.Fit
             )
 
-            // Close button at top right
-            IconButton(
-                onClick = onDismiss,
+            // Header close and download buttons row at top right
+            Row(
                 modifier = Modifier
                     .statusBarsPadding()
                     .padding(16.dp)
                     .align(Alignment.TopEnd)
-                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Close",
-                    tint = Color.White
-                )
+                val context = LocalContext.current
+                IconButton(
+                    onClick = {
+                        saveImageToGallery(context, imageModel) { success ->
+                            if (success) {
+                                Toast.makeText(context, "Saved to Pictures/Haven!", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Failed to save image", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = "Save to Gallery",
+                        tint = Color.White
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = Color.White
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun saveImageToGallery(context: android.content.Context, imageModel: Any, onResult: (Boolean) -> Unit) {
+    val resolver = context.contentResolver
+    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        try {
+            var inputStream: java.io.InputStream? = null
+            var displayName = "Haven_${System.currentTimeMillis()}"
+            var mimeType = "image/png"
+
+            if (imageModel is File) {
+                if (imageModel.exists()) {
+                    inputStream = imageModel.inputStream()
+                    val ext = imageModel.extension.lowercase()
+                    displayName = "Haven_${imageModel.name}"
+                    mimeType = if (ext == "webp") "image/webp" else if (ext == "jpg" || ext == "jpeg") "image/jpeg" else "image/png"
+                }
+            } else if (imageModel is String) {
+                val url = imageModel
+                val ext = if (url.lowercase().endsWith(".webp")) "webp"
+                          else if (url.lowercase().endsWith(".jpg") || url.lowercase().endsWith(".jpeg")) "jpg"
+                          else "png"
+                displayName = "Haven_${System.currentTimeMillis()}.$ext"
+                mimeType = if (ext == "webp") "image/webp" else if (ext == "jpg") "image/jpeg" else "image/png"
+
+                val request = okhttp3.Request.Builder().url(url).build()
+                val response = okhttp3.OkHttpClient().newCall(request).execute()
+                if (response.isSuccessful) {
+                    val bytes = response.body?.bytes()
+                    if (bytes != null) {
+                        inputStream = java.io.ByteArrayInputStream(bytes)
+                    }
+                }
+            }
+
+            if (inputStream == null) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    onResult(false)
+                }
+                return@launch
+            }
+
+            val imageDetails = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_PICTURES + "/Haven")
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                }
+            }
+
+            val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            } else {
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            }
+
+            val uri = resolver.insert(collection, imageDetails)
+            if (uri == null) {
+                inputStream.close()
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    onResult(false)
+                }
+                return@launch
+            }
+
+            resolver.openOutputStream(uri)?.use { out ->
+                inputStream.use { input ->
+                    input.copyTo(out)
+                }
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                imageDetails.clear()
+                imageDetails.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                resolver.update(uri, imageDetails, null, null)
+            }
+
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                onResult(true)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                onResult(false)
             }
         }
     }
