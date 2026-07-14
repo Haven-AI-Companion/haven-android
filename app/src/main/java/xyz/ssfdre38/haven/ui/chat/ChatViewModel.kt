@@ -309,7 +309,28 @@ class ChatViewModel(
                     }
                 }
             }
-            val fullPrompt = if (systemContext.isNotBlank()) "$systemContext\n\n$userName: $text" else text
+            val allMsgs = repository.getMessagesForCharacter(characterId).first()
+            val history = allMsgs.takeLast(15) // last 15 messages context
+
+            val formattedHistory = history.joinToString("\n") { m ->
+                val senderName = if (m.sender == "user") userName else (char?.name ?: "Companion")
+                val cleanText = m.text.replace("<\\s*thought\\s*>(.*?)<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL), "").trim()
+                "$senderName: $cleanText"
+            }
+
+            val fullPrompt = buildString {
+                if (systemContext.isNotBlank()) {
+                    append(systemContext)
+                    append("\n\n")
+                }
+                if (formattedHistory.isNotBlank()) {
+                    append("=== Conversation History ===\n")
+                    append(formattedHistory)
+                    append("\n")
+                }
+                append("$userName: $text\n")
+                append("${char?.name ?: "Companion"}:")
+            }
 
             // Insert user message into database
             repository.insertMessage(
