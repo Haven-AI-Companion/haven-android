@@ -230,25 +230,18 @@ object HavenHttpClient {
                         val imagesDir = File(context.filesDir, "companion/images/$cleanName")
                         if (!imagesDir.exists()) imagesDir.mkdirs()
                         
+                        val ext = if (imageUrl.lowercase().endsWith(".webp")) ".webp"
+                                  else if (imageUrl.lowercase().endsWith(".jpg") || imageUrl.lowercase().endsWith(".jpeg")) ".jpg"
+                                  else ".png"
+                        
                         val sdf = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
                         val dateTime = sdf.format(java.util.Date())
-                        val file = File(imagesDir, "${cleanName}_$dateTime.png")
+                        val file = File(imagesDir, "${cleanName}_$dateTime$ext")
                         
-                        // Convert WebP/JPG/PNG bytes to PNG format via Bitmap decompression
-                        val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                        if (bitmap != null) {
-                            java.io.FileOutputStream(file).use { fos ->
-                                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, fos)
-                            }
-                            bitmap.recycle()
-                            return file.absolutePath
-                        } else {
-                            // Fallback to writing bytes directly if bitmap decoding fails
-                            java.io.FileOutputStream(file).use { fos ->
-                                fos.write(bytes)
-                            }
-                            return file.absolutePath
+                        java.io.FileOutputStream(file).use { fos ->
+                            fos.write(bytes)
                         }
+                        return file.absolutePath
                     }
                 }
             }

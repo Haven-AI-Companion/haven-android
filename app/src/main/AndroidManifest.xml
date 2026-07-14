@@ -26,13 +26,19 @@
             android:exported="true"
             android:allowEmbedded="true"
             android:resizeableActivity="true"
-            android:documentLaunchMode="always"
             android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".BubbleActivity"
+            android:exported="true"
+            android:allowEmbedded="true"
+            android:resizeableActivity="true"
+            android:documentLaunchMode="always" />
 
         <!-- App Widget Receiver -->
         <receiver

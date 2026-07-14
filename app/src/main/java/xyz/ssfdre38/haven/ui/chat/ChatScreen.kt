@@ -1079,12 +1079,13 @@ fun parseMessageText(text: String): ParsedMessage {
 data class MessageContent(val cleanText: String, val imageUrl: String?)
 
 fun parseImageUrls(text: String, serverUrl: String): MessageContent {
-    val regex = "(https?://[^\\s/]+/uploads/[\\w\\d-]+\\.(?:png|jpg|jpeg|webp))|(/uploads/[\\w\\d-]+\\.(?:png|jpg|jpeg|webp))".toRegex(RegexOption.IGNORE_CASE)
+    val regex = "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.-]+)|(/uploads/[%a-zA-Z_0-9.-]+)".toRegex(RegexOption.IGNORE_CASE)
     val match = regex.find(text)
     return if (match != null) {
         val rawUrl = match.value
         val resolvedUrl = if (rawUrl.startsWith("/")) {
-            "${serverUrl.trimEnd('/')}$rawUrl"
+            val host = serverUrl.trimEnd('/')
+            if (host.startsWith("http")) "$host$rawUrl" else "http://$host$rawUrl"
         } else {
             rawUrl
         }

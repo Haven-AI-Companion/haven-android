@@ -130,7 +130,7 @@ class ChatViewModel(
                     ).toInt()
 
                     if (imagePath == null) {
-                        val urlRegex = "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.()-]+)|(/uploads/[%a-zA-Z_0-9.()-]+)".toRegex(RegexOption.IGNORE_CASE)
+                        val urlRegex = "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.-]+)|(/uploads/[%a-zA-Z_0-9.-]+)".toRegex(RegexOption.IGNORE_CASE)
                         val urlMatch = urlRegex.find(content)
                         if (urlMatch != null) {
                             val rawUrl = urlMatch.value
@@ -448,58 +448,68 @@ class ChatViewModel(
                                                 } else {
                                                     relativeUrl
                                                 }
-                                                viewModelScope.launch(Dispatchers.IO) {
-                                                    try {
-                                                        val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, updatedChar.name)
-                                                        if (localPath != null) {
-                                                            val latestChar = repository.getCharacterById(characterId)
-                                                            if (latestChar != null) {
-                                                                repository.updateCharacter(
-                                                                    latestChar.copy(avatarPath = localPath)
-                                                                )
-                                                            }
-                                                        }
-                                                    } catch (e: Exception) {
-                                                        e.printStackTrace()
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        
-                                        // 2. If 3D model is active, generate and download the updated 3D mesh
-                                        if (!updatedChar.vrmModelPath.isNullOrBlank()) {
-                                            HavenHttpClient.executeTool(
-                                                serverUrl = serverUrl,
-                                                token = token,
-                                                toolName = "generate_3d_avatar",
-                                                arguments = args
-                                            ) { result ->
-                                                result.onSuccess { relativeUrl ->
-                                                    val resolvedUrl = if (relativeUrl.startsWith("/")) {
-                                                        val host = serverUrl.trimEnd('/')
-                                                        if (host.startsWith("http")) "$host$relativeUrl" else "http://$host$relativeUrl"
-                                                    } else {
-                                                        relativeUrl
-                                                    }
-                                                    viewModelScope.launch(Dispatchers.IO) {
-                                                        try {
-                                                            val localPath = HavenHttpClient.downloadGlb(context, resolvedUrl, updatedChar.name)
-                                                            if (localPath != null) {
-                                                                val latestChar = repository.getCharacterById(characterId)
-                                                                if (latestChar != null) {
-                                                                    repository.updateCharacter(
-                                                                        latestChar.copy(vrmModelPath = localPath)
-                                                                    )
-                                                                    xyz.ssfdre38.haven.ui.widget.HavenAppWidgetProvider.triggerUpdate(context)
-                                                                }
-                                                            }
-                                                        } catch (e: Exception) {
-                                                            e.printStackTrace()
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
+                                                 viewModelScope.launch(Dispatchers.IO) {
+                                                     try {
+                                                         val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, updatedChar.name)
+                                                         if (localPath != null) {
+                                                             val latestChar = repository.getCharacterById(characterId)
+                                                             if (latestChar != null) {
+                                                                 // Insert message into local database showing the new appearance portrait!
+                                                                 val statusText = "*Changes appearance: outfit: ${updatedChar.currentOutfit.ifBlank { "casual attire" }}, location: ${updatedChar.currentLocation.ifBlank { "cozy room" }}*"
+                                                                 repository.insertMessage(
+                                                                     MessageEntity(
+                                                                         characterId = characterId,
+                                                                         sender = "character",
+                                                                         text = statusText,
+                                                                         imagePath = localPath
+                                                                     )
+                                                                 )
+                                                                 repository.updateCharacter(
+                                                                     latestChar.copy(avatarPath = localPath)
+                                                                 )
+                                                             }
+                                                         }
+                                                     } catch (e: Exception) {
+                                                         e.printStackTrace()
+                                                     }
+                                                 }
+                                             }
+                                         }
+                                         
+                                         // 2. If 3D model is active, generate and download the updated 3D mesh
+                                         if (!updatedChar.vrmModelPath.isNullOrBlank()) {
+                                             HavenHttpClient.executeTool(
+                                                 serverUrl = serverUrl,
+                                                 token = token,
+                                                 toolName = "generate_3d_avatar",
+                                                 arguments = args
+                                             ) { result ->
+                                                 result.onSuccess { relativeUrl ->
+                                                     val resolvedUrl = if (relativeUrl.startsWith("/")) {
+                                                         val host = serverUrl.trimEnd('/')
+                                                         if (host.startsWith("http")) "$host$relativeUrl" else "http://$host$relativeUrl"
+                                                     } else {
+                                                         relativeUrl
+                                                     }
+                                                     viewModelScope.launch(Dispatchers.IO) {
+                                                         try {
+                                                             val localPath = HavenHttpClient.downloadGlb(context, resolvedUrl, updatedChar.name)
+                                                             if (localPath != null) {
+                                                                 val latestChar = repository.getCharacterById(characterId)
+                                                                 if (latestChar != null) {
+                                                                     repository.updateCharacter(
+                                                                         latestChar.copy(vrmModelPath = localPath)
+                                                                     )
+                                                                     xyz.ssfdre38.haven.ui.widget.HavenAppWidgetProvider.triggerUpdate(context)
+                                                                 }
+                                                             }
+                                                         } catch (e: Exception) {
+                                                             e.printStackTrace()
+                                                         }
+                                                     }
+                                                 }
+                                             }
+                                         }
                                     }
                             }
                         }
@@ -690,7 +700,7 @@ class ChatViewModel(
                         }
                     } else {
                         // Parse clean text for inline image URLs to download and save locally
-                        val urlRegex = "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.()-]+)|(/uploads/[%a-zA-Z_0-9.()-]+)".toRegex(RegexOption.IGNORE_CASE)
+                        val urlRegex = "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.-]+)|(/uploads/[%a-zA-Z_0-9.-]+)".toRegex(RegexOption.IGNORE_CASE)
                         val urlMatch = urlRegex.find(cleanText)
                         if (urlMatch != null) {
                             val rawUrl = urlMatch.value

@@ -313,7 +313,7 @@ class GroupChatViewModel(
                         }
                     } else {
                         // Download inline generated image if present
-                        val urlRegex = "(https?://[^\\s/]+/uploads/[\\w\\d-]+\\.(?:png|jpg|jpeg|webp))|(/uploads/[\\w\\d-]+\\.(?:png|jpg|jpeg|webp))".toRegex(RegexOption.IGNORE_CASE)
+                        val urlRegex = "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.-]+)|(/uploads/[%a-zA-Z_0-9.-]+)".toRegex(RegexOption.IGNORE_CASE)
                         val urlMatch = urlRegex.find(cleanText)
                         if (urlMatch != null) {
                             val rawUrl = urlMatch.value
@@ -706,7 +706,7 @@ class GroupChatViewModel(
                     ).toInt()
 
                     // Parse clean text for inline image URLs to download and save locally
-                    val urlRegex = "(https?://[^\\s/]+/uploads/[\\w\\d-]+\\.(?:png|jpg|jpeg|webp))|(/uploads/[\\w\\d-]+\\.(?:png|jpg|jpeg|webp))".toRegex(RegexOption.IGNORE_CASE)
+                    val urlRegex = "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.-]+)|(/uploads/[%a-zA-Z_0-9.-]+)".toRegex(RegexOption.IGNORE_CASE)
                     val urlMatch = urlRegex.find(content)
                     if (urlMatch != null) {
                         val rawUrl = urlMatch.value

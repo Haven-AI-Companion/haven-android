@@ -117,7 +117,7 @@ class ProactiveMessageWorker(
                 .setGroupConversation(false)
 
             // Intent for the Bubble overlay
-            val bubbleIntent = Intent(context, xyz.ssfdre38.haven.MainActivity::class.java).apply {
+            val bubbleIntent = Intent(context, xyz.ssfdre38.haven.BubbleActivity::class.java).apply {
                 action = Intent.ACTION_VIEW
                 putExtra("characterId", character.id)
                 putExtra("isBubble", true)
