@@ -859,8 +859,8 @@ fun MessageBubble(
                 Spacer(modifier = Modifier.height(4.dp))
             }
 
-            // If the message contains an inline remote image URL, show it
-            if (contentParsed.imageUrl != null) {
+            // If the message contains an inline remote image URL, show it (only if local image is not already present)
+            if (contentParsed.imageUrl != null && message.imagePath == null) {
                 AsyncImage(
                     model = contentParsed.imageUrl,
                     contentDescription = "Inline generated portrait",
