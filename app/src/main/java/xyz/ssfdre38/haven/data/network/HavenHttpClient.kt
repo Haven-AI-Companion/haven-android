@@ -17,9 +17,9 @@ import java.util.concurrent.TimeUnit
 object HavenHttpClient {
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(300, TimeUnit.SECONDS)
-        .readTimeout(300, TimeUnit.SECONDS)
-        .writeTimeout(300, TimeUnit.SECONDS)
+        .connectTimeout(1800, TimeUnit.SECONDS)
+        .readTimeout(1800, TimeUnit.SECONDS)
+        .writeTimeout(1800, TimeUnit.SECONDS)
         .connectionPool(okhttp3.ConnectionPool(5, 5, TimeUnit.SECONDS))
         .retryOnConnectionFailure(true)
         .build()
@@ -171,7 +171,7 @@ object HavenHttpClient {
             .build()
 
         val imageClient = client.newBuilder()
-            .readTimeout(300, TimeUnit.SECONDS)
+            .readTimeout(1800, TimeUnit.SECONDS)
             .build()
 
         imageClient.newCall(request).enqueue(object : okhttp3.Callback {
