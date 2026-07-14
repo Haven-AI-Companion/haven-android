@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -96,6 +97,10 @@ fun SettingsScreen(
     var enableBubbles by remember { mutableStateOf(sharedPrefs.getBoolean("enable_bubbles", true)) }
     var enableOverlay by remember { mutableStateOf(sharedPrefs.getBoolean("enable_overlay", false) && android.provider.Settings.canDrawOverlays(context)) }
     var shareDeviceStatus by remember { mutableStateOf(sharedPrefs.getBoolean("share_device_status", false)) }
+    var shareLocalTime by remember { mutableStateOf(sharedPrefs.getBoolean("share_local_time", true)) }
+    var enableLongTermMemory by remember { mutableStateOf(sharedPrefs.getBoolean("enable_long_term_memory", true)) }
+    var freezeRelationshipLevel by remember { mutableStateOf(sharedPrefs.getBoolean("freeze_relationship_level", false)) }
+    var showPrivacyDialog by remember { mutableStateOf(false) }
     
     val database = remember { xyz.ssfdre38.haven.data.database.AppDatabase.getInstance(context) }
     val dao = remember { database.havenDao() }
@@ -424,24 +429,153 @@ fun SettingsScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
+            Card(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                onClick = { showPrivacyDialog = true }
             ) {
-                Text(
-                    text = "Share Device Status (Battery/Charging)",
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Switch(
-                    checked = shareDeviceStatus,
-                    onCheckedChange = { shareDeviceStatus = it }
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "🛡️ Privacy & Context Sharing",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Manage sharing settings for local time, battery level, memory extraction, and relationship levels.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = "Open Privacy Sub-menu",
+                        tint = Color.White
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            if (showPrivacyDialog) {
+                AlertDialog(
+                    onDismissRequest = { showPrivacyDialog = false },
+                    title = {
+                        Text(
+                            text = "Privacy & Context Sharing",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    },
+                    text = {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Customize what data is sent to the C# server and LLM backend during your chat sessions.",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Share Device Status",
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    Text(
+                                        text = "Send battery and charging states.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = shareDeviceStatus,
+                                    onCheckedChange = { shareDeviceStatus = it }
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Share Local Time of Day",
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    Text(
+                                        text = "Provide hours/minutes for time awareness.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = shareLocalTime,
+                                    onCheckedChange = { shareLocalTime = it }
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Long-Term Memory",
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    Text(
+                                        text = "Automatically extract and recall facts.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = enableLongTermMemory,
+                                    onCheckedChange = { enableLongTermMemory = it }
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Freeze Relationship XP",
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    Text(
+                                        text = "Pause level progression and status title changes.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = freezeRelationshipLevel,
+                                    onCheckedChange = { freezeRelationshipLevel = it }
+                                )
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showPrivacyDialog = false }) {
+                            Text("Done")
+                        }
+                    }
+                )
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -736,6 +870,9 @@ fun SettingsScreen(
                         putBoolean("enable_bubbles", enableBubbles)
                         putBoolean("enable_overlay", enableOverlay)
                         putBoolean("share_device_status", shareDeviceStatus)
+                        putBoolean("share_local_time", shareLocalTime)
+                        putBoolean("enable_long_term_memory", enableLongTermMemory)
+                        putBoolean("freeze_relationship_level", freezeRelationshipLevel)
                         apply()
                     }
                     Toast.makeText(context, "Settings saved successfully", Toast.LENGTH_SHORT).show()

@@ -255,8 +255,9 @@ class ChatViewModel(
                         }
                     }
 
-                    // Inject long-term memories
-                    if (memories.isNotEmpty()) {
+                    // Inject long-term memories (if enabled)
+                    val enableMemory = sharedPrefs.getBoolean("enable_long_term_memory", true)
+                    if (enableMemory && memories.isNotEmpty()) {
                         appendLine()
                         appendLine("[Memories you have about $userName:]")
                         memories.forEach { appendLine("- ${it.content}") }
@@ -270,9 +271,12 @@ class ChatViewModel(
                     }
                 }
                 
-                // Inject real time context
-                val agentCtx = xyz.ssfdre38.agent.AgentContext.current(context)
-                appendLine("Current Time of Day: ${agentCtx.localTime}")
+                // Inject real time context (if enabled)
+                val shareTime = sharedPrefs.getBoolean("share_local_time", true)
+                if (shareTime) {
+                    val agentCtx = xyz.ssfdre38.agent.AgentContext.current(context)
+                    appendLine("Current Time of Day: ${agentCtx.localTime}")
+                }
             }
             val fullPrompt = if (systemContext.isNotBlank()) "$systemContext\n\n$userName: $text" else text
 
@@ -748,9 +752,13 @@ class ChatViewModel(
                         }
                     }
 
-                    // Award XP for this interaction (10 XP per reply)
+                    // Award XP for this interaction (10 XP per reply) if not frozen
                     viewModelScope.launch(Dispatchers.IO) {
-                        repository.addXpAndIncrementMessages(characterId, 10)
+                        val sharedPrefs = context.getSharedPreferences("haven_prefs", android.content.Context.MODE_PRIVATE)
+                        val freezeLevel = sharedPrefs.getBoolean("freeze_relationship_level", false)
+                        if (!freezeLevel) {
+                            repository.addXpAndIncrementMessages(characterId, 10)
+                        }
                         xyz.ssfdre38.haven.ui.widget.HavenAppWidgetProvider.triggerUpdate(context)
                     }
 
@@ -759,7 +767,8 @@ class ChatViewModel(
                     val memServerUrl = sharedPrefs.getString("ash_host", null)
                     val memPort = sharedPrefs.getString("ash_port", "18799")
                     val memToken = sharedPrefs.getString("auth_token", null)
-                    if (memServerUrl != null && memToken != null && cleanText.isNotBlank()) {
+                    val enableMemory = sharedPrefs.getBoolean("enable_long_term_memory", true)
+                    if (enableMemory && memServerUrl != null && memToken != null && cleanText.isNotBlank()) {
                         val fullMemServerUrl = "${memServerUrl.trimEnd('/')}:$memPort"
                         val memoryPrompt = """Extract key facts about the user from this conversation snippet that ${character.value?.name ?: "the companion"} should remember long-term.
 Only extract concrete facts (names, preferences, events, feelings the user shared). Output one fact per line, no bullet points. If there is nothing important, output only: NONE
@@ -989,7 +998,11 @@ ${character.value?.name ?: "Companion"}: $cleanText"""
                     onComplete = {
                         _isGenerating.value = false
                         viewModelScope.launch(Dispatchers.IO) {
-                            repository.addXpAndIncrementMessages(characterId, 10)
+                            val sharedPrefs = context.getSharedPreferences("haven_prefs", android.content.Context.MODE_PRIVATE)
+                            val freezeLevel = sharedPrefs.getBoolean("freeze_relationship_level", false)
+                            if (!freezeLevel) {
+                                repository.addXpAndIncrementMessages(characterId, 10)
+                            }
                         }
                     },
                     onFailure = { error ->
