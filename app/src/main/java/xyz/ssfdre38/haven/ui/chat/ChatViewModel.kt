@@ -130,7 +130,7 @@ class ChatViewModel(
                     ).toInt()
 
                     if (imagePath == null) {
-                        val urlRegex = "(https?://[^\\s/]+/uploads/[\\w\\d-]+\\.(?:png|jpg|jpeg|webp))|(/uploads/[\\w\\d-]+\\.(?:png|jpg|jpeg|webp))".toRegex(RegexOption.IGNORE_CASE)
+                        val urlRegex = "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.()-]+)|(/uploads/[%a-zA-Z_0-9.()-]+)".toRegex(RegexOption.IGNORE_CASE)
                         val urlMatch = urlRegex.find(content)
                         if (urlMatch != null) {
                             val rawUrl = urlMatch.value
@@ -358,6 +358,37 @@ class ChatViewModel(
                     val clothingStateRegex = "\\[\\s*Clothing\\s*State\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
                     val clothingStateMatch = clothingStateRegex.find(fullText)
                     newClothingState = clothingStateMatch?.groups[1]?.value?.trim()
+
+                    // Fallback: If properties aren't in brackets, parse them directly from the <thought> block text (e.g. "Location: Cozy Haven Room")
+                    val thoughtMatch = thoughtRegex.find(fullText)
+                    if (thoughtMatch != null) {
+                        val thoughtText = thoughtMatch.groups[1]?.value ?: ""
+                        
+                        if (newOutfit == null) {
+                            val m = "Outfit\\s*:\\s*(.*)".toRegex(RegexOption.IGNORE_CASE).find(thoughtText)
+                            newOutfit = m?.groups[1]?.value?.split("\n")?.firstOrNull()?.trim()
+                        }
+                        if (newLocation == null) {
+                            val m = "Location\\s*:\\s*(.*)".toRegex(RegexOption.IGNORE_CASE).find(thoughtText)
+                            newLocation = m?.groups[1]?.value?.split("\n")?.firstOrNull()?.trim()
+                        }
+                        if (newMood == null) {
+                            val m = "Mood\\s*:\\s*(.*)".toRegex(RegexOption.IGNORE_CASE).find(thoughtText)
+                            newMood = m?.groups[1]?.value?.split("\n")?.firstOrNull()?.trim()
+                        }
+                        if (newBodyType == null) {
+                            val m = "Body\\s*Type\\s*:\\s*(.*)".toRegex(RegexOption.IGNORE_CASE).find(thoughtText)
+                            newBodyType = m?.groups[1]?.value?.split("\n")?.firstOrNull()?.trim()
+                        }
+                        if (newBodyShape == null) {
+                            val m = "Body\\s*Shape\\s*:\\s*(.*)".toRegex(RegexOption.IGNORE_CASE).find(thoughtText)
+                            newBodyShape = m?.groups[1]?.value?.split("\n")?.firstOrNull()?.trim()
+                        }
+                        if (newClothingState == null) {
+                            val m = "Clothing\\s*State\\s*:\\s*(.*)".toRegex(RegexOption.IGNORE_CASE).find(thoughtText)
+                            newClothingState = m?.groups[1]?.value?.split("\n")?.firstOrNull()?.trim()
+                        }
+                    }
 
                     if (newOutfit != null || newLocation != null || newMood != null || newBodyType != null || newBodyShape != null || newClothingState != null) {
                             viewModelScope.launch(Dispatchers.IO) {
@@ -659,7 +690,7 @@ class ChatViewModel(
                         }
                     } else {
                         // Parse clean text for inline image URLs to download and save locally
-                        val urlRegex = "(https?://[^\\s/]+/uploads/[\\w\\d-]+\\.(?:png|jpg|jpeg|webp))|(/uploads/[\\w\\d-]+\\.(?:png|jpg|jpeg|webp))".toRegex(RegexOption.IGNORE_CASE)
+                        val urlRegex = "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.()-]+)|(/uploads/[%a-zA-Z_0-9.()-]+)".toRegex(RegexOption.IGNORE_CASE)
                         val urlMatch = urlRegex.find(cleanText)
                         if (urlMatch != null) {
                             val rawUrl = urlMatch.value
