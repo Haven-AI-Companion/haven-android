@@ -17,9 +17,9 @@ import java.util.concurrent.TimeUnit
 object HavenHttpClient {
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(180, TimeUnit.SECONDS)
-        .readTimeout(180, TimeUnit.SECONDS)
-        .writeTimeout(180, TimeUnit.SECONDS)
+        .connectTimeout(300, TimeUnit.SECONDS)
+        .readTimeout(300, TimeUnit.SECONDS)
+        .writeTimeout(300, TimeUnit.SECONDS)
         .connectionPool(okhttp3.ConnectionPool(5, 5, TimeUnit.SECONDS))
         .retryOnConnectionFailure(true)
         .build()

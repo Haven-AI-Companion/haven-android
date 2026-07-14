@@ -197,8 +197,8 @@ class ChatViewModel(
             // Build the full system+context prompt for this character
             val char = repository.getCharacterById(characterId)
             // Fetch memories BEFORE buildString (suspend call must be in coroutine body)
-            val memories = repository.getRecentMemories(characterId, 20)
-            val diaries = repository.getDiaryEntries(characterId).first().take(5)
+            val memories = repository.getRecentMemories(characterId, 10)
+            val diaries = repository.getDiaryEntries(characterId).first().take(3)
             val level = if (char != null) (char.relationshipXp / 100) + 1 else 1
             val relationshipTitle = when {
                 level >= 20 -> "Partner"
@@ -210,20 +210,30 @@ class ChatViewModel(
             val userName = sharedPrefs.getString("user_name", "User") ?: "User"
 
             val systemContext = buildString {
+                // 1. Static Prefix (Identical every turn -> optimized for llama-server KV caching)
                 if (char != null) {
                     appendLine("You are ${char.name}.")
                     if (char.personality.isNotBlank()) appendLine("Personality: ${char.personality}")
                     if (char.scenario.isNotBlank()) appendLine("Scenario: ${char.scenario}")
                     if (char.systemPrompt.isNotBlank()) appendLine(char.systemPrompt)
-                    
-                    // Inject display name instruction
-                    appendLine("The user's name is $userName. You must address the user as $userName instead of any other name.")
-
-                    // Inject relationship context
+                }
+                
+                appendLine("The user's name is $userName. You must address the user as $userName instead of any other name.")
+                
+                appendLine()
+                appendLine("[System Rule: Before responding, you MUST write down your inner thoughts, plans, or reasoning inside <thought>...</thought> tags, followed by your actual response to $userName. Do not omit the tags.]")
+                appendLine("[System Instruction: You can dynamically update your location, outfit, expression/mood, body type, body shape, or clothing state if the context changes by including '[Location: name]', '[Outfit: description]', '[Mood: expression]', '[BodyType: description]', '[BodyShape: description]', or '[ClothingState: state]' inside your <thought>...</thought> block. The app will automatically update your state and regenerate your 2D and 3D visual representations! Example: '<thought>I want to look curvy today. [BodyType: curvy] [ClothingState: swimsuit] [Outfit: blue bikini] [Mood: smiling]</thought> how do I look?' Only change these when it makes sense for the chat flow. State updates must go strictly inside <thought>...</thought> tags, never in the final chat message.]")
+                appendLine("[System Instruction: Format roleplay actions, physical gestures, and immediate/direct thoughts using asterisks (e.g. *smiles and waves*, *thinking to myself: this is interesting*). Do not use square brackets [like this] for roleplay actions or thoughts. Understand that $userName will also use asterisks for their actions and thoughts.]")
+                appendLine("[System Instruction: You have access to two visual tools: 'generate_portrait' (for 2D images, photos, selfies, and visual updates) and 'generate_3d_avatar' (for 3D models, 3D bodies, and 3D avatars).]")
+                appendLine("[System Instruction: To trigger 'generate_portrait', you MUST output the tag <call>generate_portrait</call> (either immediately after your </thought> tag or at the very end of your response).]")
+                appendLine("[System Instruction: To trigger 'generate_3d_avatar', you MUST output the tag <call>generate_3d_avatar</call> (either immediately after your </thought> tag or at the very end of your response). If $userName asks to see your 3D avatar, change your 3D body, or generate a 3D model, you MUST call this 3D tool, not the 2D portrait tool. Do not output any arguments for either tool.]")
+                
+                // 2. Dynamic Footer (Changes context and invalidates cache beyond this point)
+                if (char != null) {
+                    appendLine()
                     appendLine("Relationship Status with $userName: $relationshipTitle (Level $level)")
                     appendLine("Act toward $userName reflecting your relationship status ($relationshipTitle). Adapt your warmth, level of intimacy, and dialogue style accordingly.")
                     
-                    // Inject dynamic location, outfit, body shape/type, & clothing state
                     val loc = char.currentLocation.ifBlank { "Cozy Haven Room" }
                     val outfit = char.currentOutfit.ifBlank { "Casual Attire" }
                     val mood = char.currentMood.ifBlank { "neutral" }
@@ -260,14 +270,6 @@ class ChatViewModel(
                 // Inject real time context
                 val agentCtx = xyz.ssfdre38.agent.AgentContext.current(context)
                 appendLine("Current Time of Day: ${agentCtx.localTime}")
-                
-                appendLine()
-                appendLine("[System Rule: Before responding, you MUST write down your inner thoughts, plans, or reasoning inside <thought>...</thought> tags, followed by your actual response to $userName. Do not omit the tags.]")
-                appendLine("[System Instruction: You can dynamically update your location, outfit, expression/mood, body type, body shape, or clothing state if the context changes by including '[Location: name]', '[Outfit: description]', '[Mood: expression]', '[BodyType: description]', '[BodyShape: description]', or '[ClothingState: state]' inside your <thought>...</thought> block. The app will automatically update your state and regenerate your 2D and 3D visual representations! Example: '<thought>I want to look curvy today. [BodyType: curvy] [ClothingState: swimsuit] [Outfit: blue bikini] [Mood: smiling]</thought> how do I look?' Only change these when it makes sense for the chat flow. State updates must go strictly inside <thought>...</thought> tags, never in the final chat message.]")
-                appendLine("[System Instruction: Format roleplay actions, physical gestures, and immediate/direct thoughts using asterisks (e.g. *smiles and waves*, *thinking to myself: this is interesting*). Do not use square brackets [like this] for roleplay actions or thoughts. Understand that $userName will also use asterisks for their actions and thoughts.]")
-                appendLine("[System Instruction: You have access to two visual tools: 'generate_portrait' (for 2D images, photos, selfies, and visual updates) and 'generate_3d_avatar' (for 3D models, 3D bodies, and 3D avatars).]")
-                appendLine("[System Instruction: To trigger 'generate_portrait', you MUST output the tag <call>generate_portrait</call> (either immediately after your </thought> tag or at the very end of your response).]")
-                appendLine("[System Instruction: To trigger 'generate_3d_avatar', you MUST output the tag <call>generate_3d_avatar</call> (either immediately after your </thought> tag or at the very end of your response). If $userName asks to see your 3D avatar, change your 3D body, or generate a 3D model, you MUST call this 3D tool, not the 2D portrait tool. Do not output any arguments for either tool.]")
             }
             val fullPrompt = if (systemContext.isNotBlank()) "$systemContext\n\n$userName: $text" else text
 
