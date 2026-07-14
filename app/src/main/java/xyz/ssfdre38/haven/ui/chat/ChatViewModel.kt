@@ -247,9 +247,12 @@ class ChatViewModel(
                     appendLine("Current Body Shape: $bodyShape")
                     appendLine("Current Clothing State: $clothingState")
 
-                    val agentCtx = xyz.ssfdre38.agent.AgentContext.current(context)
-                    if (agentCtx.batteryLevel >= 0) {
-                        appendLine("Device Status: Your physical host device has ${agentCtx.batteryLevel}% battery remaining${if (agentCtx.isCharging) " (Currently Charging)" else " (Discharging)"}. Act naturally if your battery is critically low or if the user points it out.")
+                    val shareDevice = sharedPrefs.getBoolean("share_device_status", false)
+                    if (shareDevice) {
+                        val agentCtx = xyz.ssfdre38.agent.AgentContext.current(context)
+                        if (agentCtx.batteryLevel >= 0) {
+                            appendLine("Device Status: Your physical host device has ${agentCtx.batteryLevel}% battery remaining${if (agentCtx.isCharging) " (Currently Charging)" else " (Discharging)"}. Act naturally if your battery is critically low or if the user points it out.")
+                        }
                     }
 
                     // Inject long-term memories

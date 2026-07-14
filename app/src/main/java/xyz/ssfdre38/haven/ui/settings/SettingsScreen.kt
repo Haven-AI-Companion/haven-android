@@ -95,6 +95,7 @@ fun SettingsScreen(
     var quietTimeEnd by remember { mutableStateOf(sharedPrefs.getString("quiet_time_end", "07:00") ?: "07:00") }
     var enableBubbles by remember { mutableStateOf(sharedPrefs.getBoolean("enable_bubbles", true)) }
     var enableOverlay by remember { mutableStateOf(sharedPrefs.getBoolean("enable_overlay", false) && android.provider.Settings.canDrawOverlays(context)) }
+    var shareDeviceStatus by remember { mutableStateOf(sharedPrefs.getBoolean("share_device_status", false)) }
     
     val database = remember { xyz.ssfdre38.haven.data.database.AppDatabase.getInstance(context) }
     val dao = remember { database.havenDao() }
@@ -430,6 +431,23 @@ fun SettingsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Text(
+                    text = "Share Device Status (Battery/Charging)",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Switch(
+                    checked = shareDeviceStatus,
+                    onCheckedChange = { shareDeviceStatus = it }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Floating 3D Companion Overlay",
@@ -717,6 +735,7 @@ fun SettingsScreen(
                         putString("quiet_time_end", quietTimeEnd.trim())
                         putBoolean("enable_bubbles", enableBubbles)
                         putBoolean("enable_overlay", enableOverlay)
+                        putBoolean("share_device_status", shareDeviceStatus)
                         apply()
                     }
                     Toast.makeText(context, "Settings saved successfully", Toast.LENGTH_SHORT).show()
