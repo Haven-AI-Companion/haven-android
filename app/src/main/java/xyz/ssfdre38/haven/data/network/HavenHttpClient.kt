@@ -653,6 +653,42 @@ object HavenHttpClient {
     }
 
     /**
+     * Pushes a companion profile configuration to the server to be saved locally.
+     */
+    fun saveCompanion(
+        serverUrl: String,
+        token: String,
+        character: xyz.ssfdre38.haven.data.database.CharacterEntity
+    ): Boolean {
+        val url = "${serverUrl.trimEnd('/')}/api/companions"
+        val requestBodyJson = JSONObject().apply {
+            put("name", character.name)
+            put("voiceId", character.voiceId)
+            put("description", character.description)
+            put("personality", character.personality)
+            put("scenario", character.scenario)
+            put("firstMessage", character.firstMessage)
+            put("systemPrompt", character.systemPrompt)
+            put("avatarPath", character.avatarPath)
+        }.toString()
+
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBodyJson.toRequestBody(JSON_MEDIA_TYPE))
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+
+        return try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    /**
      * Pulls all group chats from the server
      */
     fun getGroups(

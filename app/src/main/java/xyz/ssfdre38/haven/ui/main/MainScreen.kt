@@ -384,7 +384,7 @@ fun MainScreen(
                                 ExploreFeedScreen(
                                     currentCharacters = characters,
                                     onAddCompanion = { name, desc, pers, first, voice, sysPrompt ->
-                                        viewModel.createCharacterManually(name, desc, pers, first, voice, sysPrompt)
+                                        viewModel.createCharacterManually(context, name, desc, pers, first, voice, sysPrompt)
                                     }
                                 )
                             }
@@ -895,6 +895,7 @@ fun MainScreen(
                             onClick = {
                                 if (name.isNotBlank()) {
                                     viewModel.createCharacterManually(
+                                        context = context,
                                         name = name.trim(),
                                         description = description.trim(),
                                         personality = personality.trim(),

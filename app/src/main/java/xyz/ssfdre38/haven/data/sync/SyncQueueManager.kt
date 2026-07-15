@@ -34,6 +34,7 @@ object SyncQueueManager {
     const val ACTION_SAVE_GROUP = "SAVE_GROUP"
     const val ACTION_DELETE_GROUP = "DELETE_GROUP"
     const val ACTION_SAVE_GROUP_MESSAGE = "SAVE_GROUP_MESSAGE"
+    const val ACTION_SAVE_COMPANION = "SAVE_COMPANION"
 
     private var dbHelper: SQLiteOpenHelper? = null
     private var isNetworkCallbackRegistered = false
@@ -217,6 +218,23 @@ object SyncQueueManager {
                                 sender = payload.getString("sender"),
                                 characterName = charName,
                                 content = payload.getString("content")
+                            )
+                        }
+                        ACTION_SAVE_COMPANION -> {
+                            val char = xyz.ssfdre38.haven.data.database.CharacterEntity(
+                                name = payload.getString("name"),
+                                voiceId = payload.getString("voiceId"),
+                                description = payload.getString("description"),
+                                personality = payload.getString("personality"),
+                                scenario = payload.getString("scenario"),
+                                firstMessage = payload.getString("firstMessage"),
+                                systemPrompt = payload.getString("systemPrompt"),
+                                avatarPath = if (payload.has("avatarPath") && !payload.isNull("avatarPath")) payload.getString("avatarPath") else null
+                            )
+                            HavenHttpClient.saveCompanion(
+                                serverUrl = serverUrl,
+                                token = token,
+                                character = char
                             )
                         }
                         else -> false

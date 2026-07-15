@@ -191,6 +191,7 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
     }
 
     fun createCharacterManually(
+        context: Context,
         name: String,
         description: String,
         personality: String,
@@ -207,7 +208,34 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                 voiceId = voiceId.ifBlank { "en_US-amy-medium" },
                 systemPrompt = systemPrompt
             )
-            dataRepository.insertCharacter(char)
+            val charId = dataRepository.insertCharacter(char).toInt()
+            if (firstMessage.isNotBlank()) {
+                dataRepository.insertMessage(
+                    xyz.ssfdre38.haven.data.database.MessageEntity(
+                        characterId = charId,
+                        sender = "character",
+                        text = firstMessage
+                    )
+                )
+            }
+
+            // Enqueue companion sync to push profile to C# server
+            val payload = org.json.JSONObject().apply {
+                put("name", name)
+                put("voiceId", voiceId.ifBlank { "en_US-amy-medium" })
+                put("description", description)
+                put("personality", personality)
+                put("scenario", "")
+                put("firstMessage", firstMessage)
+                put("systemPrompt", systemPrompt)
+                put("avatarPath", org.json.JSONObject.NULL)
+            }
+            xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                context,
+                xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_SAVE_COMPANION,
+                payload
+            )
+            xyz.ssfdre38.haven.data.sync.SyncQueueManager.processQueue(context)
         }
     }
 
