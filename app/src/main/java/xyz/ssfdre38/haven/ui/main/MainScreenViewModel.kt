@@ -453,6 +453,34 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                                 clothingState = if (existing.clothingState.isBlank()) clothingState else existing.clothingState
                             )
                             dataRepository.insertCharacter(updated)
+                        } else {
+                            // Automatically insert/import missing companion from server
+                            val newChar = CharacterEntity(
+                                name = name,
+                                avatarPath = avatarPath,
+                                voiceId = voiceId,
+                                description = description,
+                                personality = personality,
+                                scenario = scenario,
+                                firstMessage = firstMessage,
+                                systemPrompt = systemPrompt,
+                                currentOutfit = currentOutfit,
+                                currentLocation = currentLocation,
+                                currentMood = currentMood,
+                                bodyType = bodyType,
+                                bodyShape = bodyShape,
+                                clothingState = clothingState
+                            )
+                            val newId = dataRepository.insertCharacter(newChar).toInt()
+                            if (firstMessage.isNotBlank()) {
+                                dataRepository.insertMessage(
+                                    MessageEntity(
+                                        characterId = newId,
+                                        sender = "character",
+                                        text = firstMessage
+                                    )
+                                )
+                            }
                         }
 
                         list.add(

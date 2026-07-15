@@ -133,9 +133,10 @@ fun MainScreen(
         }
     }
 
-    // Sync group chats on startup
+    // Sync group chats and companions on startup
     LaunchedEffect(Unit) {
         viewModel.syncGroupChats(context)
+        viewModel.loadServerCompanions(context)
     }
 
     val mainGradient = remember {
