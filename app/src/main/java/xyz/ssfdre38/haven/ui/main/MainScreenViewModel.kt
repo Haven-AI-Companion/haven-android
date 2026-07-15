@@ -352,32 +352,55 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                     val list = mutableListOf<CharacterEntity>()
                     for (i in 0 until jsonArray.length()) {
                         val obj = jsonArray.getJSONObject(i)
+                        val name = obj.getString("name")
+                        val avatarPath = when {
+                            obj.has("avatar_path") && !obj.isNull("avatar_path") -> obj.getString("avatar_path")
+                            obj.has("avatarPath") && !obj.isNull("avatarPath") -> obj.getString("avatarPath")
+                            else -> null
+                        }
+                        val voiceId = when {
+                            obj.has("voice_id") && !obj.isNull("voice_id") -> obj.getString("voice_id")
+                            obj.has("voiceId") && !obj.isNull("voiceId") -> obj.getString("voiceId")
+                            else -> "en_US-amy-medium"
+                        }
+                        val description = if (obj.has("description") && !obj.isNull("description")) obj.getString("description") else ""
+                        val personality = if (obj.has("personality") && !obj.isNull("personality")) obj.getString("personality") else ""
+                        val scenario = if (obj.has("scenario") && !obj.isNull("scenario")) obj.getString("scenario") else ""
+                        val firstMessage = when {
+                            obj.has("first_message") && !obj.isNull("first_message") -> obj.getString("first_message")
+                            obj.has("firstMessage") && !obj.isNull("firstMessage") -> obj.getString("firstMessage")
+                            else -> ""
+                        }
+                        val systemPrompt = when {
+                            obj.has("system_prompt") && !obj.isNull("system_prompt") -> obj.getString("system_prompt")
+                            obj.has("systemPrompt") && !obj.isNull("systemPrompt") -> obj.getString("systemPrompt")
+                            else -> ""
+                        }
+
+                        // Auto-sync: if character already exists locally, update their profile fields with the server configuration
+                        val existing = dataRepository.getCharacterByName(name)
+                        if (existing != null) {
+                            val updated = existing.copy(
+                                voiceId = voiceId,
+                                description = description,
+                                personality = personality,
+                                scenario = scenario,
+                                systemPrompt = systemPrompt,
+                                avatarPath = avatarPath
+                            )
+                            dataRepository.insertCharacter(updated)
+                        }
+
                         list.add(
                             CharacterEntity(
-                                name = obj.getString("name"),
-                                avatarPath = when {
-                                    obj.has("avatar_path") && !obj.isNull("avatar_path") -> obj.getString("avatar_path")
-                                    obj.has("avatarPath") && !obj.isNull("avatarPath") -> obj.getString("avatarPath")
-                                    else -> null
-                                },
-                                voiceId = when {
-                                    obj.has("voice_id") && !obj.isNull("voice_id") -> obj.getString("voice_id")
-                                    obj.has("voiceId") && !obj.isNull("voiceId") -> obj.getString("voiceId")
-                                    else -> "en_US-amy-medium"
-                                },
-                                description = if (obj.has("description") && !obj.isNull("description")) obj.getString("description") else "",
-                                personality = if (obj.has("personality") && !obj.isNull("personality")) obj.getString("personality") else "",
-                                scenario = if (obj.has("scenario") && !obj.isNull("scenario")) obj.getString("scenario") else "",
-                                firstMessage = when {
-                                    obj.has("first_message") && !obj.isNull("first_message") -> obj.getString("first_message")
-                                    obj.has("firstMessage") && !obj.isNull("firstMessage") -> obj.getString("firstMessage")
-                                    else -> ""
-                                },
-                                systemPrompt = when {
-                                    obj.has("system_prompt") && !obj.isNull("system_prompt") -> obj.getString("system_prompt")
-                                    obj.has("systemPrompt") && !obj.isNull("systemPrompt") -> obj.getString("systemPrompt")
-                                    else -> ""
-                                }
+                                name = name,
+                                avatarPath = avatarPath,
+                                voiceId = voiceId,
+                                description = description,
+                                personality = personality,
+                                scenario = scenario,
+                                firstMessage = firstMessage,
+                                systemPrompt = systemPrompt
                             )
                         )
                     }
