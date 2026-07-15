@@ -580,7 +580,7 @@ class ChatViewModel(
                     val hasImplicitTrigger = !hasToolTag && shouldAutoTriggerPortrait(cleanText)
 
                     if (hasToolTag || hasImplicitTrigger) {
-                        val cleanedText = fullText.replace(toolCallRegex, "").trim()
+                        val cleanedText = cleanFinalText(fullText)
                         
                         // Immediately clean up the message in the DB to hide the raw tool call from the user
                         viewModelScope.launch(Dispatchers.IO) {
@@ -679,7 +679,7 @@ class ChatViewModel(
                             }
                         }
                     } else if (avatar3dRegex.containsMatchIn(fullText) || shouldAutoTrigger3DAvatar(cleanText)) {
-                        val cleanedText = fullText.replace(toolCallRegex, "").replace(avatar3dRegex, "").trim()
+                        val cleanedText = cleanFinalText(fullText)
                         
                         // Immediately clean up the message in the DB
                         viewModelScope.launch(Dispatchers.IO) {
@@ -760,6 +760,14 @@ class ChatViewModel(
                             }
                         }
                     } else {
+                        // Immediately clean up the message in the DB to hide any raw thought block residues or tag remnants
+                        viewModelScope.launch(Dispatchers.IO) {
+                            val lastMsg = repository.getLastMessage(characterId)
+                            if (lastMsg != null && lastMsg.sender == "character") {
+                                repository.insertMessage(lastMsg.copy(text = cleanText))
+                            }
+                        }
+
                         // Parse clean text for inline image URLs to download and save locally
                         val urlRegex = "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.-]+)|(/uploads/[%a-zA-Z_0-9.-]+)".toRegex(RegexOption.IGNORE_CASE)
                         val urlMatch = urlRegex.find(cleanText)
@@ -1114,6 +1122,32 @@ ${character.value?.name ?: "Companion"}: $cleanText"""
         // 7. Strip trailing partial bracket openers (e.g. "[", "[O", "[Outfit", etc.)
         val partialBracketRegex = "\\[[a-zA-Z\\s:]*$".toRegex()
         text = text.replace(partialBracketRegex, "")
+        
+        return text.trim()
+    }
+
+    private fun cleanFinalText(rawText: String): String {
+        var text = rawText
+        
+        // 1. Remove completed thought blocks <thought>...</thought>
+        val thoughtRegex = "<\\s*thought\\s*>.*?<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
+        text = text.replace(thoughtRegex, "")
+        
+        // 2. Remove completed call blocks <call>...</call>
+        val callRegex = "<\\s*call\\s*>.*?<\\s*/\\s*call\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
+        text = text.replace(callRegex, "")
+        
+        // 3. Remove bracketed tool calls
+        val bracketCallRegex = "\\[\\s*(?:Tool\\s*(?:Call\\s*)?:\\s*)?generate_(?:portr?ait|3d_avatar)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+        text = text.replace(bracketCallRegex, "")
+        
+        // 4. Remove any other stray tags (opening/closing thought/call/tool)
+        val strayTagsRegex = "</?\\s*(?:thought|call|tool)[^>]*>".toRegex(RegexOption.IGNORE_CASE)
+        text = text.replace(strayTagsRegex, "")
+        
+        // 5. Remove any loose brackets/state markers
+        val stateRegex = "\\[\\s*(?:Outfit|Location|Mood|Tool|Call|BodyType|BodyShape|ClothingState)\\s*:.*?\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+        text = text.replace(stateRegex, "")
         
         return text.trim()
     }
