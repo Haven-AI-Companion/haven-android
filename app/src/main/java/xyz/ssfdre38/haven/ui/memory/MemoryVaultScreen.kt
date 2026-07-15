@@ -200,49 +200,53 @@ fun MemoryVaultScreen(
                     }
                 }
             } else {
-                LazyColumn(
-                    contentPadding = innerPadding,
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                        .padding(innerPadding)
+                        .padding(horizontal = 16.dp)
                 ) {
-                    items(memories, key = { it.id }) { memory ->
-                        MemoryItemCard(
-                            memory = memory,
-                            characterColor = when (characterId) {
-                                1 -> Color(0xFFBB86FC)
-                                2 -> Color(0xFFFFB74D)
-                                3 -> Color(0xFF26A69A)
-                                else -> MaterialTheme.colorScheme.primary
-                            },
-                            onDeleteClick = {
-                                coroutineScope.launch(Dispatchers.IO) {
-                                    repository.deleteMemory(memory)
-                                    val charName = character?.name
-                                    if (charName != null) {
-                                        val success = if (serverUrl.isNotBlank() && token.isNotBlank()) {
-                                            HavenHttpClient.deleteMemory(serverUrl, token, charName, memory.content)
-                                        } else false
-                                        
-                                        if (!success) {
-                                            val payload = org.json.JSONObject().apply {
-                                                put("companion_name", charName)
-                                                put("content", memory.content)
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(memories, key = { it.id }) { memory ->
+                            MemoryItemCard(
+                                memory = memory,
+                                characterColor = when (characterId) {
+                                    1 -> Color(0xFFBB86FC)
+                                    2 -> Color(0xFFFFB74D)
+                                    3 -> Color(0xFF26A69A)
+                                    else -> MaterialTheme.colorScheme.primary
+                                },
+                                onDeleteClick = {
+                                    coroutineScope.launch(Dispatchers.IO) {
+                                        repository.deleteMemory(memory)
+                                        val charName = character?.name
+                                        if (charName != null) {
+                                            val success = if (serverUrl.isNotBlank() && token.isNotBlank()) {
+                                                HavenHttpClient.deleteMemory(serverUrl, token, charName, memory.content)
+                                            } else false
+                                            
+                                            if (!success) {
+                                                val payload = org.json.JSONObject().apply {
+                                                    put("companion_name", charName)
+                                                    put("content", memory.content)
+                                                }
+                                                xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                                                    context,
+                                                    xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_DELETE_MEMORY,
+                                                    payload
+                                                )
                                             }
-                                            xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
-                                                context,
-                                                xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_DELETE_MEMORY,
-                                                payload
-                                            )
                                         }
                                     }
                                 }
-                            }
-                        )
-                    }
-                    item {
-                        Spacer(modifier = Modifier.height(32.dp))
+                            )
+                        }
+                        item {
+                            Spacer(modifier = Modifier.height(32.dp))
+                        }
                     }
                 }
             }
