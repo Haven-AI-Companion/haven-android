@@ -404,6 +404,36 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                             obj.has("systemPrompt") && !obj.isNull("systemPrompt") -> obj.getString("systemPrompt")
                             else -> ""
                         }
+                        val currentOutfit = when {
+                            obj.has("current_outfit") && !obj.isNull("current_outfit") -> obj.getString("current_outfit")
+                            obj.has("currentOutfit") && !obj.isNull("currentOutfit") -> obj.getString("currentOutfit")
+                            else -> ""
+                        }
+                        val currentLocation = when {
+                            obj.has("current_location") && !obj.isNull("current_location") -> obj.getString("current_location")
+                            obj.has("currentLocation") && !obj.isNull("currentLocation") -> obj.getString("currentLocation")
+                            else -> ""
+                        }
+                        val currentMood = when {
+                            obj.has("current_mood") && !obj.isNull("current_mood") -> obj.getString("current_mood")
+                            obj.has("currentMood") && !obj.isNull("currentMood") -> obj.getString("currentMood")
+                            else -> ""
+                        }
+                        val bodyType = when {
+                            obj.has("body_type") && !obj.isNull("body_type") -> obj.getString("body_type")
+                            obj.has("bodyType") && !obj.isNull("bodyType") -> obj.getString("bodyType")
+                            else -> ""
+                        }
+                        val bodyShape = when {
+                            obj.has("body_shape") && !obj.isNull("body_shape") -> obj.getString("body_shape")
+                            obj.has("bodyShape") && !obj.isNull("bodyShape") -> obj.getString("bodyShape")
+                            else -> ""
+                        }
+                        val clothingState = when {
+                            obj.has("clothing_state") && !obj.isNull("clothing_state") -> obj.getString("clothing_state")
+                            obj.has("clothingState") && !obj.isNull("clothingState") -> obj.getString("clothingState")
+                            else -> ""
+                        }
 
                         // Auto-sync: if character already exists locally, update their profile fields with the server configuration
                         val existing = dataRepository.getCharacterByName(name)
@@ -414,7 +444,13 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                                 personality = personality,
                                 scenario = scenario,
                                 systemPrompt = systemPrompt,
-                                avatarPath = avatarPath
+                                avatarPath = avatarPath,
+                                bodyType = if (existing.bodyType.isBlank()) bodyType else existing.bodyType,
+                                bodyShape = if (existing.bodyShape.isBlank()) bodyShape else existing.bodyShape,
+                                currentOutfit = if (existing.currentOutfit.isBlank()) currentOutfit else existing.currentOutfit,
+                                currentLocation = if (existing.currentLocation.isBlank()) currentLocation else existing.currentLocation,
+                                currentMood = if (existing.currentMood.isBlank()) currentMood else existing.currentMood,
+                                clothingState = if (existing.clothingState.isBlank()) clothingState else existing.clothingState
                             )
                             dataRepository.insertCharacter(updated)
                         }
@@ -428,7 +464,13 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                                 personality = personality,
                                 scenario = scenario,
                                 firstMessage = firstMessage,
-                                systemPrompt = systemPrompt
+                                systemPrompt = systemPrompt,
+                                currentOutfit = currentOutfit,
+                                currentLocation = currentLocation,
+                                currentMood = currentMood,
+                                bodyType = bodyType,
+                                bodyShape = bodyShape,
+                                clothingState = clothingState
                             )
                         )
                     }
