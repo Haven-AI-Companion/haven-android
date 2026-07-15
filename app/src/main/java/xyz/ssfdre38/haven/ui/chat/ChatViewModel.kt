@@ -844,11 +844,16 @@ ${character.value?.name ?: "Companion"}: $cleanText"""
                             onToken = { t -> memBuffer.append(t).append(" ") },
                             onComplete = {
                                 val extracted = memBuffer.toString().trim()
-                                if (extracted.isNotBlank() && !extracted.startsWith("NONE")) {
+                                val thoughtRegex = "<\\s*thought\\s*>.*?<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
+                                val strayTagsRegex = "</?\\s*(?:thought|call|tool)[^>]*>".toRegex(RegexOption.IGNORE_CASE)
+                                val cleanExtracted = extracted.replace(thoughtRegex, "").replace(strayTagsRegex, "").trim()
+
+                                if (cleanExtracted.isNotBlank() && !cleanExtracted.startsWith("NONE", ignoreCase = true)) {
                                     viewModelScope.launch(Dispatchers.IO) {
-                                        extracted.lines().forEach { line ->
+                                        val charName = character.value?.name
+                                        cleanExtracted.lines().forEach { line ->
                                             val fact = line.trim()
-                                            if (fact.isNotBlank()) {
+                                            if (fact.isNotBlank() && !fact.startsWith("NONE", ignoreCase = true) && !fact.contains("<thought") && !fact.contains("</thought")) {
                                                 repository.insertMemory(
                                                     MemoryEntity(
                                                         characterId = characterId,
@@ -856,8 +861,26 @@ ${character.value?.name ?: "Companion"}: $cleanText"""
                                                         category = "general"
                                                     )
                                                 )
+                                                
+                                                // Sync memory to server
+                                                if (charName != null && memServerUrl != null && memToken != null) {
+                                                    val success = HavenHttpClient.saveMemory(fullMemServerUrl, memToken, charName, fact, "general")
+                                                    if (!success) {
+                                                        val payload = org.json.JSONObject().apply {
+                                                            put("companion_name", charName)
+                                                            put("content", fact)
+                                                            put("category", "general")
+                                                        }
+                                                        xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                                                            context,
+                                                            xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_SAVE_MEMORY,
+                                                            payload
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
+                                        xyz.ssfdre38.haven.data.sync.SyncQueueManager.processQueue(context)
                                     }
                                 }
                             },
