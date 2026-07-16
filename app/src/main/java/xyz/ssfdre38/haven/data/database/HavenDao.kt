@@ -108,4 +108,11 @@ interface HavenDao {
     // --- Relationship XP ---
     @Query("UPDATE characters SET relationshipXp = relationshipXp + :xp, messageCount = messageCount + 1 WHERE id = :characterId")
     suspend fun addXpAndIncrementMessages(characterId: Int, xp: Int)
+
+    // --- Diagnostic Queries ---
+    @Query("SELECT COUNT(*) FROM messages")
+    suspend fun getMessageCount(): Int
+
+    @Query("SELECT COUNT(*) FROM memories")
+    suspend fun getMemoryCount(): Int
 }

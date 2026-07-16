@@ -81,6 +81,7 @@ fun MainScreen(
     // Handle character deletion confirmation dialog
     var characterToDelete by remember { mutableStateOf<CharacterEntity?>(null) }
     var activeCharacterActions by remember { mutableStateOf<CharacterEntity?>(null) }
+    var showVoicePickerDialogFor by remember { mutableStateOf<CharacterEntity?>(null) }
 
     val vrmPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -108,12 +109,10 @@ fun MainScreen(
     val serverUrl = "${ashHost.trimEnd('/')}:${ashPort.trim()}"
     var availableVoices by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
 
-    LaunchedEffect(showManualCreateDialog) {
-        if (showManualCreateDialog) {
-            xyz.ssfdre38.haven.data.network.HavenHttpClient.getAvailableVoices(serverUrl) { result ->
-                result.onSuccess { voices ->
-                    availableVoices = voices
-                }
+    LaunchedEffect(serverUrl) {
+        xyz.ssfdre38.haven.data.network.HavenHttpClient.getAvailableVoices(serverUrl) { result ->
+            result.onSuccess { voices ->
+                availableVoices = voices
             }
         }
     }
@@ -480,6 +479,15 @@ fun MainScreen(
                             }
                             TextButton(
                                 onClick = {
+                                    showVoicePickerDialogFor = character
+                                    activeCharacterActions = null
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Select TTS Voice", textAlign = TextAlign.Start, modifier = Modifier.fillMaxWidth())
+                            }
+                            TextButton(
+                                onClick = {
                                     characterToDelete = character
                                     activeCharacterActions = null
                                 },
@@ -507,7 +515,7 @@ fun MainScreen(
                     confirmButton = {
                         TextButton(
                             onClick = {
-                                viewModel.deleteCharacter(character)
+                                viewModel.deleteCharacter(context, character)
                                 characterToDelete = null
                             }
                         ) {
@@ -517,6 +525,60 @@ fun MainScreen(
                     dismissButton = {
                         TextButton(onClick = { characterToDelete = null }) {
                             Text("Cancel")
+                        }
+                    }
+                )
+            }
+
+            // Voice Picker Dialog
+            showVoicePickerDialogFor?.let { character ->
+                AlertDialog(
+                    onDismissRequest = { showVoicePickerDialogFor = null },
+                    title = { Text("Select Voice for ${character.name}") },
+                    text = {
+                        if (availableVoices.isEmpty()) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("No voices retrieved. Make sure server is running.")
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                items(availableVoices) { (voiceId, voiceName) ->
+                                    val isSelected = voiceId == character.voiceId
+                                    Card(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                viewModel.updateCharacterVoice(character, voiceId)
+                                                Toast.makeText(context, "Voice updated to $voiceName", Toast.LENGTH_SHORT).show()
+                                                showVoicePickerDialogFor = null
+                                            },
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent
+                                        ),
+                                        border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray.copy(alpha = 0.3f))
+                                    ) {
+                                        Box(modifier = Modifier.padding(12.dp)) {
+                                            Text(
+                                                text = voiceName,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {},
+                    dismissButton = {
+                        TextButton(onClick = { showVoicePickerDialogFor = null }) {
+                            Text("Close")
                         }
                     }
                 )
@@ -708,7 +770,7 @@ fun MainScreen(
                                             }
                                             IconButton(
                                                 onClick = {
-                                                    viewModel.importCompanion(companion)
+                                                    viewModel.importCompanion(context, companion)
                                                     Toast.makeText(context, "Imported ${companion.name}!", Toast.LENGTH_SHORT).show()
                                                 },
                                                 enabled = !alreadyImported

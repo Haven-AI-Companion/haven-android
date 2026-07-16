@@ -1167,19 +1167,25 @@ fun MessageBubble(
 data class ParsedMessage(val thought: String?, val cleanText: String)
 
 fun parseMessageText(text: String): ParsedMessage {
+    val callRegex = "<\\s*call\\s*>.*?<\\s*/\\s*call\\s*>".toRegex(setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+    var processedText = text.replace(callRegex, "").trim()
+    
+    val strayCallRegex = "</?\\s*call[^>]*>".toRegex(RegexOption.IGNORE_CASE)
+    processedText = processedText.replace(strayCallRegex, "").trim()
+
     val thoughtRegex = "<\\s*thought\\s*>(.*?)<\\s*/\\s*thought\\s*>".toRegex(setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
-    val match = thoughtRegex.find(text)
+    val match = thoughtRegex.find(processedText)
     if (match != null) {
         val thoughtContent = match.groups[1]?.value?.trim()
-        val cleanTextContent = text.replace(thoughtRegex, "").trim()
+        val cleanTextContent = processedText.replace(thoughtRegex, "").trim()
         return ParsedMessage(thoughtContent, cleanTextContent)
     }
 
     // Fallback 1: If only closing </thought> is present
-    val closingTagIndex = text.indexOf("</thought>", ignoreCase = true)
+    val closingTagIndex = processedText.indexOf("</thought>", ignoreCase = true)
     if (closingTagIndex != -1) {
-        val thoughtContent = text.substring(0, closingTagIndex).replace("<thought>", "", ignoreCase = true).trim()
-        val cleanTextContent = text.substring(closingTagIndex + "</thought>".length).trim()
+        val thoughtContent = processedText.substring(0, closingTagIndex).replace("<thought>", "", ignoreCase = true).trim()
+        val cleanTextContent = processedText.substring(closingTagIndex + "</thought>".length).trim()
         return ParsedMessage(
             thought = if (thoughtContent.isNotBlank()) thoughtContent else null,
             cleanText = cleanTextContent
@@ -1187,16 +1193,16 @@ fun parseMessageText(text: String): ParsedMessage {
     }
 
     // Fallback 2: If only opening <thought> is present (cut-off)
-    val openingTagIndex = text.indexOf("<thought>", ignoreCase = true)
+    val openingTagIndex = processedText.indexOf("<thought>", ignoreCase = true)
     if (openingTagIndex != -1) {
-        val thoughtContent = text.substring(openingTagIndex + "<thought>".length).trim()
+        val thoughtContent = processedText.substring(openingTagIndex + "<thought>".length).trim()
         return ParsedMessage(
             thought = if (thoughtContent.isNotBlank()) thoughtContent else null,
             cleanText = ""
         )
     }
 
-    return ParsedMessage(null, text)
+    return ParsedMessage(null, processedText)
 }
 
 data class MessageContent(val cleanText: String, val imageUrl: String?)

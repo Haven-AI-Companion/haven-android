@@ -32,10 +32,12 @@ class MainActivity : ComponentActivity() {
             e.printStackTrace()
         }
 
-        // Check if app was opened via a notification click
+        // Check if app was opened via a notification click or wake word trigger
         val startCharacterId = intent.getIntExtra("characterId", -1).takeIf { it != -1 }
+        val startVoiceCall = intent.getBooleanExtra("startVoiceCall", false)
         if (startCharacterId != null) {
             intent.removeExtra("characterId")
+            intent.removeExtra("startVoiceCall")
         }
 
         // Request runtime permissions at startup (Android 13+)
@@ -95,7 +97,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             HavenTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    MainNavigation(startCharacterId = startCharacterId)
+                    MainNavigation(startCharacterId = startCharacterId, startVoiceCall = startVoiceCall)
                 }
             }
         }

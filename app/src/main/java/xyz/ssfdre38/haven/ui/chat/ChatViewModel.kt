@@ -90,6 +90,7 @@ class ChatViewModel(
     // Holds the partial streamed response being built
     private var streamingMessageId: Int = -1
     private var streamBuffer = StringBuilder()
+    private var dbWriteJob: kotlinx.coroutines.Job? = null
 
     fun syncMessages(context: Context, serverUrl: String, token: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -251,7 +252,7 @@ class ChatViewModel(
                     if (shareDevice) {
                         val agentCtx = xyz.ssfdre38.agent.AgentContext.current(context)
                         if (agentCtx.batteryLevel >= 0) {
-                            appendLine("Device Status: Your physical host device has ${agentCtx.batteryLevel}% battery remaining${if (agentCtx.isCharging) " (Currently Charging)" else " (Discharging)"}. Act naturally if your battery is critically low or if the user points it out.")
+                            appendLine("Device Status: Your physical host device has ${agentCtx.batteryLevel}% battery remaining${if (agentCtx.isCharging) " (Currently Charging)" else " (Discharging)"}. Battery Temp is ${agentCtx.batteryTemp}°C (Health: ${agentCtx.batteryHealth}). Host network type is ${agentCtx.networkType}. Act naturally if your battery is critically low or if the user points it out.")
                         }
                     }
 
@@ -362,14 +363,15 @@ class ChatViewModel(
                 displayName = userName,
                 onToken = { token ->
                     streamBuffer.append(token)
-                    // Debounce writes to avoid hammering DB - update every 5 tokens worth  
-                    viewModelScope.launch(Dispatchers.IO) {
+                    val snapshot = streamBuffer.toString()
+                    dbWriteJob?.cancel()
+                    dbWriteJob = viewModelScope.launch(Dispatchers.IO) {
                         repository.insertMessage(
                             MessageEntity(
                                 id = streamingMessageId,
                                 characterId = characterId,
                                 sender = "character",
-                                text = cleanStreamingText(streamBuffer.toString())
+                                text = cleanStreamingText(snapshot)
                             )
                         )
                     }
@@ -583,7 +585,8 @@ class ChatViewModel(
                         val cleanedText = cleanFinalText(fullText)
                         
                         // Immediately clean up the message in the DB to hide the raw tool call from the user
-                        viewModelScope.launch(Dispatchers.IO) {
+                        dbWriteJob?.cancel()
+                        dbWriteJob = viewModelScope.launch(Dispatchers.IO) {
                             val lastMsg = repository.getLastMessage(characterId)
                             if (lastMsg != null && lastMsg.sender == "character") {
                                 repository.insertMessage(lastMsg.copy(text = cleanedText))
@@ -761,7 +764,8 @@ class ChatViewModel(
                         }
                     } else {
                         // Immediately clean up the message in the DB to hide any raw thought block residues or tag remnants
-                        viewModelScope.launch(Dispatchers.IO) {
+                        dbWriteJob?.cancel()
+                        dbWriteJob = viewModelScope.launch(Dispatchers.IO) {
                             val lastMsg = repository.getLastMessage(characterId)
                             if (lastMsg != null && lastMsg.sender == "character") {
                                 repository.insertMessage(lastMsg.copy(text = cleanText))
@@ -927,7 +931,8 @@ ${character.value?.name ?: "Companion"}: $cleanText"""
                 },
                 onFailure = { error ->
                     _isGenerating.value = false
-                    viewModelScope.launch(Dispatchers.IO) {
+                    dbWriteJob?.cancel()
+                    dbWriteJob = viewModelScope.launch(Dispatchers.IO) {
                         repository.insertMessage(
                             MessageEntity(
                                 id = streamingMessageId,

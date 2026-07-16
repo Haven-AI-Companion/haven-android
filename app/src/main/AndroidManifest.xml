@@ -8,8 +8,11 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
@@ -20,7 +23,8 @@
         android:supportsRtl="true"
         android:windowSoftInputMode="adjustResize"
         android:theme="@style/Theme.Haven"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:name=".HavenApplication">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -72,6 +76,13 @@
             android:name=".service.FloatingCompanionService"
             android:enabled="true"
             android:exported="false" />
+
+        <!-- Local Voice Wake Word Recognition Service -->
+        <service
+            android:name=".service.WakeWordService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
     </application>
 
 </manifest>

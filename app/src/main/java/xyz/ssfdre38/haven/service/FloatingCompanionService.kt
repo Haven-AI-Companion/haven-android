@@ -33,6 +33,17 @@ import xyz.ssfdre38.haven.data.database.AppDatabase
 import xyz.ssfdre38.haven.ui.components.VrmAvatarView
 import xyz.ssfdre38.agent.AgentService
 import java.io.File
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material.icons.filled.PanTool
 
 class FloatingCompanionService : AgentService(), LifecycleOwner, SavedStateRegistryOwner, ViewModelStoreOwner {
 
@@ -41,6 +52,7 @@ class FloatingCompanionService : AgentService(), LifecycleOwner, SavedStateRegis
     private val scope = CoroutineScope(Dispatchers.Main + Job())
     private var repository: DataRepository? = null
     private var isUserDragging = false
+    private var isInteractionMode = false
 
     // LifecycleOwner implementation
     private val lifecycleRegistry = LifecycleRegistry(this)
@@ -90,6 +102,11 @@ class FloatingCompanionService : AgentService(), LifecycleOwner, SavedStateRegis
                 var companionModelPath by remember { mutableStateOf<String?>(null) }
                 var mood by remember { mutableStateOf("neutral") }
                 var activeAnimationIndex by remember { mutableStateOf(0) }
+                var composeInteractionMode by remember { mutableStateOf(false) }
+
+                LaunchedEffect(composeInteractionMode) {
+                    isInteractionMode = composeInteractionMode
+                }
                 
                 LaunchedEffect(Unit) {
                     repository?.getAllCharacters()?.collect { list ->
@@ -168,6 +185,26 @@ class FloatingCompanionService : AgentService(), LifecycleOwner, SavedStateRegis
 
                 val path = companionModelPath
                 val fileExists = remember(path) { path?.let { File(it).exists() } == true }
+
+                // Dynamically update window touchability/click-through based on whether the model is loaded/exists!
+                LaunchedEffect(fileExists) {
+                    val view = composeView ?: return@LaunchedEffect
+                    val wm = windowManager ?: return@LaunchedEffect
+                    val originalFlags = params.flags
+                    if (!fileExists) {
+                        params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                    } else {
+                        params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+                    }
+                    if (params.flags != originalFlags) {
+                        try {
+                            wm.updateViewLayout(view, params)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
+
                 if (fileExists && path != null) {
                     Box(modifier = Modifier.size(160.dp, 220.dp)) {
                         VrmAvatarView(
@@ -177,6 +214,31 @@ class FloatingCompanionService : AgentService(), LifecycleOwner, SavedStateRegis
                             animationIndex = activeAnimationIndex,
                             modifier = Modifier.fillMaxSize()
                         )
+
+                        // Mode toggle floating button in top-right corner
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp)
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (composeInteractionMode) Color(0xFF6366F1).copy(alpha = 0.85f)
+                                    else Color.Black.copy(alpha = 0.5f)
+                                )
+                                .clickable {
+                                    composeInteractionMode = !composeInteractionMode
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (composeInteractionMode) Icons.Default.TouchApp 
+                                              else Icons.Default.PanTool,
+                                contentDescription = "Toggle Interaction Mode",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 } else if (path != null || companionModelPath != null) {
                     // Turn off service dynamically if VRM model is missing
@@ -197,6 +259,7 @@ class FloatingCompanionService : AgentService(), LifecycleOwner, SavedStateRegis
             private var touchDownTime: Long = 0
 
             override fun onTouch(v: View?, event: MotionEvent?): Boolean {
+                if (isInteractionMode) return false
                 if (event == null) return false
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {

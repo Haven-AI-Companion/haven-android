@@ -1,6 +1,5 @@
 package xyz.ssfdre38.haven.ui.gallery
 
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,7 +25,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -76,36 +74,53 @@ fun GalleryScreen(
 
     // Re-compile gallery items by combining database records with physical files on disk
     LaunchedEffect(messages, characterName) {
-        val items = mutableListOf<GalleryItem>()
-        
-        // 1. Add all images associated with database messages
-        val dbItems = messages.filter { it.imagePath != null }.map { msg ->
-            GalleryItem(
-                file = File(msg.imagePath!!),
-                prompt = msg.text,
-                messageId = msg.id
-            )
-        }
-        items.addAll(dbItems)
-        
-        // 2. Scan companion images directory and add files not already present (database clears fallback)
-        if (characterName != "Companion") {
-            val cleanName = characterName.replace("[^a-zA-Z0-9]".toRegex(), "_")
-            val companionDir = File(context.filesDir, "companion/images/$cleanName")
-            if (companionDir.exists() && companionDir.isDirectory) {
-                val files = companionDir.listFiles { file ->
-                    file.isFile && (file.name.endsWith(".png") || file.name.endsWith(".jpg") || file.name.endsWith(".webp"))
-                }
-                files?.forEach { file ->
-                    if (items.none { it.file.absolutePath == file.absolutePath }) {
-                        items.add(GalleryItem(file = file))
+        val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val items = mutableListOf<GalleryItem>()
+
+                // 1. Add all images from DB messages — only include files that actually exist on THIS device
+                val dbItems = messages
+                    .filter { it.imagePath != null }
+                    .mapNotNull { msg ->
+                        val f = File(msg.imagePath!!)
+                        if (f.exists()) GalleryItem(file = f, prompt = msg.text, messageId = msg.id) else null
+                    }
+                items.addAll(dbItems)
+
+                // 2. Scan companion images directory and add files not already present
+                if (characterName != "Companion") {
+                    val cleanName = characterName.replace("[^a-zA-Z0-9]".toRegex(), "_")
+                    val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+                    val dirsToScan = listOfNotNull(
+                        File(baseDir, "companion/images/$cleanName"),
+                        File(context.filesDir, "companion/images/$cleanName")
+                    ).distinct()
+                    for (companionDir in dirsToScan) {
+                        if (companionDir.exists() && companionDir.isDirectory) {
+                            val files = companionDir.listFiles { file ->
+                                file.isFile && (file.name.endsWith(".png") || file.name.endsWith(".jpg") || file.name.endsWith(".webp"))
+                            }
+                            files?.forEach { file ->
+                                if (items.none { it.file.name == file.name }) {
+                                    items.add(GalleryItem(file = file))
+                                }
+                            }
+                        }
                     }
                 }
+
+                // Deduplicate by canonical path to prevent LazyGrid duplicate key crash
+                items
+                    .distinctBy { item -> runCatching { item.file.canonicalPath }.getOrElse { item.file.absolutePath } }
+                    .sortedByDescending { it.file.lastModified() }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                emptyList()
             }
         }
-        
-        galleryItems = items.sortedByDescending { it.file.lastModified() }
+        galleryItems = result
     }
+
 
     var activeItem by remember { mutableStateOf<GalleryItem?>(null) }
     var searchQuery by remember { mutableStateOf("") }
@@ -135,63 +150,8 @@ fun GalleryScreen(
             .fillMaxSize()
             .background(Brush.verticalGradient(mainGradient))
     ) {
-        // Floating premium background animations
-        val infiniteTransition = rememberInfiniteTransition(label = "background_orbs")
-        
-        val orb1X by infiniteTransition.animateFloat(
-            initialValue = -50f,
-            targetValue = 180f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(12000, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "orb1X"
-        )
-        val orb1Y by infiniteTransition.animateFloat(
-            initialValue = -50f,
-            targetValue = 350f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(14000, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "orb1Y"
-        )
-        
-        val orb2X by infiniteTransition.animateFloat(
-            initialValue = 220f,
-            targetValue = -60f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(16000, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "orb2X"
-        )
-        val orb2Y by infiniteTransition.animateFloat(
-            initialValue = 450f,
-            targetValue = 60f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(11000, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "orb2Y"
-        )
-
-        androidx.compose.foundation.Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .blur(80.dp)
-        ) {
-            drawCircle(
-                color = Color(0xFFBB86FC).copy(alpha = 0.12f),
-                radius = 350.dp.toPx(),
-                center = androidx.compose.ui.geometry.Offset(orb1X.dp.toPx(), orb1Y.dp.toPx())
-            )
-            drawCircle(
-                color = Color(0xFF03DAC6).copy(alpha = 0.08f),
-                radius = 300.dp.toPx(),
-                center = androidx.compose.ui.geometry.Offset(orb2X.dp.toPx(), orb2Y.dp.toPx())
-            )
-        }
+        // Subtle secondary overlay (no GPU-intensive effects for compatibility)
+        Box(modifier = Modifier.fillMaxSize())
 
         Scaffold(
             topBar = {

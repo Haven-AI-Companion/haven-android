@@ -186,6 +186,65 @@ class ProactiveMessageWorker(
         val database = AppDatabase.getInstance(context)
         val dao = database.havenDao()
 
+        // Check if Quiet Time is active
+        val quietTimeEnabled = sharedPrefs.getBoolean("quiet_time_enabled", false)
+        val quietTimeStart = sharedPrefs.getString("quiet_time_start", "22:00") ?: "22:00"
+        val quietTimeEnd = sharedPrefs.getString("quiet_time_end", "07:00") ?: "07:00"
+
+        var isQuietTime = false
+        if (quietTimeEnabled) {
+            try {
+                val currentTime = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())
+                isQuietTime = isTimeBetween(currentTime, quietTimeStart, quietTimeEnd)
+            } catch (e: java.lang.Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // Sync server-side proactive messages first
+        var anyNewMessagesSynced = false
+        try {
+            val characters = dao.getAllCharacters().first()
+            if (characters.isNotEmpty()) {
+                for (char in characters) {
+                    val conversationId = char.conversationId
+                    if (!conversationId.isNullOrBlank()) {
+                        val serverMsgs = xyz.ssfdre38.haven.data.network.HavenHttpClient.getConversationMessages(serverUrl, token, conversationId)
+                        if (serverMsgs.isNotEmpty()) {
+                            val localMsgs = dao.getMessagesForCharacter(char.id).first()
+                            if (serverMsgs.size > localMsgs.size) {
+                                val newMsgs = serverMsgs.drop(localMsgs.size)
+                                newMsgs.forEach { obj ->
+                                    val role = obj.getString("role")
+                                    val content = obj.getString("content")
+                                    val sender = if (role == "user") "user" else "character"
+                                    
+                                    dao.insertMessage(
+                                        MessageEntity(
+                                            characterId = char.id,
+                                            sender = sender,
+                                            text = content
+                                        )
+                                    )
+                                }
+                                val lastNewAssistantMsg = newMsgs.lastOrNull { it.getString("role") == "assistant" }
+                                if (lastNewAssistantMsg != null) {
+                                    val content = lastNewAssistantMsg.getString("content")
+                                    showNotification(context, char, content, isQuietTime)
+                                    anyNewMessagesSynced = true
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (anyNewMessagesSynced) {
+                return Result.success()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
         // 1 hour inactivity threshold
         val inactivityThreshold = 1 * 60 * 60 * 1000L
 
@@ -273,21 +332,6 @@ class ProactiveMessageWorker(
                     .build()
                 try {
                     okhttp3.OkHttpClient().newCall(request).execute().close()
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-
-            // Check if Quiet Time is active
-            val quietTimeEnabled = sharedPrefs.getBoolean("quiet_time_enabled", false)
-            val quietTimeStart = sharedPrefs.getString("quiet_time_start", "22:00") ?: "22:00"
-            val quietTimeEnd = sharedPrefs.getString("quiet_time_end", "07:00") ?: "07:00"
-
-            var isQuietTime = false
-            if (quietTimeEnabled) {
-                try {
-                    val currentTime = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())
-                    isQuietTime = isTimeBetween(currentTime, quietTimeStart, quietTimeEnd)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }

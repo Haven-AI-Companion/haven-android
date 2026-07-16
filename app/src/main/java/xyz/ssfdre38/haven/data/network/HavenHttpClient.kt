@@ -3,6 +3,7 @@ package xyz.ssfdre38.haven.data.network
 import android.content.Context
 import android.util.Base64
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -199,7 +200,8 @@ object HavenHttpClient {
                         val imageBytes = Base64.decode(base64Data, Base64.DEFAULT)
 
                         // Save image to internal storage
-                        val imagesDir = File(context.filesDir, "generated")
+                        val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+                        val imagesDir = File(baseDir, "generated")
                         if (!imagesDir.exists()) imagesDir.mkdirs()
 
                         val file = File(imagesDir, "gen_${UUID.randomUUID()}.png")
@@ -227,7 +229,8 @@ object HavenHttpClient {
                     val bytes = response.body?.bytes()
                     if (bytes != null) {
                         val cleanName = companionName.replace("[^a-zA-Z0-9]".toRegex(), "_")
-                        val imagesDir = File(context.filesDir, "companion/images/$cleanName")
+                        val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+                        val imagesDir = File(baseDir, "companion/images/$cleanName")
                         if (!imagesDir.exists()) imagesDir.mkdirs()
                         
                         val ext = if (imageUrl.lowercase().endsWith(".webp")) ".webp"
@@ -261,7 +264,8 @@ object HavenHttpClient {
                 if (response.isSuccessful) {
                     val bytes = response.body?.bytes()
                     if (bytes != null) {
-                        val localDir = File(context.filesDir, "vrm_models").apply { mkdirs() }
+                        val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+                        val localDir = File(baseDir, "vrm_models").apply { mkdirs() }
                         val file = File(localDir, "${characterName.replace("\\s+".toRegex(), "_")}_avatar_${System.currentTimeMillis()}.glb")
                         java.io.FileOutputStream(file).use { fos ->
                             fos.write(bytes)
@@ -424,6 +428,40 @@ object HavenHttpClient {
                         onResult(Result.success("Connection Successful!"))
                     } else {
                         onResult(Result.failure(Exception("Server returned HTTP ${response.code}")))
+                    }
+                }
+            }
+        })
+    }
+
+    fun testConnectionLatency(
+        url: String,
+        onResult: (Result<Pair<String, Long>>) -> Unit
+    ) {
+        val startTime = System.currentTimeMillis()
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .build()
+
+        val shortTimeoutClient = client.newBuilder()
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(5, TimeUnit.SECONDS)
+            .writeTimeout(5, TimeUnit.SECONDS)
+            .build()
+
+        shortTimeoutClient.newCall(request).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: IOException) {
+                onResult(Result.failure(e))
+            }
+
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                response.use {
+                    val latency = System.currentTimeMillis() - startTime
+                    if (response.isSuccessful) {
+                        onResult(Result.success(Pair("Successful", latency)))
+                    } else {
+                        onResult(Result.success(Pair("HTTP ${response.code}", latency)))
                     }
                 }
             }
@@ -834,5 +872,81 @@ object HavenHttpClient {
             e.printStackTrace()
             return false
         }
+    }
+
+    fun updateUserProfile(
+        serverUrl: String,
+        token: String,
+        displayName: String,
+        gender: String,
+        onResult: (Result<Boolean>) -> Unit
+    ) {
+        val url = "${serverUrl.trimEnd('/')}/api/users/me/profile"
+        val json = JSONObject().apply {
+            put("displayName", displayName)
+            put("gender", gender)
+        }.toString()
+        val request = Request.Builder()
+            .url(url)
+            .post(json.toRequestBody(JSON_MEDIA_TYPE))
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        client.newCall(request).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+                onResult(Result.failure(e))
+            }
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                response.use {
+                    if (it.isSuccessful) {
+                        onResult(Result.success(true))
+                    } else {
+                        onResult(Result.failure(Exception("Failed to update profile: ${it.code}")))
+                    }
+                }
+            }
+        })
+    }
+
+    fun uploadUserAvatar(
+        serverUrl: String,
+        token: String,
+        fileBytes: ByteArray,
+        fileName: String,
+        mimeType: String,
+        onResult: (Result<String>) -> Unit
+    ) {
+        val url = "${serverUrl.trimEnd('/')}/api/users/me/profile/avatar"
+        val fileMediaType = mimeType.toMediaTypeOrNull()
+        val fileBody = fileBytes.toRequestBody(fileMediaType)
+        val requestBody = okhttp3.MultipartBody.Builder()
+            .setType(okhttp3.MultipartBody.FORM)
+            .addFormDataPart("file", fileName, fileBody)
+            .build()
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        client.newCall(request).enqueue(object : okhttp3.Callback {
+            override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+                onResult(Result.failure(e))
+            }
+            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                response.use {
+                    if (it.isSuccessful) {
+                        val body = it.body?.string() ?: ""
+                        try {
+                            val obj = JSONObject(body)
+                            val path = obj.optString("avatarPath", "")
+                            onResult(Result.success(path))
+                        } catch (e: Exception) {
+                            onResult(Result.failure(e))
+                        }
+                    } else {
+                        onResult(Result.failure(Exception("Failed to upload avatar: ${it.code}")))
+                    }
+                }
+            }
+        })
     }
 }

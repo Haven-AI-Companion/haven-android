@@ -149,7 +149,8 @@ object BackupManager {
                 writeTextFileToZip(zos, "group_messages.json", gMsgArray.toString(2))
 
                 // Export Avatar files
-                val avatarDir = File(context.filesDir, "avatars")
+                val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+                val avatarDir = File(baseDir, "avatars")
                 if (avatarDir.exists() && avatarDir.isDirectory) {
                     avatarDir.listFiles()?.forEach { file ->
                         if (file.isFile) {
@@ -183,7 +184,8 @@ object BackupManager {
             if (tempDir.exists()) tempDir.deleteRecursively()
             tempDir.mkdirs()
 
-            val avatarDir = File(context.filesDir, "avatars")
+            val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+            val avatarDir = File(baseDir, "avatars")
             if (!avatarDir.exists()) avatarDir.mkdirs()
 
             // 1. Extract ZIP contents

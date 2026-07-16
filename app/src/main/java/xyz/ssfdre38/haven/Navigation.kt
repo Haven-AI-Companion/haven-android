@@ -17,7 +17,8 @@ import xyz.ssfdre38.haven.ui.voice.VoiceCallScreen
 
 @Composable
 fun MainNavigation(
-    startCharacterId: Int? = null
+    startCharacterId: Int? = null,
+    startVoiceCall: Boolean = false
 ) {
     val context = LocalContext.current.applicationContext
     val database = AppDatabase.getInstance(context)
@@ -25,16 +26,23 @@ fun MainNavigation(
 
     val backStack = rememberNavBackStack(Main)
 
-    // Handle deep navigation when launched from status bar notification
+    // Handle deep navigation when launched from status bar notification or wake word
     LaunchedEffect(startCharacterId) {
         if (startCharacterId != null) {
             backStack.add(Chat(startCharacterId))
+            if (startVoiceCall) {
+                backStack.add(VoiceCall(startCharacterId))
+            }
         }
     }
 
     NavDisplay(
         backStack = backStack,
-        onBack = { backStack.removeLastOrNull() },
+        onBack = {
+            if (backStack.size > 1) {
+                backStack.removeLastOrNull()
+            }
+        },
         entryProvider = entryProvider {
             entry<Main> {
                 MainScreen(

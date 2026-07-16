@@ -158,6 +158,7 @@ fun VrmAvatarView(
                     scale = Scale(1.0f)
                 }
             }
+            NodeLifecycle(modelNode) {}
             
             // Trigger animation and update state reference
             LaunchedEffect(modelNode, animationIndex) {

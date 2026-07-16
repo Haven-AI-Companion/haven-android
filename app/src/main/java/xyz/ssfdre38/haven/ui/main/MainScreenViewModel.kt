@@ -184,9 +184,13 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
         }
     }
 
-    fun deleteCharacter(character: CharacterEntity) {
+    fun deleteCharacter(context: Context, character: CharacterEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             dataRepository.deleteCharacter(character)
+            val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+            val deleted = prefs.getStringSet("deleted_companions", emptySet())?.toMutableSet() ?: mutableSetOf()
+            deleted.add(character.name)
+            prefs.edit().putStringSet("deleted_companions", deleted).apply()
         }
     }
 
@@ -445,41 +449,45 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                                 scenario = scenario,
                                 systemPrompt = systemPrompt,
                                 avatarPath = avatarPath,
-                                bodyType = if (existing.bodyType.isBlank()) bodyType else existing.bodyType,
-                                bodyShape = if (existing.bodyShape.isBlank()) bodyShape else existing.bodyShape,
-                                currentOutfit = if (existing.currentOutfit.isBlank()) currentOutfit else existing.currentOutfit,
-                                currentLocation = if (existing.currentLocation.isBlank()) currentLocation else existing.currentLocation,
-                                currentMood = if (existing.currentMood.isBlank()) currentMood else existing.currentMood,
-                                clothingState = if (existing.clothingState.isBlank()) clothingState else existing.clothingState
+                                bodyType = if (bodyType.isNotBlank()) bodyType else existing.bodyType,
+                                bodyShape = if (bodyShape.isNotBlank()) bodyShape else existing.bodyShape,
+                                currentOutfit = if (currentOutfit.isNotBlank()) currentOutfit else existing.currentOutfit,
+                                currentLocation = if (currentLocation.isNotBlank()) currentLocation else existing.currentLocation,
+                                currentMood = if (currentMood.isNotBlank()) currentMood else existing.currentMood,
+                                clothingState = if (clothingState.isNotBlank()) clothingState else existing.clothingState
                             )
                             dataRepository.insertCharacter(updated)
                         } else {
-                            // Automatically insert/import missing companion from server
-                            val newChar = CharacterEntity(
-                                name = name,
-                                avatarPath = avatarPath,
-                                voiceId = voiceId,
-                                description = description,
-                                personality = personality,
-                                scenario = scenario,
-                                firstMessage = firstMessage,
-                                systemPrompt = systemPrompt,
-                                currentOutfit = currentOutfit,
-                                currentLocation = currentLocation,
-                                currentMood = currentMood,
-                                bodyType = bodyType,
-                                bodyShape = bodyShape,
-                                clothingState = clothingState
-                            )
-                            val newId = dataRepository.insertCharacter(newChar).toInt()
-                            if (firstMessage.isNotBlank()) {
-                                dataRepository.insertMessage(
-                                    MessageEntity(
-                                        characterId = newId,
-                                        sender = "character",
-                                        text = firstMessage
-                                    )
+                            // Automatically insert/import missing companion from server, unless deleted by user
+                            val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+                            val deletedSet = prefs.getStringSet("deleted_companions", emptySet()) ?: emptySet()
+                            if (!deletedSet.contains(name)) {
+                                val newChar = CharacterEntity(
+                                    name = name,
+                                    avatarPath = avatarPath,
+                                    voiceId = voiceId,
+                                    description = description,
+                                    personality = personality,
+                                    scenario = scenario,
+                                    firstMessage = firstMessage,
+                                    systemPrompt = systemPrompt,
+                                    currentOutfit = currentOutfit,
+                                    currentLocation = currentLocation,
+                                    currentMood = currentMood,
+                                    bodyType = bodyType,
+                                    bodyShape = bodyShape,
+                                    clothingState = clothingState
                                 )
+                                val newId = dataRepository.insertCharacter(newChar).toInt()
+                                if (firstMessage.isNotBlank()) {
+                                    dataRepository.insertMessage(
+                                        MessageEntity(
+                                            characterId = newId,
+                                            sender = "character",
+                                            text = firstMessage
+                                        )
+                                    )
+                                }
                             }
                         }
 
@@ -511,8 +519,15 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
         }
     }
 
-    fun importCompanion(char: CharacterEntity) {
+    fun importCompanion(context: Context, char: CharacterEntity) {
         viewModelScope.launch(Dispatchers.IO) {
+            // Remove name from deleted set so it can auto-sync again
+            val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+            val deleted = prefs.getStringSet("deleted_companions", emptySet())?.toMutableSet() ?: mutableSetOf()
+            if (deleted.remove(char.name)) {
+                prefs.edit().putStringSet("deleted_companions", deleted).apply()
+            }
+
             val charId = dataRepository.insertCharacter(char).toInt()
             if (char.firstMessage.isNotBlank()) {
                 dataRepository.insertMessage(
@@ -545,6 +560,16 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                     )
                     xyz.ssfdre38.haven.ui.widget.HavenAppWidgetProvider.triggerUpdate(context)
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun updateCharacterVoice(character: CharacterEntity, voiceId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                dataRepository.insertCharacter(character.copy(voiceId = voiceId))
             } catch (e: Exception) {
                 e.printStackTrace()
             }

@@ -116,7 +116,8 @@ class DefaultDataRepository(private val havenDao: HavenDao) : DataRepository {
         val charaData = xyz.ssfdre38.haven.data.parser.TavernCardParser.parse(inputStream) ?: return false
         
         // Save the avatar image bytes locally
-        val avatarDir = File(context.filesDir, "avatars")
+        val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+        val avatarDir = File(baseDir, "avatars")
         if (!avatarDir.exists()) avatarDir.mkdirs()
         
         val uniqueName = "${charaData.name?.replace("\\s+".toRegex(), "_") ?: "Unnamed"}_${UUID.randomUUID().toString().take(6)}.png"
