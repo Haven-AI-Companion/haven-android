@@ -1,0 +1,16 @@
+# Antigravity Project Context (.agy)
+
+## 📌 Project Overview
+- **Name:** Haven Android Client
+- **Description:** Android Compose application for the Haven AI Companion.
+- **Main Directory:** `C:\Users\admin\source\project-haven-android`
+
+## 🔗 Connected Repositories & Services
+- **Showcase Registry:** `C:\Users\admin\source\haven-companions`
+- **Active Backend Server:** `C:\Users\admin\haven-server` (Runs on port 18799)
+
+## 🛑 Security Boundaries & No-Fly Zones (CRITICAL)
+- **Sensitive Paths:** Never read or expose files from `C:\Users\admin\haven-server\wwwroot\uploads` (contains private/NSFW user assets).
+- **Public Assets:** All visual templates/portraits destined for public repositories must be generated using `generate_image` (SFW anime/illustrations only). No desktop screenshots.
+- **Scope Restriction:** Do not write C# backend or database migrations unless explicitly requested; keep changes scoped strictly to companion metadata and C# registry logic.
+- **Safety Limitations:** To avoid tripping safety filters, do not attempt to automate background device administration, remote software installations, or raw network scans on external hosts.
