@@ -380,11 +380,22 @@ class ChatViewModel(
                     _isGenerating.value = false
                     val fullText = streamBuffer.toString().trim()
                     
+                    // Parse and execute actions
+                    val actionRegex = "\\[\\s*ACTION\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+                    actionRegex.findAll(fullText).forEach { match ->
+                        val actionTag = match.groups[1]?.value ?: ""
+                        executeAndroidAction(context, actionTag)
+                    }
+                    
                     // Parse thoughts for state updates
                     val thoughtRegex = "<\\s*thought\\s*>(.*)<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
                     val toolCallRegex = "(?:\\[\\s*(?:Tool\\s*(?:Call\\s*)?:\\s*)?generate_portr?ait\\s*\\])|(?:<\\s*call\\s*>\\s*generate_portr?ait\\s*<\\s*/\\s*call\\s*>)|(?:<\\s*call\\s*:\\s*generate_portr?ait\\s*>)".toRegex(RegexOption.IGNORE_CASE)
                     val avatar3dRegex = "(?:\\[\\s*(?:Tool\\s*(?:Call\\s*)?:\\s*)?generate_3d_avatar\\s*\\])|(?:<\\s*call\\s*>\\s*generate_3d_avatar\\s*<\\s*/\\s*call\\s*>)|(?:<\\s*call\\s*:\\s*generate_3d_avatar\\s*>)".toRegex(RegexOption.IGNORE_CASE)
-                    val cleanText = fullText.replace(thoughtRegex, "").replace(toolCallRegex, "").replace(avatar3dRegex, "").trim()
+                    val cleanText = fullText.replace(thoughtRegex, "")
+                        .replace(toolCallRegex, "")
+                        .replace(avatar3dRegex, "")
+                        .replace(actionRegex, "")
+                        .trim()
                     var newOutfit: String? = null
                     var newLocation: String? = null
                     var newMood: String? = null
@@ -1127,7 +1138,20 @@ ${character.value?.name ?: "Companion"}: $cleanText"""
         val completedCallAttrRegex = "<\\s*call\\s*:\\s*.*?\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
         text = text.replace(completedCallAttrRegex, "")
         
-        // 3. Remove open thought block and everything following it
+        // 3. Remove completed action blocks
+        val actionRegex = "\\[\\s*ACTION\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+        text = text.replace(actionRegex, "")
+        
+        // Strip partial action tags at the end of the stream to avoid visual flicker
+        val partialActionIndex = text.lastIndexOf("[")
+        if (partialActionIndex != -1 && partialActionIndex >= text.length - 25) {
+            val partial = text.substring(partialActionIndex)
+            if (partial.lowercase().contains("action") || !partial.contains("]")) {
+                text = text.substring(0, partialActionIndex)
+            }
+        }
+        
+        // 4. Remove open thought block and everything following it
         val openThoughtIndex = text.indexOf("<thought")
         if (openThoughtIndex != -1) {
             text = text.substring(0, openThoughtIndex)
@@ -1174,10 +1198,52 @@ ${character.value?.name ?: "Companion"}: $cleanText"""
         text = text.replace(strayTagsRegex, "")
         
         // 5. Remove any loose brackets/state markers
-        val stateRegex = "\\[\\s*(?:Outfit|Location|Mood|Tool|Call|BodyType|BodyShape|ClothingState)\\s*:.*?\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+        val stateRegex = "\\[\\s*(?:Outfit|Location|Mood|Tool|Call|BodyType|BodyShape|ClothingState|ACTION)\\s*:.*?\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
         text = text.replace(stateRegex, "")
         
         return text.trim()
+    }
+
+    private fun executeAndroidAction(context: Context, actionTag: String) {
+        val lower = actionTag.trim().lowercase()
+        try {
+            when {
+                lower.startsWith("set_alarm") -> {
+                    val timeStr = lower.substringAfter("set_alarm").trim()
+                    val parts = timeStr.split(":")
+                    if (parts.size >= 2) {
+                        val hour = parts[0].filter { it.isDigit() }.toIntOrNull()
+                        val minute = parts[1].filter { it.isDigit() }.toIntOrNull()
+                        if (hour != null && minute != null) {
+                            val intent = android.content.Intent(android.provider.AlarmClock.ACTION_SET_ALARM).apply {
+                                putExtra(android.provider.AlarmClock.EXTRA_HOUR, hour)
+                                putExtra(android.provider.AlarmClock.EXTRA_MINUTES, minute)
+                                putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, false)
+                                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            context.startActivity(intent)
+                        }
+                    }
+                }
+                lower.startsWith("add_event") -> {
+                    val title = actionTag.substringAfter("add_event", "").trim()
+                    val intent = android.content.Intent(android.content.Intent.ACTION_INSERT).apply {
+                        data = android.provider.CalendarContract.Events.CONTENT_URI
+                        putExtra(android.provider.CalendarContract.Events.TITLE, title)
+                        flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(intent)
+                }
+                lower.contains("play_chime") -> {
+                    val tone = android.provider.Settings.System.DEFAULT_NOTIFICATION_URI
+                    val mp = android.media.MediaPlayer.create(context, tone)
+                    mp?.start()
+                    mp?.setOnCompletionListener { it.release() }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun shouldAutoTriggerPortrait(text: String): Boolean {

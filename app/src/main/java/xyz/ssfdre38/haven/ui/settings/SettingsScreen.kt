@@ -105,6 +105,7 @@ fun SettingsScreen(
     var enableOverlay by remember { mutableStateOf(sharedPrefs.getBoolean("enable_overlay", false) && android.provider.Settings.canDrawOverlays(context)) }
     var shareDeviceStatus by remember { mutableStateOf(sharedPrefs.getBoolean("share_device_status", false)) }
     var enableWakeWord by remember { mutableStateOf(sharedPrefs.getBoolean("enable_wake_word", false)) }
+    var customWakeWord by remember { mutableStateOf(sharedPrefs.getString("custom_wake_word", "") ?: "") }
     var shareLocalTime by remember { mutableStateOf(sharedPrefs.getBoolean("share_local_time", true)) }
     var enableLongTermMemory by remember { mutableStateOf(sharedPrefs.getBoolean("enable_long_term_memory", true)) }
     var freezeRelationshipLevel by remember { mutableStateOf(sharedPrefs.getBoolean("freeze_relationship_level", false)) }
@@ -863,6 +864,18 @@ fun SettingsScreen(
                 )
             }
 
+            if (enableWakeWord) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = customWakeWord,
+                    onValueChange = { customWakeWord = it },
+                    label = { Text("Custom Wake Phrase") },
+                    placeholder = { Text("e.g. hey computer") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
@@ -1373,6 +1386,7 @@ fun SettingsScreen(
                         putBoolean("enable_overlay", enableOverlay)
                         putBoolean("share_device_status", shareDeviceStatus)
                         putBoolean("enable_wake_word", enableWakeWord)
+                        putString("custom_wake_word", customWakeWord.trim())
                         putBoolean("share_local_time", shareLocalTime)
                         putBoolean("enable_long_term_memory", enableLongTermMemory)
                         putBoolean("freeze_relationship_level", freezeRelationshipLevel)

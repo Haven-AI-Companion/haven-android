@@ -29,6 +29,7 @@ class WakeWordService : Service() {
     private var recognizerIntent: Intent? = null
     private val scope = CoroutineScope(Dispatchers.IO)
     private var isListening = false
+    private var customWakeWord: String? = null
 
     companion object {
         private const val CHANNEL_ID = "haven_wake_word_service"
@@ -101,9 +102,11 @@ class WakeWordService : Service() {
 
     private fun checkMatches(matches: ArrayList<String>?) {
         if (matches == null) return
+        val custom = customWakeWord
         for (match in matches) {
             val lower = match.lowercase(Locale.getDefault())
-            if (lower.contains("hey nova") || lower.contains("hey hasaji") || lower.contains("nova") || lower.contains("hasaji")) {
+            if (lower.contains("hey nova") || lower.contains("hey hasaji") || lower.contains("nova") || lower.contains("hasaji") ||
+                (custom != null && lower.contains(custom))) {
                 triggerWakeAction()
                 break
             }
@@ -141,6 +144,8 @@ class WakeWordService : Service() {
 
     private fun startListening() {
         isListening = true
+        val prefs = getSharedPreferences("haven_prefs", MODE_PRIVATE)
+        customWakeWord = prefs.getString("custom_wake_word", "")?.trim()?.lowercase(Locale.getDefault())?.takeIf { it.isNotBlank() }
         scope.launch(Dispatchers.Main) {
             try {
                 speechRecognizer?.startListening(recognizerIntent)
