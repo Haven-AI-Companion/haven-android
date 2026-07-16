@@ -10,6 +10,7 @@ import io.github.sceneview.rememberNode
 import io.github.sceneview.rememberModelInstance
 import io.github.sceneview.rememberCameraNode
 import io.github.sceneview.rememberCameraManipulator
+import io.github.sceneview.rememberMainLightNode
 import io.github.sceneview.math.Position
 import io.github.sceneview.math.Rotation
 import io.github.sceneview.math.Scale
@@ -131,7 +132,23 @@ fun VrmAvatarView(
         } else if (currentWeights.size > 6) {
             currentWeights[6] = speakMouthOpenFactor // fallback viseme
         }
-        node.setMorphWeights(currentWeights, offset = 0)
+    }
+
+    val mainLightNode = rememberMainLightNode(engine) {
+        intensity = 150000.0f
+        rotation = Rotation(x = -45f, y = 45f, z = 0f)
+    }
+
+    val fillLightNode = rememberNode {
+        io.github.sceneview.node.LightNode(
+            engine = engine,
+            type = com.google.android.filament.LightManager.Type.DIRECTIONAL,
+            apply = {
+                intensity(60000.0f)
+            }
+        ).apply {
+            rotation = Rotation(x = -15f, y = -45f, z = 0f)
+        }
     }
 
     val cameraNode = rememberCameraNode(engine) {
@@ -148,6 +165,9 @@ fun VrmAvatarView(
         cameraNode = cameraNode,
         cameraManipulator = rememberCameraManipulator()
     ) {
+        NodeLifecycle(mainLightNode) {}
+        NodeLifecycle(fillLightNode) {}
+
         val modelInstance = rememberModelInstance(modelLoader, modelFile.absolutePath)
         if (modelInstance != null) {
             val modelNode = rememberNode {

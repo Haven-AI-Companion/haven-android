@@ -56,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -626,37 +627,129 @@ fun ChatScreen(
             Modifier.background(MaterialTheme.colorScheme.background)
         }
 
+        val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+        val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        val isTabletOrWide = configuration.screenWidthDp >= 600 || isLandscape
+
         Box(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
         ) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(messages, key = { it.id }) { message ->
-                    val isLast = message.id == messages.lastOrNull { it.sender == "character" }?.id
-                    MessageBubble(
-                        message = message,
-                        character = character,
-                        onImageClick = { activeFullscreenImage = it },
-                        isLastMessage = isLast,
-                        onRegenerateClick = {
-                            val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
-                            val ashHost = prefs.getString("ash_host", "") ?: ""
-                            val ashPort = prefs.getString("ash_port", "18799") ?: "18799"
-                            val token = prefs.getString("auth_token", "") ?: ""
-                            if (ashHost.isNotBlank()) {
-                                val serverUrl = "${ashHost.trimEnd('/')}:$ashPort"
-                                chatViewModel.regenerateLastMessage(context, serverUrl, token)
+            val vrmPath = character?.vrmModelPath
+            val hasVrm = remember(vrmPath) { vrmPath?.let { File(it).exists() } == true }
+
+            if (isTabletOrWide) {
+                Row(modifier = Modifier.fillMaxSize()) {
+                    // Left 3D Character View (40% width)
+                    if (hasVrm && vrmPath != null) {
+                        Box(
+                            modifier = Modifier
+                                .weight(0.4f)
+                                .fillMaxHeight()
+                        ) {
+                            VrmAvatarView(
+                                modelPath = vrmPath,
+                                mood = character?.currentMood ?: "neutral",
+                                isSpeaking = isSpeaking,
+                                animationIndex = 0,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    } else {
+                        // Fallback: 2D static large character avatar
+                        Box(
+                            modifier = Modifier
+                                .weight(0.4f)
+                                .fillMaxHeight(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            character?.let { char ->
+                                xyz.ssfdre38.haven.ui.main.CharacterAvatar(
+                                    character = char,
+                                    modifier = Modifier.size(200.dp)
+                                )
                             }
-                        },
-                        speakText = speakText,
-                        onPlayAudio = { chatViewModel.playAudio(it) }
+                        }
+                    }
+
+                    // Right Chat Messages View (60% width)
+                    Box(
+                        modifier = Modifier
+                            .weight(0.6f)
+                            .fillMaxHeight()
+                    ) {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(messages, key = { it.id }) { message ->
+                                val isLast = message.id == messages.lastOrNull { it.sender == "character" }?.id
+                                MessageBubble(
+                                    message = message,
+                                    character = character,
+                                    onImageClick = { activeFullscreenImage = it },
+                                    isLastMessage = isLast,
+                                    onRegenerateClick = {
+                                        val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+                                        val ashHost = prefs.getString("ash_host", "") ?: ""
+                                        val ashPort = prefs.getString("ash_port", "18799") ?: "18799"
+                                        val token = prefs.getString("auth_token", "") ?: ""
+                                        if (ashHost.isNotBlank()) {
+                                            val serverUrl = "${ashHost.trimEnd('/')}:$ashPort"
+                                            chatViewModel.regenerateLastMessage(context, serverUrl, token)
+                                        }
+                                    },
+                                    speakText = speakText,
+                                    onPlayAudio = { chatViewModel.playAudio(it) }
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Mobile layout: 3D character in background behind chat bubbles
+                if (hasVrm && vrmPath != null) {
+                    VrmAvatarView(
+                        modelPath = vrmPath,
+                        mood = character?.currentMood ?: "neutral",
+                        isSpeaking = isSpeaking,
+                        animationIndex = 0,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .alpha(0.45f) // slightly translucent for message readability
                     )
+                }
+
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(messages, key = { it.id }) { message ->
+                        val isLast = message.id == messages.lastOrNull { it.sender == "character" }?.id
+                        MessageBubble(
+                            message = message,
+                            character = character,
+                            onImageClick = { activeFullscreenImage = it },
+                            isLastMessage = isLast,
+                            onRegenerateClick = {
+                                val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+                                val ashHost = prefs.getString("ash_host", "") ?: ""
+                                val ashPort = prefs.getString("ash_port", "18799") ?: "18799"
+                                val token = prefs.getString("auth_token", "") ?: ""
+                                if (ashHost.isNotBlank()) {
+                                    val serverUrl = "${ashHost.trimEnd('/')}:$ashPort"
+                                    chatViewModel.regenerateLastMessage(context, serverUrl, token)
+                                }
+                            },
+                            speakText = speakText,
+                            onPlayAudio = { chatViewModel.playAudio(it) }
+                        )
+                    }
                 }
             }
         }
