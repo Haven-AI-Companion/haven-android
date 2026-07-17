@@ -555,7 +555,102 @@ class GroupChatViewModel(
                             }
                         }
 
-                    val cleanText = fullText.replace(thoughtRegex, "").trim()
+                    val toolCallRegex = "(?:\\[\\s*(?:Tool\\s*(?:Call\\s*)?:\\s*)?generate_portr?ait\\s*\\])|(?:<\\s*call\\s*>\\s*generate_portr?ait\\s*<\\s*/\\s*call\\s*>)|(?:<\\s*call\\s*:\\s*generate_portr?ait\\s*>)".toRegex(RegexOption.IGNORE_CASE)
+                    val cleanText = fullText.replace(thoughtRegex, "").replace(toolCallRegex, "").trim()
+                    
+                    val targetId = streamingMessageId
+                    viewModelScope.launch(Dispatchers.IO) {
+                        val msg = repository.getGroupMessageById(targetId)
+                        if (msg != null) {
+                            repository.insertGroupMessage(msg.copy(text = cleanText))
+                        }
+                    }
+
+                    val hasToolTag = toolCallRegex.containsMatchIn(fullText)
+                    val hasImplicitTrigger = !hasToolTag && shouldAutoTriggerPortrait(cleanText)
+
+                    if (hasToolTag || hasImplicitTrigger) {
+                        viewModelScope.launch(Dispatchers.IO) {
+                            val currentChar = repository.getCharacterById(targetChar.id)
+                            val outfitPrompt = if (currentChar != null) {
+                                val currentOutfitVal = newOutfit ?: currentChar.currentOutfit
+                                val currentLocationVal = newLocation ?: currentChar.currentLocation
+                                val currentMoodVal = newMood ?: currentChar.currentMood
+                                "${currentChar.name}, description: ${currentChar.description}, wearing ${currentOutfitVal.ifBlank { "casual attire" }}, location: ${currentLocationVal.ifBlank { "cozy room" }}, expression: ${currentMoodVal.ifBlank { "smiling" }}"
+                            } else {
+                                "companion in a cozy room"
+                            }
+                            
+                            val args = org.json.JSONObject().apply {
+                                put("description", outfitPrompt)
+                            }
+                            
+                            HavenHttpClient.executeTool(
+                                serverUrl = serverUrl,
+                                token = token,
+                                toolName = "generate_portrait",
+                                arguments = args
+                            ) { result ->
+                                result.onSuccess { relativeUrl ->
+                                    val resolvedUrl = if (relativeUrl.startsWith("/")) {
+                                        val host = serverUrl.trimEnd('/')
+                                        if (host.startsWith("http")) "$host$relativeUrl" else "http://$host$relativeUrl"
+                                    } else {
+                                        relativeUrl
+                                    }
+                                    
+                                    viewModelScope.launch(Dispatchers.IO) {
+                                        val msg = repository.getGroupMessageById(targetId)
+                                        if (msg != null) {
+                                            repository.insertGroupMessage(msg.copy(text = "${msg.text}\n$relativeUrl"))
+                                        }
+                                        
+                                        try {
+                                            val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, targetChar.name)
+                                            if (localPath != null) {
+                                                val finalMsg = repository.getGroupMessageById(targetId)
+                                                if (finalMsg != null) {
+                                                    repository.insertGroupMessage(finalMsg.copy(imagePath = localPath))
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Download inline generated image if present
+                        val urlRegex = "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.-]+)|(/uploads/[%a-zA-Z_0-9.-]+)".toRegex(RegexOption.IGNORE_CASE)
+                        val urlMatch = urlRegex.find(cleanText)
+                        if (urlMatch != null) {
+                            val rawUrl = urlMatch.value
+                            val resolvedUrl = if (rawUrl.startsWith("/")) {
+                                val host = serverUrl.trimEnd('/')
+                                if (host.startsWith("http")) "$host$rawUrl" else "http://$host$rawUrl"
+                            } else {
+                                rawUrl
+                            }
+                            
+                            viewModelScope.launch(Dispatchers.IO) {
+                                try {
+                                    val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, targetChar.name)
+                                    if (localPath != null) {
+                                        val lastMsg = repository.getGroupMessageById(targetId)
+                                        if (lastMsg != null) {
+                                            repository.insertGroupMessage(
+                                                lastMsg.copy(imagePath = localPath)
+                                            )
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                        }
+                    }
+
                     if (groupUuid != null) {
                         viewModelScope.launch(Dispatchers.IO) {
                             val success = HavenHttpClient.saveGroupMessage(serverUrl, token, groupUuid, "character", targetChar.name, cleanText)
@@ -578,6 +673,8 @@ class GroupChatViewModel(
                     viewModelScope.launch(Dispatchers.IO) {
                         repository.addXpAndIncrementMessages(targetChar.id, 5)
                     }
+
+                    streamingMessageId = -1
 
                     val currentLimit = banterLimit.value
                     val shouldContinueBanter = autoBanterEnabled.value && 

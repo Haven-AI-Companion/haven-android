@@ -45,6 +45,7 @@ interface DataRepository {
     suspend fun insertGroupMessage(message: GroupMessageEntity): Long
     suspend fun clearGroupMessages(groupId: Int)
     suspend fun getLastGroupMessage(groupId: Int): GroupMessageEntity?
+    suspend fun getGroupMessageById(id: Int): GroupMessageEntity?
     // Memory
     suspend fun insertMemory(memory: MemoryEntity): Long
     fun getMemoriesForCharacter(characterId: Int): Flow<List<MemoryEntity>>
@@ -111,6 +112,7 @@ class DefaultDataRepository(private val havenDao: HavenDao) : DataRepository {
     override suspend fun clearGroupMessages(groupId: Int) = havenDao.clearGroupMessages(groupId)
 
     override suspend fun getLastGroupMessage(groupId: Int): GroupMessageEntity? = havenDao.getLastGroupMessage(groupId)
+    override suspend fun getGroupMessageById(id: Int): GroupMessageEntity? = havenDao.getGroupMessageById(id)
 
     override suspend fun insertMemory(memory: MemoryEntity): Long = havenDao.insertMemory(memory)
     override fun getMemoriesForCharacter(characterId: Int): Flow<List<MemoryEntity>> = havenDao.getMemoriesForCharacter(characterId)

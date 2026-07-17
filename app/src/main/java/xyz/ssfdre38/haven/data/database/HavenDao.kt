@@ -98,6 +98,9 @@ interface HavenDao {
     @Query("SELECT * FROM group_messages WHERE groupId = :groupId ORDER BY timestamp DESC LIMIT 1")
     suspend fun getLastGroupMessage(groupId: Int): GroupMessageEntity?
 
+    @Query("SELECT * FROM group_messages WHERE id = :id")
+    suspend fun getGroupMessageById(id: Int): GroupMessageEntity?
+
     // --- Memory / Long-term Recall ---
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMemory(memory: MemoryEntity): Long
