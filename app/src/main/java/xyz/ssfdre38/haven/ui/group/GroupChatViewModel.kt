@@ -34,7 +34,14 @@ class GroupChatViewModel(
     private val _selectedSpeakerId = MutableStateFlow<Int>(-1)
     val selectedSpeakerId: StateFlow<Int> = _selectedSpeakerId.asStateFlow()
 
+    private val _activeStreamingMessageId = MutableStateFlow(-1)
+    val activeStreamingMessageId: StateFlow<Int> = _activeStreamingMessageId.asStateFlow()
+
     private var streamingMessageId = -1
+        set(value) {
+            field = value
+            _activeStreamingMessageId.value = value
+        }
     private val streamBuffer = StringBuilder()
 
     val autoBanterEnabled = MutableStateFlow(true)
@@ -46,6 +53,8 @@ class GroupChatViewModel(
         banterJob?.cancel()
         banterJob = null
         banterCount = 0
+        streamingMessageId = -1
+        _isGenerating.value = false
     }
 
     init {

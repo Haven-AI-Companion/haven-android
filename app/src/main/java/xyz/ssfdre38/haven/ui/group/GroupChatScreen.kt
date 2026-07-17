@@ -39,6 +39,7 @@ import xyz.ssfdre38.haven.data.database.CharacterEntity
 import xyz.ssfdre38.haven.data.database.GroupMessageEntity
 import xyz.ssfdre38.haven.ui.chat.parseImageUrls
 import xyz.ssfdre38.haven.ui.chat.parseMessageText
+import xyz.ssfdre38.haven.ui.chat.formatMessageText
 import java.io.File
 import androidx.compose.ui.input.key.*
 
@@ -57,6 +58,13 @@ fun GroupChatScreen(
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val selectedSpeakerId by viewModel.selectedSpeakerId.collectAsStateWithLifecycle()
     val isGenerating by viewModel.isGenerating.collectAsStateWithLifecycle()
+    val activeStreamingMessageId by viewModel.activeStreamingMessageId.collectAsStateWithLifecycle()
+
+    val filteredMessages = remember(messages, activeStreamingMessageId) {
+        messages.filter { msg ->
+            msg.text.isNotBlank() || msg.imagePath != null || msg.id == activeStreamingMessageId
+        }
+    }
     
     var showSettingsDialog by remember { mutableStateOf(false) }
 
@@ -77,17 +85,17 @@ fun GroupChatScreen(
         prefs.getString("auth_token", "") ?: ""
     }
 
-    var previousSize by remember { mutableStateOf(messages.size) }
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            val delta = messages.size - previousSize
+    var previousSize by remember { mutableStateOf(filteredMessages.size) }
+    LaunchedEffect(filteredMessages.size) {
+        if (filteredMessages.isNotEmpty()) {
+            val delta = filteredMessages.size - previousSize
             if (delta == 1) {
-                listState.animateScrollToItem(messages.size - 1)
+                listState.animateScrollToItem(filteredMessages.size - 1)
             } else {
-                listState.scrollToItem(messages.size - 1)
+                listState.scrollToItem(filteredMessages.size - 1)
             }
         }
-        previousSize = messages.size
+        previousSize = filteredMessages.size
     }
 
     LaunchedEffect(serverUrl, token) {
@@ -303,7 +311,7 @@ fun GroupChatScreen(
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(messages, key = { it.id }) { message ->
+                items(filteredMessages, key = { it.id }) { message ->
                     val isUser = message.sender == "user"
                     val speaker = participants.firstOrNull { it.id == message.characterId }
 
@@ -516,18 +524,16 @@ fun GroupMessageBubble(
                         bottomEnd = 18.dp
                     ),
                     color = if (isUser)
-                        MaterialTheme.colorScheme.primary
+                        Color(0xFF4A148C).copy(alpha = 0.55f) // Glassmorphic User purple
                     else
-                        MaterialTheme.colorScheme.surfaceVariant,
+                        Color(0xFF1A1A1A).copy(alpha = 0.7f), // Glassmorphic Companion dark grey
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
                     modifier = Modifier.widthIn(max = 280.dp)
                 ) {
                     Text(
-                        text = contentParsed.cleanText,
+                        text = formatMessageText(contentParsed.cleanText, isUser),
                         style = MaterialTheme.typography.bodyLarge,
-                        color = if (isUser)
-                            MaterialTheme.colorScheme.onPrimary
-                        else
-                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = Color.White,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
                     )
                 }
