@@ -638,6 +638,7 @@ fun ChatScreen(
                         modifier = Modifier
                             .padding(horizontal = 12.dp, vertical = 8.dp)
                             .navigationBarsPadding()
+                            .imePadding()
                     ) {
                         // Selected image preview chip
                         selectedImageUri?.let { uri ->
