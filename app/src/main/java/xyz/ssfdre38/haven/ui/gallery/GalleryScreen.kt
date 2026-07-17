@@ -15,6 +15,9 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Delete
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import android.content.ContentValues
 import android.provider.MediaStore
 import android.os.Build
@@ -282,6 +285,7 @@ fun GalleryScreen(
                 activeItem?.let { item ->
                     LightboxViewer(
                         item = item,
+                        repository = repository,
                         onDismiss = { activeItem = null }
                     )
                 }
@@ -332,9 +336,12 @@ fun GridImageCard(
 @Composable
 fun LightboxViewer(
     item: GalleryItem,
+    repository: DataRepository,
     onDismiss: () -> Unit
 ) {
     var showPrompt by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -415,6 +422,18 @@ fun LightboxViewer(
                 }
 
                 IconButton(
+                    onClick = { showDeleteConfirm = true },
+                    modifier = Modifier
+                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(50))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete Image",
+                        tint = Color.White
+                    )
+                }
+
+                IconButton(
                     onClick = onDismiss,
                     modifier = Modifier
                         .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(50))
@@ -425,6 +444,56 @@ fun LightboxViewer(
                         tint = Color.White
                     )
                 }
+            }
+
+            if (showDeleteConfirm) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteConfirm = false },
+                    title = { Text("Delete Image") },
+                    text = { Text("Are you sure you want to permanently delete this image from your device and chat history?") },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                showDeleteConfirm = false
+                                val fileDeleted = try {
+                                    item.file.delete()
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                    false
+                                }
+                                
+                                if (fileDeleted) {
+                                    if (item.messageId != null) {
+                                        coroutineScope.launch(Dispatchers.IO) {
+                                            val msg = repository.getMessageById(item.messageId)
+                                            if (msg != null) {
+                                                if (msg.text == "*Sends a photo.*" || msg.text.isBlank()) {
+                                                    repository.deleteMessage(msg)
+                                                } else {
+                                                    repository.insertMessage(msg.copy(imagePath = null))
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Toast.makeText(context, "Image deleted successfully", Toast.LENGTH_SHORT).show()
+                                    onDismiss()
+                                } else {
+                                    Toast.makeText(context, "Failed to delete file", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        ) {
+                            Text("Delete", color = MaterialTheme.colorScheme.error)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteConfirm = false }) {
+                            Text("Cancel", color = Color.White)
+                        }
+                    },
+                    containerColor = Color(0xFF1E1035),
+                    titleContentColor = Color.White,
+                    textContentColor = Color.White.copy(alpha = 0.8f)
+                )
             }
 
             // Prompt metadata card at the bottom (if toggled and text exists)

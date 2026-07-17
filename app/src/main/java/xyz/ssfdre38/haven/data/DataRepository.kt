@@ -25,6 +25,7 @@ interface DataRepository {
     fun getMessagesForCharacter(characterId: Int): Flow<List<MessageEntity>>
     suspend fun insertMessage(message: MessageEntity): Long
     suspend fun getMessageByUuid(uuid: String): MessageEntity?
+    suspend fun getMessageById(id: Int): MessageEntity?
     suspend fun deleteMessage(message: MessageEntity)
     suspend fun deleteMessageById(id: Int)
     suspend fun clearMessagesForCharacter(characterId: Int)
@@ -73,6 +74,8 @@ class DefaultDataRepository(private val havenDao: HavenDao) : DataRepository {
     override suspend fun insertMessage(message: MessageEntity): Long = havenDao.insertMessage(message)
     
     override suspend fun getMessageByUuid(uuid: String): MessageEntity? = havenDao.getMessageByUuid(uuid)
+    
+    override suspend fun getMessageById(id: Int): MessageEntity? = havenDao.getMessageById(id)
     
     override suspend fun deleteMessage(message: MessageEntity) = havenDao.deleteMessage(message)
     override suspend fun deleteMessageById(id: Int) = havenDao.deleteMessageById(id)
