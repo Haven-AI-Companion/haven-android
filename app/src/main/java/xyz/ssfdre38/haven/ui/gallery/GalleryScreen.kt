@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Delete
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.security.MessageDigest
 import android.content.ContentValues
 import android.provider.MediaStore
 import android.os.Build
@@ -113,9 +114,70 @@ fun GalleryScreen(
                 }
 
                 // Deduplicate by canonical path to prevent LazyGrid duplicate key crash
-                items
+                val pathDeduplicated = items
                     .distinctBy { item -> runCatching { item.file.canonicalPath }.getOrElse { item.file.absolutePath } }
-                    .sortedByDescending { it.file.lastModified() }
+
+                // Detect and consolidate physical duplicates (files with identical content)
+                val groupedBySize = pathDeduplicated.groupBy { it.file.length() }
+                val duplicatesToDelete = mutableListOf<GalleryItem>()
+                val itemsToKeep = mutableListOf<GalleryItem>()
+
+                for ((size, fileList) in groupedBySize) {
+                    if (fileList.size <= 1) {
+                        itemsToKeep.addAll(fileList)
+                        continue
+                    }
+
+                    // Compute hashes only for files that share the exact same size (fast!)
+                    val groupedByHash = fileList.groupBy { it.file.calculateMd5() }
+                    for ((hash, hashList) in groupedByHash) {
+                        if (hashList.size <= 1) {
+                            itemsToKeep.addAll(hashList)
+                            continue
+                        }
+
+                        // Keep the first file as primary
+                        val primary = hashList.first()
+                        itemsToKeep.add(primary)
+
+                        // Rest are duplicates
+                        duplicatesToDelete.addAll(hashList.drop(1))
+                    }
+                }
+
+                // If duplicates are found, update database references and clean up disk
+                if (duplicatesToDelete.isNotEmpty()) {
+                    var consolidatedCount = 0
+                    for (dup in duplicatesToDelete) {
+                        val primaryItem = itemsToKeep.firstOrNull { it.file.calculateMd5() == dup.file.calculateMd5() }
+                        if (primaryItem != null) {
+                            // Update Room DB message if duplicate was attached to one
+                            if (dup.messageId != null) {
+                                val msg = repository.getMessageById(dup.messageId)
+                                if (msg != null) {
+                                    repository.insertMessage(msg.copy(imagePath = primaryItem.file.absolutePath))
+                                }
+                            }
+                            
+                            // Delete duplicate file from disk
+                            try {
+                                if (dup.file.exists() && dup.file.absolutePath != primaryItem.file.absolutePath) {
+                                    dup.file.delete()
+                                    consolidatedCount++
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                    }
+                    if (consolidatedCount > 0) {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            Toast.makeText(context, "Consolidated $consolidatedCount duplicate images", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+
+                itemsToKeep.sortedByDescending { it.file.lastModified() }
             } catch (e: Exception) {
                 e.printStackTrace()
                 emptyList()
@@ -561,5 +623,22 @@ private fun saveImageToGallery(context: android.content.Context, sourceFile: Fil
     } catch (e: Exception) {
         resolver.delete(uri, null, null)
         false
+    }
+}
+
+private fun File.calculateMd5(): String {
+    return try {
+        val md = MessageDigest.getInstance("MD5")
+        inputStream().use { input ->
+            val buffer = ByteArray(8192)
+            var bytesRead = input.read(buffer)
+            while (bytesRead != -1) {
+                md.update(buffer, 0, bytesRead)
+                bytesRead = input.read(buffer)
+            }
+        }
+        md.digest().joinToString("") { "%02x".format(it) }
+    } catch (e: Exception) {
+        absolutePath
     }
 }
