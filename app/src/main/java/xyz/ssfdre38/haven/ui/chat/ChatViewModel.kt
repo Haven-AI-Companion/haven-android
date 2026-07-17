@@ -139,19 +139,60 @@ class ChatViewModel(
                     val content = obj.getString("content")
                     val sender = if (role == "user") "user" else "character"
                     
+                    // Extract state tags before we strip them
+                    if (sender == "character") {
+                        val outfitRegex = "\\[\\s*Out\\s*fit\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+                        val locationRegex = "\\[\\s*Loc\\s*ation\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+                        val moodRegex = "\\[\\s*Mood\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+                        val clothingStateRegex = "\\[\\s*Clothing\\s*State\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+
+                        val newOutfit = outfitRegex.find(content)?.groups?.get(1)?.value?.trim()
+                        val newLocation = locationRegex.find(content)?.groups?.get(1)?.value?.trim()
+                        val newMood = moodRegex.find(content)?.groups?.get(1)?.value?.trim()
+                        val newClothingState = clothingStateRegex.find(content)?.groups?.get(1)?.value?.trim()
+
+                        if (newOutfit != null || newLocation != null || newMood != null || newClothingState != null) {
+                            viewModelScope.launch(Dispatchers.IO) {
+                                val current = repository.getCharacterById(characterId)
+                                if (current != null) {
+                                    val updated = current.copy(
+                                        currentOutfit = newOutfit ?: current.currentOutfit,
+                                        currentLocation = newLocation ?: current.currentLocation,
+                                        currentMood = newMood ?: current.currentMood,
+                                        clothingState = newClothingState ?: current.clothingState
+                                    )
+                                    repository.updateCharacter(updated)
+                                }
+                            }
+                        }
+                    }
+
+                    // Clean the text to strip the bracket tags
+                    val cleanText = cleanFinalText(content)
+
                     val matchingLocal = localMsgs.getOrNull(index)
                     var imagePath: String? = null
                     var audioPath: String? = null
-                    if (matchingLocal != null && (matchingLocal.text == content || matchingLocal.text.startsWith(content))) {
+                    if (matchingLocal != null && (matchingLocal.text == cleanText || matchingLocal.text.startsWith(cleanText))) {
                         imagePath = matchingLocal.imagePath
                         audioPath = matchingLocal.audioPath
+                    } else {
+                        // This is a NEW message synced from the server!
+                        // Parse and execute client-side actions (like set_alarm, add_event, play_chime)
+                        if (sender == "character") {
+                            val actionRegex = "\\[\\s*ACTION\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+                            actionRegex.findAll(content).forEach { match ->
+                                val actionTag = match.groups[1]?.value ?: ""
+                                executeAndroidAction(context, actionTag)
+                            }
+                        }
                     }
 
                     val msgId = repository.insertMessage(
                         MessageEntity(
                             characterId = characterId,
                             sender = sender,
-                            text = content,
+                            text = cleanText,
                             imagePath = imagePath,
                             audioPath = audioPath
                         )
