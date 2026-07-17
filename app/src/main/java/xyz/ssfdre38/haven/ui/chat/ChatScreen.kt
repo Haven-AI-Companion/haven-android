@@ -1640,13 +1640,30 @@ fun parseImageUrls(text: String, serverUrl: String): MessageContent {
 fun formatMessageText(text: String, isUser: Boolean): androidx.compose.ui.text.AnnotatedString {
     return buildAnnotatedString {
         val parts = text.split("*")
-        var activePartsCount = 0
+        val processedParts = mutableListOf<Pair<String, Boolean>>() // text, isAction
+
         for (i in parts.indices) {
             val part = parts[i]
             if (part.isEmpty()) continue
 
             val isAction = (i % 2 == 1)
             val trimmed = part.trim()
+            if (trimmed.isEmpty()) continue
+
+            // If this part consists only of punctuation/quotes, merge it into the previous part
+            if (processedParts.isNotEmpty() && trimmed.matches("""^[.,!?;:"'()\s\-]+$""".toRegex())) {
+                val last = processedParts.removeAt(processedParts.size - 1)
+                processedParts.add(Pair(last.first + part, last.second))
+            } else {
+                processedParts.add(Pair(part, isAction))
+            }
+        }
+
+        var activePartsCount = 0
+        for (pair in processedParts) {
+            val rawText = pair.first
+            val isAction = pair.second
+            val trimmed = rawText.trim()
             if (trimmed.isEmpty()) continue
 
             // Transition between dialogue and action adds a newline for readability
