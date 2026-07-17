@@ -1639,26 +1639,37 @@ fun parseImageUrls(text: String, serverUrl: String): MessageContent {
 fun formatMessageText(text: String, isUser: Boolean): androidx.compose.ui.text.AnnotatedString {
     return buildAnnotatedString {
         val parts = text.split("*")
+        var activePartsCount = 0
         for (i in parts.indices) {
             val part = parts[i]
-            if (i % 2 == 1) {
-                // Inside asterisks: roleplay action style
+            if (part.isEmpty()) continue
+
+            val isAction = (i % 2 == 1)
+            val trimmed = part.trim()
+            if (trimmed.isEmpty()) continue
+
+            // Transition between dialogue and action adds a newline for readability
+            if (activePartsCount > 0) {
+                append("\n")
+            }
+            activePartsCount++
+
+            if (isAction) {
                 withStyle(
                     style = SpanStyle(
                         fontStyle = FontStyle.Italic,
                         color = if (isUser) Color.White.copy(alpha = 0.7f) else Color(0xFFD1C4E9) // Soft purple tint
                     )
                 ) {
-                    append(part)
+                    append(trimmed)
                 }
             } else {
-                // Outside asterisks: dialogue style
                 withStyle(
                     style = SpanStyle(
                         color = Color.White
                     )
                 ) {
-                    append(part)
+                    append(trimmed)
                 }
             }
         }

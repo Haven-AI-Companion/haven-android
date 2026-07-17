@@ -22,7 +22,6 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:windowSoftInputMode="adjustResize"
         android:theme="@style/Theme.Haven"
         android:usesCleartextTraffic="true"
         android:name=".HavenApplication">
@@ -31,6 +30,7 @@
             android:exported="true"
             android:allowEmbedded="true"
             android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize"
             android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -43,6 +43,7 @@
             android:exported="true"
             android:allowEmbedded="true"
             android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize"
             android:documentLaunchMode="always" />
 
         <!-- App Widget Receiver -->
