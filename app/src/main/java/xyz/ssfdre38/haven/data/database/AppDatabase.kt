@@ -5,7 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [CharacterEntity::class, MessageEntity::class, DiaryEntryEntity::class, GroupChatEntity::class, GroupMessageEntity::class, MemoryEntity::class], version = 11, exportSchema = false)
+@Database(entities = [CharacterEntity::class, MessageEntity::class, DiaryEntryEntity::class, GroupChatEntity::class, GroupMessageEntity::class, MemoryEntity::class], version = 12, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun havenDao(): HavenDao
@@ -20,6 +20,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_11_12 = object : androidx.room.migration.Migration(11, 12) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE group_chats ADD COLUMN scenario TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE group_chats ADD COLUMN systemPrompt TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -27,7 +34,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "haven_database"
                 )
-                .addMigrations(MIGRATION_10_11)
+                .addMigrations(MIGRATION_10_11, MIGRATION_11_12)
                 // Removed fallbackToDestructiveMigration to prevent silent, catastrophic loss of local companion logs, XP, and diaries on schema updates.
                 // Write explicit migrations when schema changes are introduced.
                 .build()

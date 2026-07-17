@@ -198,12 +198,16 @@ object SyncQueueManager {
                             )
                         }
                         ACTION_SAVE_GROUP -> {
+                            val scenario = if (payload.has("scenario") && !payload.isNull("scenario")) payload.getString("scenario") else null
+                            val systemPrompt = if (payload.has("system_prompt") && !payload.isNull("system_prompt")) payload.getString("system_prompt") else null
                             HavenHttpClient.saveGroup(
                                 serverUrl = serverUrl,
                                 token = token,
                                 id = payload.getString("id"),
                                 name = payload.getString("name"),
-                                characterNames = payload.getString("character_names")
+                                characterNames = payload.getString("character_names"),
+                                scenario = scenario,
+                                systemPrompt = systemPrompt
                             )
                         }
                         ACTION_DELETE_GROUP -> {

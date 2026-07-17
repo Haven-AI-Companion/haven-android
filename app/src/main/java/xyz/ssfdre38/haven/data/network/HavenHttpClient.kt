@@ -876,13 +876,17 @@ object HavenHttpClient {
         token: String,
         id: String,
         name: String,
-        characterNames: String
+        characterNames: String,
+        scenario: String? = null,
+        systemPrompt: String? = null
     ): Boolean {
         val url = "${serverUrl.trimEnd('/')}/api/sync/groups"
         val json = JSONObject().apply {
             put("id", id)
             put("name", name)
             put("character_names", characterNames)
+            put("scenario", scenario ?: JSONObject.NULL)
+            put("system_prompt", systemPrompt ?: JSONObject.NULL)
         }.toString()
         val request = Request.Builder()
             .url(url)

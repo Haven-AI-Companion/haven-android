@@ -358,21 +358,28 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                     }
                     val newIdsStr = resolvedIds.joinToString(",")
                     
+                    val scenario = getJsonStringCaseInsensitive(obj, "scenario", "Scenario")
+                    val systemPrompt = getJsonStringCaseInsensitive(obj, "system_prompt", "systemPrompt", "SystemPrompt")
+                    
                     val existing = dataRepository.getGroupChatByUuid(uuid)
                     if (existing == null) {
                         dataRepository.insertGroupChat(
                             xyz.ssfdre38.haven.data.database.GroupChatEntity(
                                 name = name,
                                 characterIdsString = newIdsStr,
-                                uuid = uuid
+                                uuid = uuid,
+                                scenario = scenario,
+                                systemPrompt = systemPrompt
                             )
                         )
                     } else {
-                        if (existing.name != name || existing.characterIdsString != newIdsStr) {
+                        if (existing.name != name || existing.characterIdsString != newIdsStr || existing.scenario != scenario || existing.systemPrompt != systemPrompt) {
                             dataRepository.insertGroupChat(
                                 existing.copy(
                                     name = name,
-                                    characterIdsString = newIdsStr
+                                    characterIdsString = newIdsStr,
+                                    scenario = scenario,
+                                    systemPrompt = systemPrompt
                                 )
                             )
                         }

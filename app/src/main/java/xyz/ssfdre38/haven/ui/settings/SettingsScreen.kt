@@ -1623,21 +1623,28 @@ private suspend fun forceServerSync(context: android.content.Context, repository
             }
             val newIdsStr = resolvedIds.joinToString(",")
             
+            val scenario = getJsonStringCaseInsensitive(obj, "scenario", "Scenario")
+            val systemPrompt = getJsonStringCaseInsensitive(obj, "system_prompt", "systemPrompt", "SystemPrompt")
+            
             val existing = repository.getGroupChatByUuid(uuid)
             if (existing == null) {
                 repository.insertGroupChat(
                     xyz.ssfdre38.haven.data.database.GroupChatEntity(
                         name = name,
                         characterIdsString = newIdsStr,
-                        uuid = uuid
+                        uuid = uuid,
+                        scenario = scenario,
+                        systemPrompt = systemPrompt
                     )
                 )
             } else {
-                if (existing.name != name || existing.characterIdsString != newIdsStr) {
+                if (existing.name != name || existing.characterIdsString != newIdsStr || existing.scenario != scenario || existing.systemPrompt != systemPrompt) {
                     repository.insertGroupChat(
                         existing.copy(
                             name = name,
-                            characterIdsString = newIdsStr
+                            characterIdsString = newIdsStr,
+                            scenario = scenario,
+                            systemPrompt = systemPrompt
                         )
                     )
                 }

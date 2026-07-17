@@ -62,9 +62,14 @@ class GroupChatViewModel(
     private var ambientPlayer: android.media.MediaPlayer? = null
     private var currentAmbientUrl: String? = null
 
-    fun updateAmbientSound(location: String) {
-        val locLower = location.lowercase()
-        val matchUrl = ambientAudioMap.entries.firstOrNull { locLower.contains(it.key) }?.value
+    fun updateAmbientSoundForGroup() {
+        val grp = _group.value
+        val scenario = grp?.scenario ?: ""
+        val activeChar = _participants.value.firstOrNull { it.id == _selectedSpeakerId.value }
+        val location = activeChar?.currentLocation ?: ""
+        
+        val combined = "$scenario|$location".lowercase()
+        val matchUrl = ambientAudioMap.entries.firstOrNull { combined.contains(it.key) }?.value
         
         viewModelScope.launch(Dispatchers.Main) {
             if (matchUrl == null) {
@@ -256,6 +261,48 @@ class GroupChatViewModel(
                 
                 val ids = _group.value?.characterIdsString?.split(",")?.mapNotNull { it.trim().toIntOrNull() } ?: emptyList()
                 _participants.value = ids.mapNotNull { repository.getCharacterById(it) }
+
+                // Insert inline system message for affinity change
+                val wordVerb = if (diff > 0) "increased" else "decreased"
+                val diffAbs = Math.abs(diff)
+                val sign = if (diff > 0) "+" else "-"
+                val systemMsgText = "✦ $sourceCharName's affinity for $targetCharName $wordVerb by $diffAbs ($sign$diffAbs)"
+                
+                repository.insertGroupMessage(
+                    GroupMessageEntity(
+                        groupId = groupId,
+                        sender = "system",
+                        characterId = null,
+                        text = systemMsgText
+                    )
+                )
+
+                // Sync system message to server
+                val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+                val host = sharedPrefs.getString("ash_host", null)
+                val port = sharedPrefs.getString("ash_port", "18799")
+                val token = sharedPrefs.getString("auth_token", null)
+                val groupUuid = _group.value?.uuid
+                
+                if (!host.isNullOrBlank() && !token.isNullOrBlank() && !groupUuid.isNullOrBlank()) {
+                    val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+                    val serverUrl = "$formattedHost:${port?.trim() ?: "18799"}"
+                    
+                    val success = HavenHttpClient.saveGroupMessage(serverUrl, token, groupUuid, "system", null, systemMsgText)
+                    if (!success) {
+                        val payload = org.json.JSONObject().apply {
+                            put("group_uuid", groupUuid)
+                            put("sender", "system")
+                            put("character_name", org.json.JSONObject.NULL)
+                            put("content", systemMsgText)
+                        }
+                        xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                            context,
+                            xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_SAVE_GROUP_MESSAGE,
+                            payload
+                        )
+                    }
+                }
             }
         }
     }
@@ -337,14 +384,49 @@ class GroupChatViewModel(
                 _selectedSpeakerId.value = -1
             }
             
-            // Push changes to server
             val characterNames = newChars.map { it.name }.joinToString(",")
-            val success = HavenHttpClient.saveGroup(serverUrl, token, grp.uuid ?: "", grp.name, characterNames)
+            val success = HavenHttpClient.saveGroup(serverUrl, token, grp.uuid ?: "", grp.name, characterNames, grp.scenario, grp.systemPrompt)
             if (!success && grp.uuid != null) {
                 val payload = org.json.JSONObject().apply {
                     put("id", grp.uuid)
                     put("name", grp.name)
                     put("character_names", characterNames)
+                    put("scenario", grp.scenario)
+                    put("system_prompt", grp.systemPrompt)
+                }
+                xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                    context,
+                    xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_SAVE_GROUP,
+                    payload
+                )
+            }
+        }
+    }
+
+    fun updateGroupConfig(
+        context: Context,
+        serverUrl: String,
+        token: String,
+        scenario: String,
+        systemPrompt: String
+    ) {
+        val grp = _group.value ?: return
+        val updatedGrp = grp.copy(scenario = scenario, systemPrompt = systemPrompt)
+        
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.insertGroupChat(updatedGrp)
+            _group.value = updatedGrp
+            
+            // Push changes to server
+            val characterNames = _participants.value.map { it.name }.joinToString(",")
+            val success = HavenHttpClient.saveGroup(serverUrl, token, grp.uuid ?: "", grp.name, characterNames, scenario, systemPrompt)
+            if (!success && grp.uuid != null) {
+                val payload = org.json.JSONObject().apply {
+                    put("id", grp.uuid)
+                    put("name", grp.name)
+                    put("character_names", characterNames)
+                    put("scenario", scenario)
+                    put("system_prompt", systemPrompt)
                 }
                 xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
                     context,
@@ -399,7 +481,7 @@ class GroupChatViewModel(
                 _participants.value = chars
                 if (chars.isNotEmpty()) {
                     _selectedSpeakerId.value = -1
-                    updateAmbientSound(chars.first().currentLocation)
+                    updateAmbientSoundForGroup()
                 }
             }
         }
@@ -409,7 +491,7 @@ class GroupChatViewModel(
         _selectedSpeakerId.value = characterId
         val char = _participants.value.firstOrNull { it.id == characterId }
         if (char != null) {
-            updateAmbientSound(char.currentLocation)
+            updateAmbientSoundForGroup()
         }
     }
 
@@ -465,12 +547,14 @@ class GroupChatViewModel(
                 
                 // Push configuration to server
                 val characterNames = chars.map { it.name }.joinToString(",")
-                val success = HavenHttpClient.saveGroup(serverUrl, token, groupUuid, grp.name, characterNames)
+                val success = HavenHttpClient.saveGroup(serverUrl, token, groupUuid, grp.name, characterNames, grp.scenario, grp.systemPrompt)
                 if (!success) {
                     val payload = org.json.JSONObject().apply {
                         put("id", groupUuid)
                         put("name", grp.name)
                         put("character_names", characterNames)
+                        put("scenario", grp.scenario)
+                        put("system_prompt", grp.systemPrompt)
                     }
                     xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
                         context,
@@ -559,7 +643,7 @@ class GroupChatViewModel(
                                     repository.updateCharacter(updatedChar)
                                     saveCompanionToServer(context, updatedChar)
                                     if (newLocation != null) {
-                                        updateAmbientSound(newLocation)
+                                        updateAmbientSoundForGroup()
                                     }
 
                                     // Refresh local participants list
@@ -567,7 +651,13 @@ class GroupChatViewModel(
                                     _participants.value = ids.mapNotNull { repository.getCharacterById(it) }
 
                                     if (outfitChanged) {
-                                        val outfitPrompt = "${updatedChar.name}, description: ${updatedChar.description}, wearing ${updatedChar.currentOutfit}, location: ${updatedChar.currentLocation}, expression: ${updatedChar.currentMood}"
+                                        val otherChars = _participants.value.filter { it.id != updatedChar.id }
+                                        val outfitPrompt = if (otherChars.isNotEmpty()) {
+                                            val groupDesc = otherChars.joinToString(" and ") { "${it.name} (description: ${it.description}, wearing: ${it.currentOutfit})" }
+                                            "A group photo containing ${updatedChar.name} and $groupDesc in the location: ${updatedChar.currentLocation}. ${updatedChar.name} is wearing ${updatedChar.currentOutfit}, expression: ${updatedChar.currentMood}."
+                                        } else {
+                                            "${updatedChar.name}, description: ${updatedChar.description}, wearing ${updatedChar.currentOutfit}, location: ${updatedChar.currentLocation}, expression: ${updatedChar.currentMood}"
+                                        }
                                         val args = org.json.JSONObject().apply {
                                             put("description", outfitPrompt)
                                         }
@@ -630,9 +720,15 @@ class GroupChatViewModel(
                                 val currentOutfitVal = newOutfit ?: currentChar.currentOutfit
                                 val currentLocationVal = newLocation ?: currentChar.currentLocation
                                 val currentMoodVal = newMood ?: currentChar.currentMood
-                                "${currentChar.name}, description: ${currentChar.description}, wearing ${currentOutfitVal.ifBlank { "casual attire" }}, location: ${currentLocationVal.ifBlank { "cozy room" }}, expression: ${currentMoodVal.ifBlank { "smiling" }}"
+                                val otherChars = _participants.value.filter { it.id != currentChar.id }
+                                if (otherChars.isNotEmpty()) {
+                                    val groupDesc = otherChars.joinToString(" and ") { "${it.name} (description: ${it.description}, wearing: ${it.currentOutfit})" }
+                                    "A group photo containing ${currentChar.name} and $groupDesc in the location: ${currentLocationVal.ifBlank { "cozy room" }}. ${currentChar.name} is wearing ${currentOutfitVal.ifBlank { "casual attire" }}, expression: ${currentMoodVal.ifBlank { "smiling" }}."
+                                } else {
+                                    "${currentChar.name}, description: ${currentChar.description}, wearing ${currentOutfitVal.ifBlank { "casual attire" }}, location: ${currentLocationVal.ifBlank { "cozy room" }}, expression: ${currentMoodVal.ifBlank { "smiling" }}"
+                                }
                             } else {
-                                "companion in a cozy room"
+                                "companions in a cozy room"
                             }
                             
                             val args = org.json.JSONObject().apply {
@@ -777,23 +873,8 @@ class GroupChatViewModel(
                         banterCount++
                         val otherParticipants = chars.filter { it.id != targetChar.id }
                         if (otherParticipants.isNotEmpty()) {
-                            var nextSpeaker = otherParticipants.random()
-                            val lowerText = cleanText.lowercase()
-                            
-                            // Check for direct mentions to select the next speaker dynamically
-                            val mentionedChar = otherParticipants.firstOrNull { c ->
-                                val nameLower = c.name.lowercase()
-                                lowerText.contains("@$nameLower") || 
-                                lowerText.contains("hey $nameLower") || 
-                                lowerText.contains("what do you think, $nameLower") ||
-                                lowerText.contains("right, $nameLower?") ||
-                                lowerText.contains("$nameLower, ") ||
-                                lowerText.contains("$nameLower?")
-                            }
-                            
-                            if (mentionedChar != null) {
-                                nextSpeaker = mentionedChar
-                            }
+                            val activeSpeakerMood = newMood ?: targetChar.currentMood ?: ""
+                            val nextSpeaker = selectNextBanterSpeaker(targetChar, otherParticipants, cleanText, activeSpeakerMood)
 
                             banterJob?.cancel()
                             banterJob = viewModelScope.launch {
@@ -829,10 +910,22 @@ class GroupChatViewModel(
         allChars: List<CharacterEntity>,
         userName: String
     ): String {
+        val grp = _group.value
+        val roomScenario = grp?.scenario ?: ""
+        val roomSystemPrompt = grp?.systemPrompt ?: ""
+
         val systemContext = buildString {
             appendLine("This is a multi-companion group chat between $userName and the following characters:")
             allChars.forEach { c ->
                 appendLine("- ${c.name}. Personality: ${c.personality}. Current Location: ${c.currentLocation.ifBlank { "Group Lobby" }}. Current Outfit: ${c.currentOutfit.ifBlank { "Casual" }}. Current Mood: ${c.currentMood.ifBlank { "neutral" }}")
+            }
+            if (roomScenario.isNotBlank()) {
+                appendLine()
+                appendLine("[Room Scenario / Shared Environment: $roomScenario]")
+            }
+            if (roomSystemPrompt.isNotBlank()) {
+                appendLine()
+                appendLine("[Room Custom Prompt / System Instructions: $roomSystemPrompt]")
             }
             appendLine()
             appendLine("[System Instructions: You are currently writing the response for ${targetChar.name} ONLY. Do not write dialogues or thoughts for other characters. Write your response based on the conversation history below.]")
@@ -918,12 +1011,14 @@ class GroupChatViewModel(
                 
                 // Push configuration to server
                 val characterNames = chars.map { it.name }.joinToString(",")
-                val success = HavenHttpClient.saveGroup(serverUrl, token, groupUuid, grp.name, characterNames)
+                val success = HavenHttpClient.saveGroup(serverUrl, token, groupUuid, grp.name, characterNames, grp.scenario, grp.systemPrompt)
                 if (!success) {
                     val payload = org.json.JSONObject().apply {
                         put("id", groupUuid)
                         put("name", grp.name)
                         put("character_names", characterNames)
+                        put("scenario", grp.scenario)
+                        put("system_prompt", grp.systemPrompt)
                     }
                     xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
                         context,
@@ -985,7 +1080,7 @@ class GroupChatViewModel(
                                     repository.updateCharacter(updatedChar)
                                     saveCompanionToServer(context, updatedChar)
                                     if (newLocation != null) {
-                                        updateAmbientSound(newLocation)
+                                        updateAmbientSoundForGroup()
                                     }
                                 }
                             }
@@ -1012,9 +1107,15 @@ class GroupChatViewModel(
                                 val currentOutfitVal = newOutfit ?: currentChar.currentOutfit
                                 val currentLocationVal = newLocation ?: currentChar.currentLocation
                                 val currentMoodVal = newMood ?: currentChar.currentMood
-                                "${currentChar.name}, description: ${currentChar.description}, wearing ${currentOutfitVal.ifBlank { "casual attire" }}, location: ${currentLocationVal.ifBlank { "cozy room" }}, expression: ${currentMoodVal.ifBlank { "smiling" }}"
+                                val otherChars = _participants.value.filter { it.id != currentChar.id }
+                                if (otherChars.isNotEmpty()) {
+                                    val groupDesc = otherChars.joinToString(" and ") { "${it.name} (description: ${it.description}, wearing: ${it.currentOutfit})" }
+                                    "A group photo containing ${currentChar.name} and $groupDesc in the location: ${currentLocationVal.ifBlank { "cozy room" }}. ${currentChar.name} is wearing ${currentOutfitVal.ifBlank { "casual attire" }}, expression: ${currentMoodVal.ifBlank { "smiling" }}."
+                                } else {
+                                    "${currentChar.name}, description: ${currentChar.description}, wearing ${currentOutfitVal.ifBlank { "casual attire" }}, location: ${currentLocationVal.ifBlank { "cozy room" }}, expression: ${currentMoodVal.ifBlank { "smiling" }}"
+                                }
                             } else {
-                                "companion in a cozy room"
+                                "companions in a cozy room"
                             }
                             
                             val args = org.json.JSONObject().apply {
@@ -1156,23 +1257,8 @@ class GroupChatViewModel(
                         banterCount++
                         val otherParticipants = chars.filter { it.id != targetChar.id }
                         if (otherParticipants.isNotEmpty()) {
-                            var nextSpeaker = otherParticipants.random()
-                            val lowerText = cleanText.lowercase()
-                            
-                            // Check for direct mentions to select the next speaker dynamically
-                            val mentionedChar = otherParticipants.firstOrNull { c ->
-                                val nameLower = c.name.lowercase()
-                                lowerText.contains("@$nameLower") || 
-                                lowerText.contains("hey $nameLower") || 
-                                lowerText.contains("what do you think, $nameLower") ||
-                                lowerText.contains("right, $nameLower?") ||
-                                lowerText.contains("$nameLower, ") ||
-                                lowerText.contains("$nameLower?")
-                            }
-                            
-                            if (mentionedChar != null) {
-                                nextSpeaker = mentionedChar
-                            }
+                            val activeSpeakerMood = newMood ?: targetChar.currentMood ?: ""
+                            val nextSpeaker = selectNextBanterSpeaker(targetChar, otherParticipants, cleanText, activeSpeakerMood)
 
                             banterJob?.cancel()
                             banterJob = viewModelScope.launch {
@@ -1399,5 +1485,39 @@ class GroupChatViewModel(
                 }
             }
         }
+    }
+
+    private fun selectNextBanterSpeaker(
+        targetChar: CharacterEntity,
+        otherParticipants: List<CharacterEntity>,
+        cleanText: String,
+        activeSpeakerMood: String
+    ): CharacterEntity {
+        val lowerText = cleanText.lowercase()
+        val moodLower = activeSpeakerMood.lowercase()
+
+        // 1. Direct mention priority (always highest priority)
+        val mentionedChar = otherParticipants.firstOrNull { c ->
+            val nameLower = c.name.lowercase()
+            lowerText.contains("@$nameLower") || 
+            lowerText.contains("hey $nameLower") || 
+            lowerText.contains("what do you think, $nameLower") ||
+            lowerText.contains("right, $nameLower?") ||
+            lowerText.contains("$nameLower, ") ||
+            lowerText.contains("$nameLower?")
+        }
+        if (mentionedChar != null) {
+            return mentionedChar
+        }
+
+        // 2. Emotional Interjection (if the speaker is highly emotional, another companion might interject)
+        val emotionalMoods = listOf("excited", "angry", "surprised", "shocked", "furious", "crying", "scared", "panicked")
+        val isEmotional = emotionalMoods.any { moodLower.contains(it) }
+        if (isEmotional && otherParticipants.isNotEmpty()) {
+            return otherParticipants.random()
+        }
+
+        // Default: random
+        return otherParticipants.random()
     }
 }

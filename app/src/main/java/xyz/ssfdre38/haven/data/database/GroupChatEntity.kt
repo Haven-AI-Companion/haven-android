@@ -9,5 +9,7 @@ data class GroupChatEntity(
     val name: String,
     val characterIdsString: String, // Comma-separated list of IDs, e.g., "1,2"
     val createdAt: Long = System.currentTimeMillis(),
-    val uuid: String? = null
+    val uuid: String? = null,
+    val scenario: String = "",
+    val systemPrompt: String = ""
 )

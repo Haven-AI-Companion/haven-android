@@ -35,6 +35,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -472,12 +474,41 @@ fun GroupChatScreen(
             val autoBanter by viewModel.autoBanterEnabled.collectAsStateWithLifecycle()
             val banterLimit by viewModel.banterLimit.collectAsStateWithLifecycle()
             var tempSelectedParticipants by remember(participants) { mutableStateOf(participants.toSet()) }
+            val groupVal = group
+            var tempScenario by remember(groupVal) { mutableStateOf(groupVal?.scenario ?: "") }
+            var tempSystemPrompt by remember(groupVal) { mutableStateOf(groupVal?.systemPrompt ?: "") }
 
             AlertDialog(
                 onDismissRequest = { showSettingsDialog = false },
                 title = { Text("Group Chat Settings") },
                 text = {
                     Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                        OutlinedTextField(
+                            value = tempScenario,
+                            onValueChange = { tempScenario = it },
+                            label = { Text("Room Scenario / Context", color = Color.White.copy(alpha = 0.6f)) },
+                            placeholder = { Text("e.g. Cozy campfire in a snowy forest...", color = Color.White.copy(alpha = 0.4f)) },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            textStyle = androidx.compose.ui.text.TextStyle(color = Color.White),
+                            maxLines = 3
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = tempSystemPrompt,
+                            onValueChange = { tempSystemPrompt = it },
+                            label = { Text("Room System Prompt", color = Color.White.copy(alpha = 0.6f)) },
+                            placeholder = { Text("e.g. Speak with medieval slang, keep responses brief.", color = Color.White.copy(alpha = 0.4f)) },
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            textStyle = androidx.compose.ui.text.TextStyle(color = Color.White),
+                            maxLines = 3
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+                        Spacer(modifier = Modifier.height(12.dp))
+
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -587,6 +618,7 @@ fun GroupChatScreen(
                 },
                 confirmButton = {
                     TextButton(onClick = {
+                        viewModel.updateGroupConfig(context, serverUrl, token, tempScenario, tempSystemPrompt)
                         viewModel.updateParticipants(context, serverUrl, token, tempSelectedParticipants.toList())
                         showSettingsDialog = false
                     }) {
@@ -742,6 +774,33 @@ fun GroupMessageBubble(
     serverUrl: String,
     modifier: Modifier = Modifier
 ) {
+    if (message.sender == "system") {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp, horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+            ) {
+                Text(
+                    text = message.text,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontStyle = FontStyle.Italic,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+        return
+    }
+
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
