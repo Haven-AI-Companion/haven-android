@@ -258,7 +258,15 @@ fun GroupChatScreen(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    if (activeSpeaker != null) {
+                    if (selectedSpeakerId == -1) {
+                        Text(
+                            text = "Auto-selecting responder",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                    } else if (activeSpeaker != null) {
                         val statusText = buildString {
                             if (activeSpeaker.currentOutfit.isNotBlank()) append(activeSpeaker.currentOutfit)
                             if (activeSpeaker.currentLocation.isNotBlank()) {
@@ -287,6 +295,39 @@ fun GroupChatScreen(
                         .padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    item {
+                        val isSelected = selectedSpeakerId == -1
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable { viewModel.selectSpeaker(-1) }
+                                .border(
+                                    1.dp,
+                                    if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                    RoundedCornerShape(16.dp)
+                                )
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("A", fontSize = 10.sp, color = MaterialTheme.colorScheme.onPrimary)
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Auto", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
+                            }
+                        }
+                    }
+
                     items(participants) { char ->
                         val isSelected = char.id == selectedSpeakerId
                         Surface(

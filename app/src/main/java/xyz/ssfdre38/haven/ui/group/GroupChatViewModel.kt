@@ -333,8 +333,8 @@ class GroupChatViewModel(
             
             // Re-select active speaker if the previous one is no longer present
             val currentSpeaker = _selectedSpeakerId.value
-            if (newChars.none { it.id == currentSpeaker } && newChars.isNotEmpty()) {
-                _selectedSpeakerId.value = newChars.first().id
+            if (currentSpeaker != -1 && newChars.none { it.id == currentSpeaker }) {
+                _selectedSpeakerId.value = -1
             }
             
             // Push changes to server
@@ -398,7 +398,7 @@ class GroupChatViewModel(
                 val chars = ids.mapNotNull { repository.getCharacterById(it) }
                 _participants.value = chars
                 if (chars.isNotEmpty()) {
-                    _selectedSpeakerId.value = chars.first().id
+                    _selectedSpeakerId.value = -1
                     updateAmbientSound(chars.first().currentLocation)
                 }
             }
@@ -418,7 +418,13 @@ class GroupChatViewModel(
         banterCount = 0
         val targetSpeakerId = _selectedSpeakerId.value
         val chars = _participants.value
-        val targetChar = chars.firstOrNull { it.id == targetSpeakerId } ?: chars.firstOrNull() ?: return
+        val targetChar = if (targetSpeakerId == -1) {
+            // Auto mode: check if any companion is mentioned in user input text
+            val mentioned = chars.firstOrNull { text.contains(it.name, ignoreCase = true) }
+            mentioned ?: chars.randomOrNull() ?: chars.firstOrNull() ?: return
+        } else {
+            chars.firstOrNull { it.id == targetSpeakerId } ?: chars.firstOrNull() ?: return
+        }
 
         val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
         val userName = sharedPrefs.getString("user_name", "User") ?: "User"
