@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import xyz.ssfdre38.haven.data.backup.BackupManager
 import coil.compose.AsyncImage
 import androidx.compose.foundation.shape.CircleShape
@@ -116,6 +117,7 @@ fun SettingsScreen(
     
     val database = remember { xyz.ssfdre38.haven.data.database.AppDatabase.getInstance(context) }
     val dao = remember { database.havenDao() }
+    val repository = remember { xyz.ssfdre38.haven.data.DefaultDataRepository(dao) }
     var activeCompanionVrmPath by remember { mutableStateOf<String?>(null) }
 
     val avatarPickerLauncher = rememberLauncherForActivityResult(
@@ -688,6 +690,39 @@ fun SettingsScreen(
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                         ) {
                             Text("Reset Network")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    var isSyncing by remember { mutableStateOf(false) }
+
+                    Button(
+                        onClick = {
+                            isSyncing = true
+                            coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                try {
+                                    forceServerSync(context, repository)
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                        Toast.makeText(context, "Server sync completed successfully!", Toast.LENGTH_SHORT).show()
+                                    }
+                                } catch (e: Exception) {
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                        Toast.makeText(context, "Sync failed: ${e.message}", Toast.LENGTH_LONG).show()
+                                    }
+                                } finally {
+                                    isSyncing = false
+                                }
+                            }
+                        },
+                        enabled = !isSyncing,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+                    ) {
+                        if (isSyncing) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onTertiary, strokeWidth = 2.dp)
+                        } else {
+                            Text("Force Server Sync")
                         }
                     }
                 }
@@ -1439,6 +1474,187 @@ fun SettingsScreen(
         }
     }
 }
+}
+
+private suspend fun forceServerSync(context: android.content.Context, repository: xyz.ssfdre38.haven.data.DataRepository) {
+    // 1. Process sync queue first
+    xyz.ssfdre38.haven.data.sync.SyncQueueManager.processQueue(context)
+
+    val sharedPrefs = context.getSharedPreferences("haven_prefs", android.content.Context.MODE_PRIVATE)
+    val host = sharedPrefs.getString("ash_host", "") ?: ""
+    val port = sharedPrefs.getString("ash_port", "") ?: ""
+    val token = sharedPrefs.getString("auth_token", "") ?: ""
+    if (host.isBlank() || port.isBlank()) return
+
+    val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+    val serverUrl = "$formattedHost:${port.trim()}"
+
+    // Helper to get case-insensitive json values
+    fun getJsonStringCaseInsensitive(obj: org.json.JSONObject, vararg keys: String, fallback: String = ""): String {
+        for (key in keys) {
+            if (obj.has(key) && !obj.isNull(key)) {
+                return obj.getString(key)
+            }
+        }
+        return fallback
+    }
+
+    // 2. Sync/Load Companions from server
+    try {
+        val client = okhttp3.OkHttpClient()
+        val request = okhttp3.Request.Builder()
+            .url("$serverUrl/api/companions")
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+            
+        client.newCall(request).execute().use { response ->
+            if (response.isSuccessful) {
+                val body = response.body?.string() ?: ""
+                val jsonArray = org.json.JSONArray(body)
+                for (i in 0 until jsonArray.length()) {
+                    val obj = jsonArray.getJSONObject(i)
+                    val name = getJsonStringCaseInsensitive(obj, "name", "Name")
+                    if (name.isBlank()) continue
+
+                    val avatarPath = getJsonStringCaseInsensitive(obj, "avatar_path", "avatarPath", "AvatarPath").ifBlank { null }
+                    val voiceId = getJsonStringCaseInsensitive(obj, "voice_id", "voiceId", "VoiceId", fallback = "en_US-amy-medium")
+                    val description = getJsonStringCaseInsensitive(obj, "description", "Description")
+                    val personality = getJsonStringCaseInsensitive(obj, "personality", "Personality")
+                    val scenario = getJsonStringCaseInsensitive(obj, "scenario", "Scenario")
+                    val firstMessage = getJsonStringCaseInsensitive(obj, "first_message", "firstMessage", "FirstMessage")
+                    val systemPrompt = getJsonStringCaseInsensitive(obj, "system_prompt", "systemPrompt", "SystemPrompt")
+                    val currentOutfit = getJsonStringCaseInsensitive(obj, "current_outfit", "currentOutfit", "CurrentOutfit")
+                    val currentLocation = getJsonStringCaseInsensitive(obj, "current_location", "currentLocation", "CurrentLocation")
+                    val currentMood = getJsonStringCaseInsensitive(obj, "current_mood", "currentMood", "CurrentMood")
+                    val bodyType = getJsonStringCaseInsensitive(obj, "body_type", "bodyType", "BodyType")
+                    val bodyShape = getJsonStringCaseInsensitive(obj, "body_shape", "bodyShape", "BodyShape")
+                    val clothingState = getJsonStringCaseInsensitive(obj, "clothing_state", "clothingState", "ClothingState")
+
+                    val resolvedAvatarUrl = if (!avatarPath.isNullOrBlank()) {
+                        if (avatarPath.startsWith("/")) {
+                            "$serverUrl$avatarPath"
+                        } else {
+                            avatarPath
+                        }
+                    } else null
+
+                    var finalAvatarPath = avatarPath
+                    if (!resolvedAvatarUrl.isNullOrBlank()) {
+                        try {
+                            val localPath = xyz.ssfdre38.haven.data.network.HavenHttpClient.downloadImage(context, resolvedAvatarUrl, name)
+                            if (localPath != null) {
+                                finalAvatarPath = localPath
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+
+                    val existing = repository.getCharacterByName(name)
+                    if (existing != null) {
+                        val updated = existing.copy(
+                            voiceId = if (voiceId.isNotBlank()) voiceId else existing.voiceId,
+                            description = if (description.isNotBlank()) description else existing.description,
+                            personality = if (personality.isNotBlank()) personality else existing.personality,
+                            scenario = if (scenario.isNotBlank()) scenario else existing.scenario,
+                            systemPrompt = if (systemPrompt.isNotBlank()) systemPrompt else existing.systemPrompt,
+                            avatarPath = if (!avatarPath.isNullOrBlank() && (existing.avatarPath.isNullOrBlank() || !java.io.File(existing.avatarPath).exists() || existing.avatarPath.startsWith("/uploads/") || existing.avatarPath.startsWith("http"))) finalAvatarPath else existing.avatarPath,
+                            bodyType = if (bodyType.isNotBlank()) bodyType else existing.bodyType,
+                            bodyShape = if (bodyShape.isNotBlank()) bodyShape else existing.bodyShape,
+                            currentOutfit = if (currentOutfit.isNotBlank()) currentOutfit else existing.currentOutfit,
+                            currentLocation = if (currentLocation.isNotBlank()) currentLocation else existing.currentLocation,
+                            currentMood = if (currentMood.isNotBlank()) currentMood else existing.currentMood,
+                            clothingState = if (clothingState.isNotBlank()) clothingState else existing.clothingState
+                        )
+                        repository.updateCharacter(updated)
+                    } else {
+                        val deletedSet = sharedPrefs.getStringSet("deleted_companions", emptySet()) ?: emptySet()
+                        if (!deletedSet.contains(name)) {
+                            val newChar = xyz.ssfdre38.haven.data.database.CharacterEntity(
+                                name = name,
+                                avatarPath = finalAvatarPath,
+                                voiceId = voiceId,
+                                description = description,
+                                personality = personality,
+                                scenario = scenario,
+                                firstMessage = firstMessage,
+                                systemPrompt = systemPrompt,
+                                currentOutfit = currentOutfit,
+                                currentLocation = currentLocation,
+                                currentMood = currentMood,
+                                bodyType = bodyType,
+                                bodyShape = bodyShape,
+                                clothingState = clothingState
+                            )
+                            val newId = repository.insertCharacter(newChar).toInt()
+                            if (firstMessage.isNotBlank()) {
+                                repository.insertMessage(
+                                    xyz.ssfdre38.haven.data.database.MessageEntity(
+                                        characterId = newId,
+                                        sender = "character",
+                                        text = firstMessage
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+
+    // 3. Sync/Load Groups from server
+    try {
+        val serverGroups = xyz.ssfdre38.haven.data.network.HavenHttpClient.getGroups(serverUrl, token)
+        val serverUuids = serverGroups.map { obj ->
+            if (obj.has("id")) obj.getString("id") else obj.getString("uuid")
+        }.toSet()
+        
+        serverGroups.forEach { obj ->
+            val uuid = if (obj.has("id")) obj.getString("id") else obj.getString("uuid")
+            val name = obj.getString("name")
+            val characterNamesStr = if (obj.has("character_names")) obj.getString("character_names") else obj.getString("characterNames")
+            
+            val names = characterNamesStr.split(",").map { it.trim() }
+            val resolvedIds = names.mapNotNull { charName ->
+                repository.getCharacterByName(charName)?.id
+            }
+            val newIdsStr = resolvedIds.joinToString(",")
+            
+            val existing = repository.getGroupChatByUuid(uuid)
+            if (existing == null) {
+                repository.insertGroupChat(
+                    xyz.ssfdre38.haven.data.database.GroupChatEntity(
+                        name = name,
+                        characterIdsString = newIdsStr,
+                        uuid = uuid
+                    )
+                )
+            } else {
+                if (existing.name != name || existing.characterIdsString != newIdsStr) {
+                    repository.insertGroupChat(
+                        existing.copy(
+                            name = name,
+                            characterIdsString = newIdsStr
+                        )
+                    )
+                }
+            }
+        }
+        
+        // Cleanup groups deleted on server
+        val localGroups = repository.getAllGroupChats().first()
+        for (grp in localGroups) {
+            val uuid = grp.uuid
+            if (uuid != null && !serverUuids.contains(uuid)) {
+                repository.deleteGroupChat(grp)
+            }
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
 }
 
 // Utility extension helper to work with mutable state in Compose
