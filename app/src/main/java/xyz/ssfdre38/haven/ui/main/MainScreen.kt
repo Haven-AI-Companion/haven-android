@@ -46,6 +46,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavKey
@@ -1050,17 +1054,38 @@ fun CharacterList(
     onCharacterLongClick: (CharacterEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        items(characters, key = { it.id }) { character ->
-            CharacterCard(
-                character = character,
-                onClick = { onCharacterClick(character.id) },
-                onLongClick = { onCharacterLongClick(character) }
-            )
+    val configuration = LocalConfiguration.current
+    val isTablet = configuration.screenWidthDp >= 600
+
+    if (isTablet) {
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 340.dp),
+            modifier = modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(characters, key = { it.id }) { character ->
+                CharacterCard(
+                    character = character,
+                    onClick = { onCharacterClick(character.id) },
+                    onLongClick = { onCharacterLongClick(character) }
+                )
+            }
+        }
+    } else {
+        LazyColumn(
+            modifier = modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(characters, key = { it.id }) { character ->
+                CharacterCard(
+                    character = character,
+                    onClick = { onCharacterClick(character.id) },
+                    onLongClick = { onCharacterLongClick(character) }
+                )
+            }
         }
     }
 }
@@ -1264,111 +1289,241 @@ fun GroupList(
     onGroupLongClick: (xyz.ssfdre38.haven.data.database.GroupChatEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        items(groups, key = { it.id }) { group ->
-            val roomParticipants = remember(group.characterIdsString, participants) {
-                val ids = group.characterIdsString.split(",").mapNotNull { it.trim().toIntOrNull() }
-                participants.filter { ids.contains(it.id) }
-            }
+    val configuration = LocalConfiguration.current
+    val isTablet = configuration.screenWidthDp >= 600
 
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .combinedClickable(
-                        onClick = { onGroupClick(group.id) },
-                        onLongClick = { onGroupLongClick(group) }
-                    ),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFF16161E).copy(alpha = 0.45f)
-                ),
-                border = BorderStroke(
-                    1.dp,
-                    androidx.compose.ui.graphics.Brush.linearGradient(
-                        listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.02f))
-                    )
-                )
-            ) {
-                Row(
+    if (isTablet) {
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 340.dp),
+            modifier = modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(groups, key = { it.id }) { group ->
+                val roomParticipants = remember(group.characterIdsString, participants) {
+                    val ids = group.characterIdsString.split(",").mapNotNull { it.trim().toIntOrNull() }
+                    participants.filter { ids.contains(it.id) }
+                }
+
+                Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .clip(RoundedCornerShape(20.dp))
+                        .combinedClickable(
+                            onClick = { onGroupClick(group.id) },
+                            onLongClick = { onGroupLongClick(group) }
+                        ),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFF16161E).copy(alpha = 0.45f)
+                    ),
+                    border = BorderStroke(
+                        1.dp,
+                        androidx.compose.ui.graphics.Brush.linearGradient(
+                            listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.02f))
+                        )
+                    )
                 ) {
-                    Box(
-                        modifier = Modifier.size(52.dp),
-                        contentAlignment = Alignment.Center
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (roomParticipants.isEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.secondary),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Group,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSecondary
-                                )
-                            }
-                        } else {
-                            val showAvatars = roomParticipants.take(3)
-                            showAvatars.forEachIndexed { idx, p ->
-                                val offset = (idx * 10).dp
+                        Box(
+                            modifier = Modifier.size(52.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (roomParticipants.isEmpty()) {
                                 Box(
                                     modifier = Modifier
-                                        .offset(x = offset - 10.dp)
-                                        .size(32.dp)
+                                        .size(44.dp)
                                         .clip(CircleShape)
-                                        .border(2.dp, Color(0xFF16161E), CircleShape)
-                                        .background(MaterialTheme.colorScheme.primary)
+                                        .background(MaterialTheme.colorScheme.secondary),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    if (p.avatarPath != null) {
-                                        AsyncImage(
-                                            model = File(p.avatarPath),
-                                            contentDescription = null,
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentScale = ContentScale.Crop
-                                        )
-                                    } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Group,
+                                        contentDescription = "No Groups",
+                                        tint = MaterialTheme.colorScheme.onSecondary
+                                    )
+                                }
+                            } else {
+                                Box(modifier = Modifier.size(44.dp)) {
+                                    roomParticipants.take(4).forEachIndexed { index, p ->
+                                        val offset = when (index) {
+                                            0 -> Modifier.align(Alignment.TopStart)
+                                            1 -> Modifier.align(Alignment.TopEnd)
+                                            2 -> Modifier.align(Alignment.BottomStart)
+                                            else -> Modifier.align(Alignment.BottomEnd)
+                                        }
                                         Box(
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentAlignment = Alignment.Center
+                                            modifier = Modifier
+                                                .size(24.dp)
+                                                .then(offset)
+                                                .clip(CircleShape)
+                                                .background(Color.DarkGray)
+                                                .border(1.dp, Color.Black, CircleShape)
                                         ) {
-                                            Text(p.name.take(1), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            if (p.avatarPath != null && File(p.avatarPath).exists()) {
+                                                AsyncImage(
+                                                    model = File(p.avatarPath),
+                                                    contentDescription = p.name,
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentScale = ContentScale.Crop
+                                                )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(p.name.take(1), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column(
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = group.name,
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = roomParticipants.joinToString { it.name },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.7f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
+                }
+            }
+        }
+    } else {
+        LazyColumn(
+            modifier = modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(groups, key = { it.id }) { group ->
+                val roomParticipants = remember(group.characterIdsString, participants) {
+                    val ids = group.characterIdsString.split(",").mapNotNull { it.trim().toIntOrNull() }
+                    participants.filter { ids.contains(it.id) }
+                }
 
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Column(
-                        modifier = Modifier.weight(1f)
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .combinedClickable(
+                            onClick = { onGroupClick(group.id) },
+                            onLongClick = { onGroupLongClick(group) }
+                        ),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFF16161E).copy(alpha = 0.45f)
+                    ),
+                    border = BorderStroke(
+                        1.dp,
+                        androidx.compose.ui.graphics.Brush.linearGradient(
+                            listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.02f))
+                        )
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = group.name,
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = Color.White
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = roomParticipants.joinToString { it.name },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.7f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Box(
+                            modifier = Modifier.size(52.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (roomParticipants.isEmpty()) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.secondary),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Group,
+                                        contentDescription = "No Groups",
+                                        tint = MaterialTheme.colorScheme.onSecondary
+                                    )
+                                }
+                            } else {
+                                Box(modifier = Modifier.size(44.dp)) {
+                                    roomParticipants.take(4).forEachIndexed { index, p ->
+                                        val offset = when (index) {
+                                            0 -> Modifier.align(Alignment.TopStart)
+                                            1 -> Modifier.align(Alignment.TopEnd)
+                                            2 -> Modifier.align(Alignment.BottomStart)
+                                            else -> Modifier.align(Alignment.BottomEnd)
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .size(24.dp)
+                                                .then(offset)
+                                                .clip(CircleShape)
+                                                .background(Color.DarkGray)
+                                                .border(1.dp, Color.Black, CircleShape)
+                                        ) {
+                                            if (p.avatarPath != null && File(p.avatarPath).exists()) {
+                                                AsyncImage(
+                                                    model = File(p.avatarPath),
+                                                    contentDescription = p.name,
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentScale = ContentScale.Crop
+                                                )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(p.name.take(1), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column(
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = group.name,
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = roomParticipants.joinToString { it.name },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.7f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
             }
