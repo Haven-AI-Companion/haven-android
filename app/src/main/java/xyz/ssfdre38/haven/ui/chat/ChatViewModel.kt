@@ -126,15 +126,28 @@ class ChatViewModel(
             if (conversationId.isNullOrBlank()) {
                 conversationId = java.util.UUID.randomUUID().toString()
                 repository.updateCharacter(char.copy(conversationId = conversationId))
-                saveCompanionToServer(serverUrl, token, char.copy(conversationId = conversationId))
+                saveCompanionToServer(context, serverUrl, token, char.copy(conversationId = conversationId))
                 return@launch
             }
             
             val serverMsgs = HavenHttpClient.getConversationMessages(serverUrl, token, conversationId)
-            if (serverMsgs.isNotEmpty()) {
-                val localMsgs = repository.getMessagesForCharacter(characterId).first()
-                repository.clearMessagesForCharacter(characterId)
-                serverMsgs.forEachIndexed { index, obj ->
+            val localMsgs = repository.getMessagesForCharacter(characterId).first()
+            
+            if (serverMsgs.size == localMsgs.size) {
+                return@launch
+            }
+            
+            if (serverMsgs.size < localMsgs.size) {
+                // Client has new offline messages! Push them to the server
+                for (i in serverMsgs.size until localMsgs.size) {
+                    val localMsg = localMsgs[i]
+                    val role = if (localMsg.sender == "user") "user" else "assistant"
+                    HavenHttpClient.addConversationMessage(serverUrl, token, conversationId, role, localMsg.text)
+                }
+            } else {
+                // Server has new messages! Append them locally
+                for (i in localMsgs.size until serverMsgs.size) {
+                    val obj = serverMsgs[i]
                     val role = obj.getString("role")
                     val content = obj.getString("content")
                     val sender = if (role == "user") "user" else "character"
@@ -152,17 +165,15 @@ class ChatViewModel(
                         val newClothingState = clothingStateRegex.find(content)?.groups?.get(1)?.value?.trim()
 
                         if (newOutfit != null || newLocation != null || newMood != null || newClothingState != null) {
-                            viewModelScope.launch(Dispatchers.IO) {
-                                val current = repository.getCharacterById(characterId)
-                                if (current != null) {
-                                    val updated = current.copy(
-                                        currentOutfit = newOutfit ?: current.currentOutfit,
-                                        currentLocation = newLocation ?: current.currentLocation,
-                                        currentMood = newMood ?: current.currentMood,
-                                        clothingState = newClothingState ?: current.clothingState
-                                    )
-                                    repository.updateCharacter(updated)
-                                }
+                            val current = repository.getCharacterById(characterId)
+                            if (current != null) {
+                                val updated = current.copy(
+                                    currentOutfit = newOutfit ?: current.currentOutfit,
+                                    currentLocation = newLocation ?: current.currentLocation,
+                                    currentMood = newMood ?: current.currentMood,
+                                    clothingState = newClothingState ?: current.clothingState
+                                )
+                                repository.updateCharacter(updated)
                             }
                         }
                     }
@@ -170,21 +181,11 @@ class ChatViewModel(
                     // Clean the text to strip the bracket tags
                     val cleanText = cleanFinalText(content)
 
-                    val matchingLocal = localMsgs.getOrNull(index)
-                    var imagePath: String? = null
-                    var audioPath: String? = null
-                    if (matchingLocal != null && (matchingLocal.text == cleanText || matchingLocal.text.startsWith(cleanText))) {
-                        imagePath = matchingLocal.imagePath
-                        audioPath = matchingLocal.audioPath
-                    } else {
-                        // This is a NEW message synced from the server!
-                        // Parse and execute client-side actions (like set_alarm, add_event, play_chime)
-                        if (sender == "character") {
-                            val actionRegex = "\\[\\s*ACTION\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
-                            actionRegex.findAll(content).forEach { match ->
-                                val actionTag = match.groups[1]?.value ?: ""
-                                executeAndroidAction(context, actionTag)
-                            }
+                    if (sender == "character") {
+                        val actionRegex = "\\[\\s*ACTION\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+                        actionRegex.findAll(content).forEach { match ->
+                            val actionTag = match.groups[1]?.value ?: ""
+                            executeAndroidAction(context, actionTag)
                         }
                     }
 
@@ -192,42 +193,35 @@ class ChatViewModel(
                         MessageEntity(
                             characterId = characterId,
                             sender = sender,
-                            text = cleanText,
-                            imagePath = imagePath,
-                            audioPath = audioPath
+                            text = cleanText
                         )
                     ).toInt()
 
-                    if (imagePath == null) {
-                        val urlRegex = "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.-]+)|(/uploads/[%a-zA-Z_0-9.-]+)".toRegex(RegexOption.IGNORE_CASE)
-                        val urlMatch = urlRegex.find(content)
-                        if (urlMatch != null) {
-                            val rawUrl = urlMatch.value
-                            val resolvedUrl = if (rawUrl.startsWith("/")) {
-                                val host = serverUrl.trimEnd('/')
-                                if (host.startsWith("http")) "$host$rawUrl" else "http://$host$rawUrl"
-                            } else {
-                                rawUrl
+                    val urlRegex = "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.-]+)|(/uploads/[%a-zA-Z_0-9.-]+)".toRegex(RegexOption.IGNORE_CASE)
+                    val urlMatch = urlRegex.find(content)
+                    if (urlMatch != null) {
+                        val rawUrl = urlMatch.value
+                        val resolvedUrl = if (rawUrl.startsWith("/")) {
+                            val host = serverUrl.trimEnd('/')
+                            if (host.startsWith("http")) "$host$rawUrl" else "http://$host$rawUrl"
+                        } else {
+                            rawUrl
+                        }
+                        try {
+                            val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, char.name)
+                            if (localPath != null) {
+                                repository.insertMessage(
+                                    MessageEntity(
+                                        id = msgId,
+                                        characterId = characterId,
+                                        sender = sender,
+                                        text = cleanText,
+                                        imagePath = localPath
+                                    )
+                                )
                             }
-                            viewModelScope.launch(Dispatchers.IO) {
-                                try {
-                                    val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, char.name)
-                                    if (localPath != null) {
-                                        repository.insertMessage(
-                                            MessageEntity(
-                                                id = msgId,
-                                                characterId = characterId,
-                                                sender = sender,
-                                                text = content,
-                                                imagePath = localPath,
-                                                audioPath = audioPath
-                                            )
-                                        )
-                                    }
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                }
-                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
                         }
                     }
                 }
@@ -235,28 +229,8 @@ class ChatViewModel(
         }
      }
 
-     private fun saveCompanionToServer(serverUrl: String, token: String, char: CharacterEntity) {
-         val url = "${serverUrl.trimEnd('/')}/api/companions"
-         val body = org.json.JSONObject().apply {
-             put("name", char.name)
-             put("voice_id", char.voiceId)
-             put("description", char.description)
-             put("personality", char.personality)
-             put("scenario", char.scenario)
-             put("first_message", char.firstMessage)
-             put("system_prompt", char.systemPrompt)
-             put("conversation_id", char.conversationId)
-         }.toString()
-         val request = okhttp3.Request.Builder()
-             .url(url)
-             .post(body.toRequestBody("application/json; charset=utf-8".toMediaType()))
-             .addHeader("Authorization", "Bearer $token")
-             .build()
-         try {
-             okhttp3.OkHttpClient().newCall(request).execute().close()
-         } catch (e: Exception) {
-             e.printStackTrace()
-         }
+     private fun saveCompanionToServer(context: Context, serverUrl: String, token: String, char: CharacterEntity) {
+         HavenHttpClient.saveCompanion(context, serverUrl, token, char)
      }
 
     fun sendMessage(context: Context, serverUrl: String, token: String, text: String) {
@@ -426,7 +400,7 @@ class ChatViewModel(
                 conversationId = java.util.UUID.randomUUID().toString()
                 if (char != null) {
                     repository.updateCharacter(char.copy(conversationId = conversationId))
-                    saveCompanionToServer(serverUrl, token, char.copy(conversationId = conversationId))
+                    saveCompanionToServer(context, serverUrl, token, char.copy(conversationId = conversationId))
                 }
             }
 

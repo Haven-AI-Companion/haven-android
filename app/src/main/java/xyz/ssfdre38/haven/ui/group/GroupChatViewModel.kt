@@ -1303,9 +1303,26 @@ class GroupChatViewModel(
             val grp = repository.getGroupChatById(groupId) ?: return@launch
             val groupUuid = grp.uuid ?: return@launch
             val serverMsgs = HavenHttpClient.getGroupMessages(serverUrl, token, groupUuid)
-            if (serverMsgs.isNotEmpty()) {
-                repository.clearGroupMessages(groupId)
-                serverMsgs.forEach { obj ->
+            val localMsgs = repository.getGroupMessages(groupId).first()
+            val participants = _participants.value
+            
+            if (serverMsgs.size == localMsgs.size) {
+                return@launch
+            }
+            
+            if (serverMsgs.size < localMsgs.size) {
+                // Client has new offline group messages! Push them to the server
+                for (i in serverMsgs.size until localMsgs.size) {
+                    val localMsg = localMsgs[i]
+                    val charName = if (localMsg.sender == "character") {
+                        participants.firstOrNull { it.id == localMsg.characterId }?.name
+                    } else null
+                    HavenHttpClient.saveGroupMessage(serverUrl, token, groupUuid, localMsg.sender, charName, localMsg.text)
+                }
+            } else {
+                // Server has new group messages! Append them locally
+                for (i in localMsgs.size until serverMsgs.size) {
+                    val obj = serverMsgs[i]
                     val sender = obj.getString("sender")
                     val characterName = when {
                         obj.has("character_name") && !obj.isNull("character_name") -> obj.getString("character_name")
@@ -1339,24 +1356,22 @@ class GroupChatViewModel(
                         } else {
                             rawUrl
                         }
-                        viewModelScope.launch(Dispatchers.IO) {
-                            try {
-                                val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, characterName ?: "companion")
-                                if (localPath != null) {
-                                    repository.insertGroupMessage(
-                                        GroupMessageEntity(
-                                            id = msgId,
-                                            groupId = groupId,
-                                            sender = sender,
-                                            characterId = characterId,
-                                            text = content,
-                                            imagePath = localPath
-                                        )
+                        try {
+                            val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, characterName ?: "companion")
+                            if (localPath != null) {
+                                repository.insertGroupMessage(
+                                    GroupMessageEntity(
+                                        id = msgId,
+                                        groupId = groupId,
+                                        sender = sender,
+                                        characterId = characterId,
+                                        text = content,
+                                        imagePath = localPath
                                     )
-                                }
-                            } catch (e: Exception) {
-                                e.printStackTrace()
+                                )
                             }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
                         }
                     }
                 }

@@ -239,6 +239,7 @@ object SyncQueueManager {
                                 avatarPath = if (payload.has("avatarPath") && !payload.isNull("avatarPath")) payload.getString("avatarPath") else null
                             )
                             HavenHttpClient.saveCompanion(
+                                context = context,
                                 serverUrl = serverUrl,
                                 token = token,
                                 character = char

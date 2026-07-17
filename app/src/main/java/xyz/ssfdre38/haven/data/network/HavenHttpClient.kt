@@ -702,14 +702,73 @@ object HavenHttpClient {
         }
     }
 
+    fun uploadFile(
+        serverUrl: String,
+        token: String,
+        fileBytes: ByteArray,
+        fileName: String,
+        mimeType: String
+    ): String? {
+        val url = "${serverUrl.trimEnd('/')}/api/upload"
+        val fileMediaType = mimeType.toMediaTypeOrNull()
+        val fileBody = fileBytes.toRequestBody(fileMediaType)
+        val requestBody = okhttp3.MultipartBody.Builder()
+            .setType(okhttp3.MultipartBody.FORM)
+            .addFormDataPart("file", fileName, fileBody)
+            .build()
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+            
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val obj = JSONObject(body)
+                    if (obj.has("url")) obj.getString("url") else null
+                } else null
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
     /**
      * Pushes a companion profile configuration to the server to be saved locally.
      */
     fun saveCompanion(
+        context: Context? = null,
         serverUrl: String,
         token: String,
         character: xyz.ssfdre38.haven.data.database.CharacterEntity
     ): Boolean {
+        var serverAvatarPath = character.avatarPath
+        
+        if (context != null && !character.avatarPath.isNullOrBlank() && !character.avatarPath.startsWith("/uploads/") && !character.avatarPath.startsWith("http")) {
+            val file = java.io.File(character.avatarPath)
+            if (file.exists()) {
+                try {
+                    val bytes = file.readBytes()
+                    val extension = file.extension.lowercase()
+                    val mimeType = when (extension) {
+                        "png" -> "image/png"
+                        "jpg", "jpeg" -> "image/jpeg"
+                        "webp" -> "image/webp"
+                        else -> "image/png"
+                    }
+                    val uploadedUrl = uploadFile(serverUrl, token, bytes, file.name, mimeType)
+                    if (!uploadedUrl.isNullOrBlank()) {
+                        serverAvatarPath = uploadedUrl
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+
         val url = "${serverUrl.trimEnd('/')}/api/companions"
         val requestBodyJson = JSONObject().apply {
             put("name", character.name)
@@ -719,7 +778,16 @@ object HavenHttpClient {
             put("scenario", character.scenario)
             put("firstMessage", character.firstMessage)
             put("systemPrompt", character.systemPrompt)
-            put("avatarPath", character.avatarPath)
+            put("avatarPath", serverAvatarPath ?: JSONObject.NULL)
+            put("conversationId", character.conversationId ?: JSONObject.NULL)
+            
+            // Sync status/stats fields as well
+            put("currentOutfit", character.currentOutfit)
+            put("currentLocation", character.currentLocation)
+            put("currentMood", character.currentMood)
+            put("bodyType", character.bodyType)
+            put("bodyShape", character.bodyShape)
+            put("clothingState", character.clothingState)
         }.toString()
 
         val request = Request.Builder()
@@ -728,6 +796,38 @@ object HavenHttpClient {
             .addHeader("Authorization", "Bearer $token")
             .build()
 
+        return try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    /**
+     * Pushes a single-chat message payload directly to conversation endpoint
+     */
+    fun addConversationMessage(
+        serverUrl: String,
+        token: String,
+        conversationId: String,
+        role: String,
+        content: String
+    ): Boolean {
+        val url = "${serverUrl.trimEnd('/')}/api/conversations/$conversationId/messages"
+        val json = JSONObject().apply {
+            put("role", role)
+            put("content", content)
+        }
+        val requestBody = json.toString().toRequestBody(JSON_MEDIA_TYPE)
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+            
         return try {
             client.newCall(request).execute().use { response ->
                 response.isSuccessful

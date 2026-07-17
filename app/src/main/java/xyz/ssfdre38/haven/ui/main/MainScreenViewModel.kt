@@ -469,6 +469,26 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                             else -> ""
                         }
 
+                        val resolvedAvatarUrl = if (!avatarPath.isNullOrBlank()) {
+                            if (avatarPath.startsWith("/")) {
+                                if (formattedHost.startsWith("http")) "$formattedHost:$port$avatarPath" else "http://$formattedHost:$port$avatarPath"
+                            } else {
+                                avatarPath
+                            }
+                        } else null
+
+                        var finalAvatarPath = avatarPath
+                        if (!resolvedAvatarUrl.isNullOrBlank()) {
+                            try {
+                                val localPath = HavenHttpClient.downloadImage(context, resolvedAvatarUrl, name)
+                                if (localPath != null) {
+                                    finalAvatarPath = localPath
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+
                         // Auto-sync: if character already exists locally, update their profile fields with the server configuration
                         val existing = dataRepository.getCharacterByName(name)
                         if (existing != null) {
@@ -478,7 +498,7 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                                 personality = personality,
                                 scenario = scenario,
                                 systemPrompt = systemPrompt,
-                                avatarPath = if (!avatarPath.isNullOrBlank() && (existing.avatarPath.isNullOrBlank() || !File(existing.avatarPath).exists())) avatarPath else existing.avatarPath,
+                                avatarPath = if (!avatarPath.isNullOrBlank() && (existing.avatarPath.isNullOrBlank() || !File(existing.avatarPath).exists() || existing.avatarPath.startsWith("/uploads/") || existing.avatarPath.startsWith("http"))) finalAvatarPath else existing.avatarPath,
                                 bodyType = if (bodyType.isNotBlank()) bodyType else existing.bodyType,
                                 bodyShape = if (bodyShape.isNotBlank()) bodyShape else existing.bodyShape,
                                 currentOutfit = if (currentOutfit.isNotBlank()) currentOutfit else existing.currentOutfit,
@@ -494,7 +514,7 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                             if (!deletedSet.contains(name)) {
                                 val newChar = CharacterEntity(
                                     name = name,
-                                    avatarPath = avatarPath,
+                                    avatarPath = finalAvatarPath,
                                     voiceId = voiceId,
                                     description = description,
                                     personality = personality,
