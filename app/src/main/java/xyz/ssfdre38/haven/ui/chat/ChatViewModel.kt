@@ -36,6 +36,13 @@ class ChatViewModel(
     private val _isSpeaking = MutableStateFlow(false)
     val isSpeaking: StateFlow<Boolean> = _isSpeaking.asStateFlow()
 
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    fun clearError() {
+        _errorMessage.value = null
+    }
+
     private var activePlayer: android.media.MediaPlayer? = null
 
     var scrollIndex: Int = -1
@@ -43,13 +50,18 @@ class ChatViewModel(
 
     fun playAudio(audioUrl: String) {
         viewModelScope.launch(Dispatchers.Main) {
-            try {
-                activePlayer?.stop()
-                activePlayer?.release()
-            } catch (e: Exception) {}
+            activePlayer?.let { player ->
+                activePlayer = null
+                try {
+                    player.release()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
             
+            var tempPlayer: android.media.MediaPlayer? = null
             try {
-                activePlayer = android.media.MediaPlayer().apply {
+                tempPlayer = android.media.MediaPlayer().apply {
                     setDataSource(audioUrl)
                     prepareAsync()
                     setOnPreparedListener {
@@ -59,26 +71,37 @@ class ChatViewModel(
                     setOnCompletionListener {
                         _isSpeaking.value = false
                         release()
+                        if (activePlayer == this) {
+                            activePlayer = null
+                        }
                     }
                     setOnErrorListener { _, _, _ ->
                         _isSpeaking.value = false
                         release()
+                        if (activePlayer == this) {
+                            activePlayer = null
+                        }
                         true
                     }
                 }
+                activePlayer = tempPlayer
             } catch (e: Exception) {
                 e.printStackTrace()
+                tempPlayer?.release()
                 _isSpeaking.value = false
             }
         }
     }
 
     fun stopAudio() {
-        try {
-            activePlayer?.stop()
-            activePlayer?.release()
+        activePlayer?.let { player ->
             activePlayer = null
-        } catch (e: Exception) {}
+            try {
+                player.release()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
         _isSpeaking.value = false
     }
 
@@ -942,16 +965,10 @@ ${character.value?.name ?: "Companion"}: $cleanText"""
                 },
                 onFailure = { error ->
                     _isGenerating.value = false
+                    _errorMessage.value = "Connection error: ${error.message}"
                     dbWriteJob?.cancel()
                     dbWriteJob = viewModelScope.launch(Dispatchers.IO) {
-                        repository.insertMessage(
-                            MessageEntity(
-                                id = streamingMessageId,
-                                characterId = characterId,
-                                sender = "character",
-                                text = "[Connection error: ${error.message}]"
-                            )
-                        )
+                        repository.deleteMessageById(streamingMessageId)
                     }
                 }
             )
@@ -1106,15 +1123,9 @@ ${character.value?.name ?: "Companion"}: $cleanText"""
                     },
                     onFailure = { error ->
                         _isGenerating.value = false
+                        _errorMessage.value = "Connection error: ${error.message}"
                         viewModelScope.launch(Dispatchers.IO) {
-                            repository.insertMessage(
-                                MessageEntity(
-                                    id = placeholderId,
-                                    characterId = characterId,
-                                    sender = "character",
-                                    text = "[Connection error: ${error.message}]"
-                                )
-                            )
+                            repository.deleteMessageById(placeholderId)
                         }
                     }
                 )

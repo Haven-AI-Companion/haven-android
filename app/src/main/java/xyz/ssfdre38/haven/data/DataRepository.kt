@@ -25,6 +25,7 @@ interface DataRepository {
     fun getMessagesForCharacter(characterId: Int): Flow<List<MessageEntity>>
     suspend fun insertMessage(message: MessageEntity): Long
     suspend fun deleteMessage(message: MessageEntity)
+    suspend fun deleteMessageById(id: Int)
     suspend fun clearMessagesForCharacter(characterId: Int)
     suspend fun getLastMessage(characterId: Int): MessageEntity?
     suspend fun importTavernCard(context: Context, inputStream: InputStream, cardBytes: ByteArray): Boolean
@@ -71,6 +72,7 @@ class DefaultDataRepository(private val havenDao: HavenDao) : DataRepository {
     override suspend fun insertMessage(message: MessageEntity): Long = havenDao.insertMessage(message)
     
     override suspend fun deleteMessage(message: MessageEntity) = havenDao.deleteMessage(message)
+    override suspend fun deleteMessageById(id: Int) = havenDao.deleteMessageById(id)
     
     override suspend fun clearMessagesForCharacter(characterId: Int) = havenDao.clearMessagesForCharacter(characterId)
     

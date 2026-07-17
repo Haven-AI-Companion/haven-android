@@ -41,6 +41,9 @@ interface HavenDao {
     @Delete
     suspend fun deleteMessage(message: MessageEntity)
 
+    @Query("DELETE FROM messages WHERE id = :id")
+    suspend fun deleteMessageById(id: Int)
+
     @Query("DELETE FROM messages WHERE characterId = :characterId")
     suspend fun clearMessagesForCharacter(characterId: Int)
 

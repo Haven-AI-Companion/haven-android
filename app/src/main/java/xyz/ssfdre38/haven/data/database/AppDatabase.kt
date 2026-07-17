@@ -21,7 +21,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "haven_database"
                 )
-                .fallbackToDestructiveMigration(dropAllTables = true)
+                // Removed fallbackToDestructiveMigration to prevent silent, catastrophic loss of local companion logs, XP, and diaries on schema updates.
+                // Write explicit migrations when schema changes are introduced.
                 .build()
                 INSTANCE = instance
                 instance

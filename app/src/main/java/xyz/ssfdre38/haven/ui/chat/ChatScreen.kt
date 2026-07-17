@@ -96,6 +96,15 @@ fun ChatScreen(
     val messages by chatViewModel.messages.collectAsStateWithLifecycle()
     val isGenerating by chatViewModel.isGenerating.collectAsStateWithLifecycle()
     val isSpeaking by chatViewModel.isSpeaking.collectAsStateWithLifecycle()
+    val errorMessage by chatViewModel.errorMessage.collectAsStateWithLifecycle()
+
+    LaunchedEffect(errorMessage) {
+        errorMessage?.let { msg ->
+            Toast.makeText(context.applicationContext, msg, Toast.LENGTH_LONG).show()
+            chatViewModel.clearError()
+        }
+    }
+
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = if (chatViewModel.scrollIndex != -1) chatViewModel.scrollIndex else 0,
         initialFirstVisibleItemScrollOffset = if (chatViewModel.scrollIndex != -1) chatViewModel.scrollOffset else 0
@@ -142,7 +151,7 @@ fun ChatScreen(
                 val outfit = char.currentOutfit.ifBlank { "casual clothing" }
                 val moodStr = if (char.currentMood.isNotBlank()) "${char.currentMood} expression, " else ""
                 val imagePrompt = "${char.name}, digital art portrait, highly detailed, ${moodStr}standing in $loc, wearing $outfit"
-                chatViewModel.generateImage(context, sdHost, imagePrompt)
+                chatViewModel.generateImage(context.applicationContext, sdHost, imagePrompt)
             }
         }
     }
@@ -169,7 +178,7 @@ fun ChatScreen(
         val token = prefs.getString("auth_token", null)
         if (!ashHost.isNullOrBlank() && !token.isNullOrBlank()) {
             val serverUrl = "${ashHost.trimEnd('/')}:$ashPort"
-            chatViewModel.syncMessages(context, serverUrl, token)
+            chatViewModel.syncMessages(context.applicationContext, serverUrl, token)
         }
     }
 
@@ -524,9 +533,9 @@ fun ChatScreen(
                             inputText = ""
                             selectedImageUri = null
                             if (capturedUri != null) {
-                                chatViewModel.sendPhotoMessage(context, serverUrl, token, text, capturedUri)
+                                chatViewModel.sendPhotoMessage(context.applicationContext, serverUrl, token, text, capturedUri)
                             } else {
-                                chatViewModel.sendMessage(context, serverUrl, token, text)
+                                chatViewModel.sendMessage(context.applicationContext, serverUrl, token, text)
                             }
                         }
                     }
@@ -705,7 +714,7 @@ fun ChatScreen(
                                         val token = prefs.getString("auth_token", "") ?: ""
                                         if (ashHost.isNotBlank()) {
                                             val serverUrl = "${ashHost.trimEnd('/')}:$ashPort"
-                                            chatViewModel.regenerateLastMessage(context, serverUrl, token)
+                                            chatViewModel.regenerateLastMessage(context.applicationContext, serverUrl, token)
                                         }
                                     },
                                     speakText = speakText,
@@ -749,7 +758,7 @@ fun ChatScreen(
                                 val token = prefs.getString("auth_token", "") ?: ""
                                 if (ashHost.isNotBlank()) {
                                     val serverUrl = "${ashHost.trimEnd('/')}:$ashPort"
-                                    chatViewModel.regenerateLastMessage(context, serverUrl, token)
+                                    chatViewModel.regenerateLastMessage(context.applicationContext, serverUrl, token)
                                 }
                             },
                             speakText = speakText,
@@ -952,7 +961,7 @@ private fun saveImageToGallery(context: android.content.Context, imageModel: Any
                 mimeType = if (ext == "webp") "image/webp" else if (ext == "jpg") "image/jpeg" else "image/png"
 
                 val request = okhttp3.Request.Builder().url(url).build()
-                val response = okhttp3.OkHttpClient().newCall(request).execute()
+                val response = xyz.ssfdre38.haven.data.network.HavenHttpClient.httpClient.newCall(request).execute()
                 if (response.isSuccessful) {
                     val bytes = response.body?.bytes()
                     if (bytes != null) {

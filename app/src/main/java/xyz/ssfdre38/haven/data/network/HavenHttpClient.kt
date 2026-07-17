@@ -25,6 +25,8 @@ object HavenHttpClient {
         .retryOnConnectionFailure(true)
         .build()
 
+    val httpClient: OkHttpClient get() = client
+
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
     /**

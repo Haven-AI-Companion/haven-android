@@ -369,18 +369,28 @@ class VoiceCallViewModel(
     }
 
     private fun playAudio(context: Context, file: File, onComplete: () -> Unit) {
+        player?.let { p ->
+            player = null
+            try { p.release() } catch (_: Exception) {}
+        }
+        var tempPlayer: MediaPlayer? = null
         try {
-            player?.release()
-            player = MediaPlayer().apply {
+            tempPlayer = MediaPlayer().apply {
                 setDataSource(file.absolutePath)
                 prepare()
                 setOnCompletionListener {
                     file.delete()
                     onComplete()
+                    release()
+                    if (player == this) {
+                        player = null
+                    }
                 }
                 start()
             }
+            player = tempPlayer
         } catch (e: Exception) {
+            tempPlayer?.release()
             onComplete()
         }
     }

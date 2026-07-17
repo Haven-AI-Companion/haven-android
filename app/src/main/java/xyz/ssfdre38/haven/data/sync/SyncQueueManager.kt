@@ -114,30 +114,37 @@ object SyncQueueManager {
         }
     }
 
+    private val isProcessing = java.util.concurrent.atomic.AtomicBoolean(false)
+
     /**
      * Processes all cached pending sync requests sequentially.
      */
     fun processQueue(context: Context) {
-        val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
-        val host = sharedPrefs.getString("ash_host", "") ?: ""
-        val port = sharedPrefs.getString("ash_port", "") ?: ""
-        val token = sharedPrefs.getString("auth_token", "") ?: ""
-
-        if (host.isBlank() || token.isBlank()) {
-            Log.d(TAG, "Aborting queue processing: Haven connection preferences are not configured yet.")
+        if (!isProcessing.compareAndSet(false, true)) {
+            Log.d(TAG, "processQueue is already running. Skipping concurrent execution.")
             return
         }
+        try {
+            val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+            val host = sharedPrefs.getString("ash_host", "") ?: ""
+            val port = sharedPrefs.getString("ash_port", "") ?: ""
+            val token = sharedPrefs.getString("auth_token", "") ?: ""
 
-        val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
-        val serverUrl = "$formattedHost:${port.trim()}"
+            if (host.isBlank() || token.isBlank()) {
+                Log.d(TAG, "Aborting queue processing: Haven connection preferences are not configured yet.")
+                return
+            }
 
-        val helper = getHelper(context)
-        val db = try {
-            helper.writableDatabase
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to open sync database for reading", e)
-            return
-        }
+            val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+            val serverUrl = "$formattedHost:${port.trim()}"
+
+            val helper = getHelper(context)
+            val db = try {
+                helper.writableDatabase
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to open sync database for reading", e)
+                return
+            }
 
         val cursor = db.query(
             TABLE_NAME,
@@ -254,5 +261,8 @@ object SyncQueueManager {
                 }
             }
         }
+    } finally {
+        isProcessing.set(false)
     }
+}
 }
