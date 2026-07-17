@@ -448,7 +448,7 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                                 personality = personality,
                                 scenario = scenario,
                                 systemPrompt = systemPrompt,
-                                avatarPath = avatarPath,
+                                avatarPath = if (!avatarPath.isNullOrBlank() && (existing.avatarPath.isNullOrBlank() || !File(existing.avatarPath).exists())) avatarPath else existing.avatarPath,
                                 bodyType = if (bodyType.isNotBlank()) bodyType else existing.bodyType,
                                 bodyShape = if (bodyShape.isNotBlank()) bodyShape else existing.bodyShape,
                                 currentOutfit = if (currentOutfit.isNotBlank()) currentOutfit else existing.currentOutfit,
