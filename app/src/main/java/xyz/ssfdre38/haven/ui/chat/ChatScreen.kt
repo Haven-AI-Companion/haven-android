@@ -272,11 +272,40 @@ fun ChatScreen(
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
-                                Text(
-                                    text = char.name,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = char.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    if (char.currentMood.isNotBlank()) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        var moodMenuExpanded by remember { mutableStateOf(false) }
+                                        Box {
+                                            Text(
+                                                text = getMoodEmoji(char.currentMood),
+                                                style = MaterialTheme.typography.titleMedium,
+                                                modifier = Modifier
+                                                    .clickable { moodMenuExpanded = true }
+                                                    .padding(2.dp)
+                                            )
+                                            DropdownMenu(
+                                                expanded = moodMenuExpanded,
+                                                onDismissRequest = { moodMenuExpanded = false }
+                                            ) {
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Text(
+                                                            text = "Current Mood: ${char.currentMood.replaceFirstChar { it.uppercase() }}",
+                                                            style = MaterialTheme.typography.bodyMedium
+                                                        )
+                                                    },
+                                                    onClick = { moodMenuExpanded = false }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                                 if (isGenerating) {
                                     Text(
                                         text = "Typing...",
@@ -293,12 +322,6 @@ fun ChatScreen(
                                         Spacer(modifier = Modifier.width(6.dp))
                                         MiniAudioVisualizer()
                                     }
-                                } else if (char.currentMood.isNotBlank()) {
-                                    Text(
-                                        text = char.currentMood.replaceFirstChar { it.uppercase() },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                    )
                                 }
                             }
                         }
@@ -1441,3 +1464,20 @@ fun MiniAudioVisualizer() {
     }
 }
 
+private fun getMoodEmoji(mood: String): String {
+    val lower = mood.lowercase()
+    return when {
+        lower.contains("submissive") -> "🥺"
+        lower.contains("dominant") -> "😈"
+        lower.contains("blush") -> "😳"
+        lower.contains("flirt") || lower.contains("seductive") -> "😏"
+        lower.contains("shy") -> "🫣"
+        lower.contains("happy") || lower.contains("cheerful") -> "😊"
+        lower.contains("sad") || lower.contains("crying") -> "😢"
+        lower.contains("angry") || lower.contains("mad") -> "😠"
+        lower.contains("excited") -> "😆"
+        lower.contains("aroused") -> "😳"
+        lower.contains("neutral") -> "😐"
+        else -> "✨"
+    }
+}
