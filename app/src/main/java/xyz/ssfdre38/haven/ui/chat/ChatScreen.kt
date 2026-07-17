@@ -1268,34 +1268,69 @@ fun parseMessageText(text: String): ParsedMessage {
 
     val thoughtRegex = "<\\s*thought\\s*>(.*?)<\\s*/\\s*thought\\s*>".toRegex(setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
     val match = thoughtRegex.find(processedText)
-    if (match != null) {
+    
+    val rawParsed = if (match != null) {
         val thoughtContent = match.groups[1]?.value?.trim()
         val cleanTextContent = processedText.replace(thoughtRegex, "").trim()
-        return ParsedMessage(thoughtContent, cleanTextContent)
+        ParsedMessage(thoughtContent, cleanTextContent)
+    } else {
+        // Fallback 1: If only closing </thought> is present
+        val closingTagIndex = processedText.indexOf("</thought>", ignoreCase = true)
+        if (closingTagIndex != -1) {
+            val thoughtContent = processedText.substring(0, closingTagIndex).replace("<thought>", "", ignoreCase = true).trim()
+            val cleanTextContent = processedText.substring(closingTagIndex + "</thought>".length).trim()
+            ParsedMessage(
+                thought = if (thoughtContent.isNotBlank()) thoughtContent else null,
+                cleanText = cleanTextContent
+            )
+        } else {
+            // Fallback 2: If only opening <thought> is present (cut-off)
+            val openingTagIndex = processedText.indexOf("<thought>", ignoreCase = true)
+            if (openingTagIndex != -1) {
+                val thoughtContent = processedText.substring(openingTagIndex + "<thought>".length).trim()
+                ParsedMessage(
+                    thought = if (thoughtContent.isNotBlank()) thoughtContent else null,
+                    cleanText = ""
+                )
+            } else {
+                ParsedMessage(null, processedText)
+            }
+        }
     }
 
-    // Fallback 1: If only closing </thought> is present
-    val closingTagIndex = processedText.indexOf("</thought>", ignoreCase = true)
-    if (closingTagIndex != -1) {
-        val thoughtContent = processedText.substring(0, closingTagIndex).replace("<thought>", "", ignoreCase = true).trim()
-        val cleanTextContent = processedText.substring(closingTagIndex + "</thought>".length).trim()
-        return ParsedMessage(
-            thought = if (thoughtContent.isNotBlank()) thoughtContent else null,
-            cleanText = cleanTextContent
-        )
-    }
+    return ParsedMessage(
+        thought = rawParsed.thought?.let { cleanMessageTextSpacing(it) },
+        cleanText = cleanMessageTextSpacing(rawParsed.cleanText)
+    )
+}
 
-    // Fallback 2: If only opening <thought> is present (cut-off)
-    val openingTagIndex = processedText.indexOf("<thought>", ignoreCase = true)
-    if (openingTagIndex != -1) {
-        val thoughtContent = processedText.substring(openingTagIndex + "<thought>".length).trim()
-        return ParsedMessage(
-            thought = if (thoughtContent.isNotBlank()) thoughtContent else null,
-            cleanText = ""
-        )
-    }
+fun cleanMessageTextSpacing(input: String): String {
+    var text = input
 
-    return ParsedMessage(null, processedText)
+    // 1. Fix spaces around apostrophes (e.g. "I ' m" -> "I'm", "isn ' t" -> "isn't", "don ' t" -> "don't")
+    val apostropheRegex = """(\b\w+)\s*'\s*([a-zA-Z]+)""".toRegex()
+    text = text.replace(apostropheRegex, "$1'$2")
+
+    // 2. Fix spaces before punctuation marks (e.g. "hello !" -> "hello!", "going ." -> "going.")
+    val punctuationRegex = """\s+([.,!?;:])""".toRegex()
+    text = text.replace(punctuationRegex, "$1")
+
+    // 3. Fix common split suffixes / subwords (e.g. "ghost ing" -> "ghosting", "interest ed" -> "interested")
+    val suffixRegex = """\b(\w+)\s+(ing|ed|ly|ment|ness|tion|ence|aging|ler)\b""".toRegex(RegexOption.IGNORE_CASE)
+    text = text.replace(suffixRegex, "$1$2")
+
+    // 4. Fix specific known splits from Gemma tokenizer:
+    text = text.replace("""\bEnc\s+our\s+aging\b""".toRegex(RegexOption.IGNORE_CASE), "encouraging")
+    text = text.replace("""\bintel\s+lectual\b""".toRegex(RegexOption.IGNORE_CASE), "intellectual")
+    text = text.replace("""\boffline\s+ing\b""".toRegex(RegexOption.IGNORE_CASE), "offlining")
+    text = text.replace("""\bRef\s+ining\b""".toRegex(RegexOption.IGNORE_CASE), "refining")
+    text = text.replace("""\bTarget\s+ing\b""".toRegex(RegexOption.IGNORE_CASE), "targeting")
+    text = text.replace("""\bghost\s+ing\b""".toRegex(RegexOption.IGNORE_CASE), "ghosting")
+    text = text.replace("""\bHol\s+ler\b""".toRegex(RegexOption.IGNORE_CASE), "holler")
+    text = text.replace("""\bsil\s+ence\b""".toRegex(RegexOption.IGNORE_CASE), "silence")
+    text = text.replace("""\bDraft\s+ing\b""".toRegex(RegexOption.IGNORE_CASE), "drafting")
+
+    return text
 }
 
 data class MessageContent(val cleanText: String, val imageUrl: String?)
