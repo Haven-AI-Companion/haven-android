@@ -569,28 +569,28 @@ class ChatViewModel(
                         val thoughtText = thoughtMatch.groups[1]?.value ?: ""
                         
                         if (newOutfit == null) {
-                            val m = "Outfit\\s*:\\s*(.*)".toRegex(RegexOption.IGNORE_CASE).find(thoughtText)
-                            newOutfit = m?.groups[1]?.value?.split("\n")?.firstOrNull()?.trim()
+                            val m = "Outfit\\s*:\\s*(.*?)(?=\\s*(?:Outfit|Location|Mood|Body|Clothing|Refinement|Action|Tool|Call)\\s*:|\\s*[\\[\\]<>]|$)".toRegex(RegexOption.IGNORE_CASE).find(thoughtText)
+                            newOutfit = m?.groups[1]?.value?.trim()
                         }
                         if (newLocation == null) {
-                            val m = "Location\\s*:\\s*(.*)".toRegex(RegexOption.IGNORE_CASE).find(thoughtText)
-                            newLocation = m?.groups[1]?.value?.split("\n")?.firstOrNull()?.trim()
+                            val m = "Location\\s*:\\s*(.*?)(?=\\s*(?:Outfit|Location|Mood|Body|Clothing|Refinement|Action|Tool|Call)\\s*:|\\s*[\\[\\]<>]|$)".toRegex(RegexOption.IGNORE_CASE).find(thoughtText)
+                            newLocation = m?.groups[1]?.value?.trim()
                         }
                         if (newMood == null) {
-                            val m = "Mood\\s*:\\s*(.*)".toRegex(RegexOption.IGNORE_CASE).find(thoughtText)
-                            newMood = m?.groups[1]?.value?.split("\n")?.firstOrNull()?.trim()
+                            val m = "Mood\\s*:\\s*(.*?)(?=\\s*(?:Outfit|Location|Mood|Body|Clothing|Refinement|Action|Tool|Call)\\s*:|\\s*[\\[\\]<>]|$)".toRegex(RegexOption.IGNORE_CASE).find(thoughtText)
+                            newMood = m?.groups[1]?.value?.trim()
                         }
                         if (newBodyType == null) {
-                            val m = "Body\\s*Type\\s*:\\s*(.*)".toRegex(RegexOption.IGNORE_CASE).find(thoughtText)
-                            newBodyType = m?.groups[1]?.value?.split("\n")?.firstOrNull()?.trim()
+                            val m = "Body\\s*Type\\s*:\\s*(.*?)(?=\\s*(?:Outfit|Location|Mood|Body|Clothing|Refinement|Action|Tool|Call)\\s*:|\\s*[\\[\\]<>]|$)".toRegex(RegexOption.IGNORE_CASE).find(thoughtText)
+                            newBodyType = m?.groups[1]?.value?.trim()
                         }
                         if (newBodyShape == null) {
-                            val m = "Body\\s*Shape\\s*:\\s*(.*)".toRegex(RegexOption.IGNORE_CASE).find(thoughtText)
-                            newBodyShape = m?.groups[1]?.value?.split("\n")?.firstOrNull()?.trim()
+                            val m = "Body\\s*Shape\\s*:\\s*(.*?)(?=\\s*(?:Outfit|Location|Mood|Body|Clothing|Refinement|Action|Tool|Call)\\s*:|\\s*[\\[\\]<>]|$)".toRegex(RegexOption.IGNORE_CASE).find(thoughtText)
+                            newBodyShape = m?.groups[1]?.value?.trim()
                         }
                         if (newClothingState == null) {
-                            val m = "Clothing\\s*State\\s*:\\s*(.*)".toRegex(RegexOption.IGNORE_CASE).find(thoughtText)
-                            newClothingState = m?.groups[1]?.value?.split("\n")?.firstOrNull()?.trim()
+                            val m = "Clothing\\s*State\\s*:\\s*(.*?)(?=\\s*(?:Outfit|Location|Mood|Body|Clothing|Refinement|Action|Tool|Call)\\s*:|\\s*[\\[\\]<>]|$)".toRegex(RegexOption.IGNORE_CASE).find(thoughtText)
+                            newClothingState = m?.groups[1]?.value?.trim()
                         }
                     }
 
