@@ -49,12 +49,109 @@ class GroupChatViewModel(
     private var banterCount = 0
     private var banterJob: kotlinx.coroutines.Job? = null
 
+    private var activePlayer: android.media.MediaPlayer? = null
+
+    private val _typingCompanionName = MutableStateFlow<String?>(null)
+    val typingCompanionName: StateFlow<String?> = _typingCompanionName.asStateFlow()
+
+    fun playAudio(audioUrl: String) {
+        viewModelScope.launch(Dispatchers.Main) {
+            activePlayer?.let { player ->
+                activePlayer = null
+                try {
+                    player.release()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            
+            var tempPlayer: android.media.MediaPlayer? = null
+            try {
+                tempPlayer = android.media.MediaPlayer().apply {
+                    setDataSource(audioUrl)
+                    prepareAsync()
+                    setOnPreparedListener {
+                        start()
+                    }
+                    setOnCompletionListener {
+                        release()
+                        if (activePlayer == this) {
+                            activePlayer = null
+                        }
+                    }
+                    setOnErrorListener { _, _, _ ->
+                        release()
+                        if (activePlayer == this) {
+                            activePlayer = null
+                        }
+                        true
+                    }
+                }
+                activePlayer = tempPlayer
+            } catch (e: Exception) {
+                e.printStackTrace()
+                tempPlayer?.release()
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        activePlayer?.let { player ->
+            activePlayer = null
+            try {
+                player.release()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun updateParticipants(context: Context, serverUrl: String, token: String, newChars: List<CharacterEntity>) {
+        val grp = _group.value ?: return
+        val newIdsString = newChars.map { it.id }.joinToString(",")
+        val updatedGrp = grp.copy(characterIdsString = newIdsString)
+        
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.insertGroupChat(updatedGrp)
+            _group.value = updatedGrp
+            _participants.value = newChars
+            
+            // Re-select active speaker if the previous one is no longer present
+            val currentSpeaker = _selectedSpeakerId.value
+            if (newChars.none { it.id == currentSpeaker } && newChars.isNotEmpty()) {
+                _selectedSpeakerId.value = newChars.first().id
+            }
+            
+            // Push changes to server
+            val characterNames = newChars.map { it.name }.joinToString(",")
+            val success = HavenHttpClient.saveGroup(serverUrl, token, grp.uuid ?: "", grp.name, characterNames)
+            if (!success && grp.uuid != null) {
+                val payload = org.json.JSONObject().apply {
+                    put("id", grp.uuid)
+                    put("name", grp.name)
+                    put("character_names", characterNames)
+                }
+                xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                    context,
+                    xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_SAVE_GROUP,
+                    payload
+                )
+            }
+        }
+    }
+
     fun stopBanter() {
         banterJob?.cancel()
         banterJob = null
         banterCount = 0
         streamingMessageId = -1
         _isGenerating.value = false
+        _typingCompanionName.value = null
+        activePlayer?.let { player ->
+            activePlayer = null
+            try { player.stop(); player.release() } catch (e: Exception) {}
+        }
     }
 
     init {
@@ -89,6 +186,7 @@ class GroupChatViewModel(
 
         viewModelScope.launch(Dispatchers.IO) {
             _isGenerating.value = true
+            _typingCompanionName.value = targetChar.name
 
             // 1. Insert user message
             repository.insertGroupMessage(
@@ -380,6 +478,32 @@ class GroupChatViewModel(
                         }
                     }
 
+                    _typingCompanionName.value = null
+
+                    // Generate and play TTS audio response
+                    val currentVoice = targetChar.voiceId ?: "en_US-amy-medium"
+                    if (cleanText.isNotBlank()) {
+                        val autoSpeak = sharedPrefs.getBoolean("auto_speak", true)
+                        if (autoSpeak) {
+                            HavenHttpClient.generateTts(
+                                serverUrl = serverUrl,
+                                token = token,
+                                text = cleanText,
+                                voice = currentVoice
+                            ) { result ->
+                                result.onSuccess { relativeUrl ->
+                                    val resolvedUrl = if (relativeUrl.startsWith("/")) {
+                                        val host = serverUrl.trimEnd('/')
+                                        if (host.startsWith("http")) "$host$relativeUrl" else "http://$host$relativeUrl"
+                                    } else {
+                                        relativeUrl
+                                    }
+                                    playAudio(resolvedUrl)
+                                }
+                            }
+                        }
+                    }
+
                     // Award XP for this interaction
                     viewModelScope.launch(Dispatchers.IO) {
                         repository.addXpAndIncrementMessages(targetChar.id, 5)
@@ -405,6 +529,7 @@ class GroupChatViewModel(
                 },
                 onFailure = { error ->
                     _isGenerating.value = false
+                    _typingCompanionName.value = null
                     viewModelScope.launch(Dispatchers.IO) {
                         repository.insertGroupMessage(
                             GroupMessageEntity(
@@ -438,6 +563,14 @@ class GroupChatViewModel(
             appendLine("[System Instruction: You can dynamically update your location, outfit, or expression/mood if the context changes by including '[Location: name]', '[Outfit: description]', or '[Mood: expression]' inside your <thought>...</thought> block. Example: '<thought>[Outfit: nightgown] [Location: bedroom] [Mood: sleepy]</thought> Goodnight!' Only change these when it makes sense for the chat flow.]")
             appendLine("[System Instruction: Format roleplay actions, physical gestures, and immediate/direct thoughts using asterisks (e.g. *smiles and waves*, *thinking to myself: this is interesting*). Do not use square brackets [like this] for roleplay actions or thoughts. Understand that $userName will also use asterisks for their actions and thoughts.]")
             appendLine("[System Instruction: You have access to the 'generate_portrait' tool. You should invoke it whenever $userName asks for a picture, photo, selfie, or visual update, or when you decide on your own to show $userName what you are doing. To call the tool, you MUST output the tag <call>generate_portrait</call> immediately after your </thought> tag (before your conversational dialogue). Do not output any arguments. The app will automatically generate the image and display it to the user.]")
+
+            // Load long-term memories from their single-companion chats
+            val memories = repository.getRecentMemories(targetChar.id, 10)
+            if (memories.isNotEmpty()) {
+                appendLine()
+                appendLine("[Memories you (${targetChar.name}) have about $userName from your previous interactions:]")
+                memories.forEach { appendLine("- ${it.content}") }
+            }
         }
 
         // Fetch history
@@ -464,6 +597,7 @@ class GroupChatViewModel(
 
         viewModelScope.launch(Dispatchers.IO) {
             _isGenerating.value = true
+            _typingCompanionName.value = targetChar.name
 
             val placeholderId = repository.insertGroupMessage(
                 GroupMessageEntity(
@@ -670,6 +804,32 @@ class GroupChatViewModel(
                         }
                     }
 
+                    _typingCompanionName.value = null
+
+                    // Generate and play TTS audio response
+                    val currentVoice = targetChar.voiceId ?: "en_US-amy-medium"
+                    if (cleanText.isNotBlank()) {
+                        val autoSpeak = sharedPrefs.getBoolean("auto_speak", true)
+                        if (autoSpeak) {
+                            HavenHttpClient.generateTts(
+                                serverUrl = serverUrl,
+                                token = token,
+                                text = cleanText,
+                                voice = currentVoice
+                            ) { result ->
+                                result.onSuccess { relativeUrl ->
+                                    val resolvedUrl = if (relativeUrl.startsWith("/")) {
+                                        val host = serverUrl.trimEnd('/')
+                                        if (host.startsWith("http")) "$host$relativeUrl" else "http://$host$relativeUrl"
+                                    } else {
+                                        relativeUrl
+                                    }
+                                    playAudio(resolvedUrl)
+                                }
+                            }
+                        }
+                    }
+
                     viewModelScope.launch(Dispatchers.IO) {
                         repository.addXpAndIncrementMessages(targetChar.id, 5)
                     }
@@ -695,6 +855,7 @@ class GroupChatViewModel(
                 },
                 onFailure = { error ->
                     _isGenerating.value = false
+                    _typingCompanionName.value = null
                     viewModelScope.launch(Dispatchers.IO) {
                         repository.insertGroupMessage(
                             GroupMessageEntity(
@@ -725,6 +886,14 @@ class GroupChatViewModel(
             appendLine("[System Instructions: You are currently writing the response for ${targetChar.name} ONLY. Do not write dialogues or thoughts for other characters. Respond to the other participants naturally, having a back-and-forth dialogue.]")
             appendLine("[System Rule: Before responding, you MUST write down your inner thoughts, plans, or reasoning inside <thought>...</thought> tags, followed by your actual response to $userName. Do not omit the tags.]")
             appendLine("[System Instruction: Format roleplay actions, physical gestures, and immediate/direct thoughts using asterisks (e.g. *smiles and waves*, *thinking to myself: this is interesting*). Do not use square brackets [like this] for roleplay actions or thoughts. Understand that $userName will also use asterisks for their actions and thoughts.]")
+
+            // Load long-term memories from their single-companion chats
+            val memories = repository.getRecentMemories(targetChar.id, 10)
+            if (memories.isNotEmpty()) {
+                appendLine()
+                appendLine("[Memories you (${targetChar.name}) have about $userName from your previous interactions:]")
+                memories.forEach { appendLine("- ${it.content}") }
+            }
         }
 
         val allMsgs = repository.getGroupMessages(groupId).first()

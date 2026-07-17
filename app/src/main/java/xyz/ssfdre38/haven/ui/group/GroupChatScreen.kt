@@ -12,6 +12,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -59,6 +61,7 @@ fun GroupChatScreen(
     val selectedSpeakerId by viewModel.selectedSpeakerId.collectAsStateWithLifecycle()
     val isGenerating by viewModel.isGenerating.collectAsStateWithLifecycle()
     val activeStreamingMessageId by viewModel.activeStreamingMessageId.collectAsStateWithLifecycle()
+    val allCompanions by repository.getAllCharacters().collectAsStateWithLifecycle(emptyList())
 
     val filteredMessages = remember(messages, activeStreamingMessageId) {
         messages.filter { msg ->
@@ -172,13 +175,65 @@ fun GroupChatScreen(
                     .navigationBarsPadding()
                     .imePadding()
             ) {
+                // Active typing companion indicator
+                val typingName by viewModel.typingCompanionName.collectAsStateWithLifecycle()
+                if (typingName != null) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(12.dp),
+                            strokeWidth = 1.5.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "${typingName} is writing...",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontStyle = FontStyle.Italic
+                        )
+                    }
+                }
+
                 // Speaker Selector Chips
-                Text(
-                    text = "Active Responder:",
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                val activeSpeaker = participants.firstOrNull { it.id == selectedSpeakerId }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Active Responder:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (activeSpeaker != null) {
+                        val statusText = buildString {
+                            if (activeSpeaker.currentOutfit.isNotBlank()) append(activeSpeaker.currentOutfit)
+                            if (activeSpeaker.currentLocation.isNotBlank()) {
+                                if (isNotEmpty()) append(" • ")
+                                append(activeSpeaker.currentLocation)
+                            }
+                            if (activeSpeaker.currentMood.isNotBlank()) {
+                                if (isNotEmpty()) append(" • ")
+                                append(activeSpeaker.currentMood)
+                            }
+                        }
+                        if (statusText.isNotBlank()) {
+                            Text(
+                                text = statusText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
                 LazyRow(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -328,12 +383,13 @@ fun GroupChatScreen(
         if (showSettingsDialog) {
             val autoBanter by viewModel.autoBanterEnabled.collectAsStateWithLifecycle()
             val banterLimit by viewModel.banterLimit.collectAsStateWithLifecycle()
+            var tempSelectedParticipants by remember(participants) { mutableStateOf(participants.toSet()) }
 
             AlertDialog(
                 onDismissRequest = { showSettingsDialog = false },
                 title = { Text("Group Chat Settings") },
                 text = {
-                    Column(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -375,11 +431,56 @@ fun GroupChatScreen(
                                 }
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text("Edit Companions in Room:", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        allCompanions.forEach { char ->
+                            val isChecked = tempSelectedParticipants.any { it.id == char.id }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        tempSelectedParticipants = if (isChecked) {
+                                            tempSelectedParticipants.filter { it.id != char.id }.toSet()
+                                        } else {
+                                            tempSelectedParticipants + char
+                                        }
+                                    }
+                                    .padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = isChecked,
+                                    onCheckedChange = { checked ->
+                                        tempSelectedParticipants = if (!checked) {
+                                            tempSelectedParticipants.filter { it.id != char.id }.toSet()
+                                        } else {
+                                            tempSelectedParticipants + char
+                                        }
+                                    }
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(char.name, color = Color.White.copy(alpha = 0.8f))
+                            }
+                        }
                     }
                 },
                 confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.updateParticipants(context, serverUrl, token, tempSelectedParticipants.toList())
+                        showSettingsDialog = false
+                    }) {
+                        Text("Apply", color = MaterialTheme.colorScheme.primary)
+                    }
+                },
+                dismissButton = {
                     TextButton(onClick = { showSettingsDialog = false }) {
-                        Text("Done", color = MaterialTheme.colorScheme.primary)
+                        Text("Cancel", color = Color.White.copy(alpha = 0.6f))
                     }
                 },
                 containerColor = Color(0xFF1E1035),
