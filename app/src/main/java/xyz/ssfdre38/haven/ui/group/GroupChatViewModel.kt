@@ -51,8 +51,195 @@ class GroupChatViewModel(
 
     private var activePlayer: android.media.MediaPlayer? = null
 
+    val ambientAudioMap = mapOf(
+        "fireplace" to "https://assets.mixkit.co/active_storage/sfx/2433/2433-84.wav",
+        "cozy" to "https://assets.mixkit.co/active_storage/sfx/2433/2433-84.wav",
+        "rain" to "https://assets.mixkit.co/active_storage/sfx/2448/2448-84.wav",
+        "cafe" to "https://assets.mixkit.co/active_storage/sfx/2568/2568-84.wav",
+        "library" to "https://assets.mixkit.co/active_storage/sfx/1971/1971-84.wav"
+    )
+
+    private var ambientPlayer: android.media.MediaPlayer? = null
+    private var currentAmbientUrl: String? = null
+
+    fun updateAmbientSound(location: String) {
+        val locLower = location.lowercase()
+        val matchUrl = ambientAudioMap.entries.firstOrNull { locLower.contains(it.key) }?.value
+        
+        viewModelScope.launch(Dispatchers.Main) {
+            if (matchUrl == null) {
+                fadeAndStopAmbient()
+                return@launch
+            }
+            
+            if (currentAmbientUrl == matchUrl && ambientPlayer?.isPlaying == true) {
+                return@launch
+            }
+            
+            fadeAndStopAmbient()
+            currentAmbientUrl = matchUrl
+            
+            try {
+                val player = android.media.MediaPlayer().apply {
+                    setDataSource(matchUrl)
+                    isLooping = true
+                    setVolume(0f, 0f)
+                    prepareAsync()
+                    setOnPreparedListener {
+                        start()
+                        fadeInVolume(this, 0.15f)
+                    }
+                }
+                ambientPlayer = player
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+    
+    private fun fadeAndStopAmbient() {
+        val player = ambientPlayer ?: return
+        ambientPlayer = null
+        currentAmbientUrl = null
+        
+        viewModelScope.launch(Dispatchers.Main) {
+            try {
+                for (i in 10 downTo 0) {
+                    val vol = (i / 10f) * 0.15f
+                    player.setVolume(vol, vol)
+                    delay(100)
+                }
+                player.stop()
+                player.release()
+            } catch (e: Exception) {
+                try { player.release() } catch (ex: Exception) {}
+            }
+        }
+    }
+    
+    private fun fadeInVolume(player: android.media.MediaPlayer, targetVolume: Float) {
+        viewModelScope.launch(Dispatchers.Main) {
+            try {
+                for (i in 0..10) {
+                    val vol = (i / 10f) * targetVolume
+                    player.setVolume(vol, vol)
+                    delay(150)
+                }
+            } catch (e: Exception) {
+                try { player.setVolume(targetVolume, targetVolume) } catch (ex: Exception) {}
+            }
+        }
+    }
+
     private val _typingCompanionName = MutableStateFlow<String?>(null)
     val typingCompanionName: StateFlow<String?> = _typingCompanionName.asStateFlow()
+
+    data class CompanionRelation(
+        val affinity: Int = 50,
+        val sentiment: String = "neutral"
+    )
+
+    private fun getRelationsFile(context: Context): File {
+        return File(context.filesDir, "companion_relations.json")
+    }
+
+    fun loadRelations(context: Context): Map<String, Map<String, CompanionRelation>> {
+        val file = getRelationsFile(context)
+        if (!file.exists()) return emptyMap()
+        return try {
+            val jsonStr = file.readText()
+            val jsonObj = org.json.JSONObject(jsonStr)
+            val result = mutableMapOf<String, Map<String, CompanionRelation>>()
+            jsonObj.keys().forEach { sourceKey ->
+                val innerObj = jsonObj.getJSONObject(sourceKey)
+                val innerMap = mutableMapOf<String, CompanionRelation>()
+                innerObj.keys().forEach { targetKey ->
+                    val relObj = innerObj.getJSONObject(targetKey)
+                    innerMap[targetKey] = CompanionRelation(
+                        affinity = relObj.optInt("affinity", 50),
+                        sentiment = relObj.optString("sentiment", "neutral")
+                    )
+                }
+                result[sourceKey] = innerMap
+            }
+            result
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyMap()
+        }
+    }
+
+    fun saveRelations(context: Context, relations: Map<String, Map<String, CompanionRelation>>) {
+        val file = getRelationsFile(context)
+        try {
+            val jsonObj = org.json.JSONObject()
+            relations.forEach { (sourceKey, innerMap) ->
+                val innerObj = org.json.JSONObject()
+                innerMap.forEach { (targetKey, rel) ->
+                    val relObj = org.json.JSONObject().apply {
+                        put("affinity", rel.affinity)
+                        put("sentiment", rel.sentiment)
+                    }
+                    innerObj.put(targetKey, relObj)
+                }
+                jsonObj.put(sourceKey, innerObj)
+            }
+            file.writeText(jsonObj.toString(2))
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun detectRelationshipTitle(targetChar: CharacterEntity?, affinity: Int): String {
+        return when {
+            affinity >= 95 -> "devoted lover"
+            affinity >= 85 -> {
+                val desc = targetChar?.description?.lowercase() ?: ""
+                when {
+                    desc.contains("female") || desc.contains("girl") || desc.contains("woman") || desc.contains("she/her") -> "girlfriend"
+                    desc.contains("male") || desc.contains("boy") || desc.contains("man") || desc.contains("he/him") -> "boyfriend"
+                    else -> "lover"
+                }
+            }
+            affinity >= 70 -> "close friend"
+            affinity >= 50 -> "friendly"
+            affinity >= 35 -> "neutral"
+            else -> "distant"
+        }
+    }
+
+    fun adjustAffinity(context: Context, sourceCharName: String, targetCharName: String, text: String) {
+        val textLower = text.lowercase()
+        var diff = 0
+        val posWords = listOf("thank", "love", "smile", "happy", "wonderful", "agree", "great", "friendly", "friend", "kind", "beautiful", "sweet", "darling", "honey", "boyfriend", "girlfriend", "kiss", "hug", "babe", "dear")
+        val negWords = listOf("disagree", "annoying", "stop", "angry", "frown", "sigh", "ignore", "rude", "cold", "jealous", "hate", "fight")
+        
+        posWords.forEach { word ->
+            if (textLower.contains(word)) diff += 2
+        }
+        negWords.forEach { word ->
+            if (textLower.contains(word)) diff -= 2
+        }
+        
+        if (diff != 0) {
+            viewModelScope.launch(Dispatchers.IO) {
+                val relations = loadRelations(context).toMutableMap()
+                val innerMap = relations[sourceCharName]?.toMutableMap() ?: mutableMapOf()
+                val currentRel = innerMap[targetCharName] ?: CompanionRelation()
+                
+                val newAffinity = (currentRel.affinity + diff).coerceIn(10, 100)
+                val targetCharEntity = repository.getCharacterByName(targetCharName)
+                val newSentiment = detectRelationshipTitle(targetCharEntity, newAffinity)
+                
+                innerMap[targetCharName] = CompanionRelation(newAffinity, newSentiment)
+                relations[sourceCharName] = innerMap
+                saveRelations(context, relations)
+                
+                val ids = _group.value?.characterIdsString?.split(",")?.mapNotNull { it.trim().toIntOrNull() } ?: emptyList()
+                _participants.value = ids.mapNotNull { repository.getCharacterById(it) }
+            }
+        }
+    }
 
     fun playAudio(audioUrl: String) {
         viewModelScope.launch(Dispatchers.Main) {
@@ -99,6 +286,14 @@ class GroupChatViewModel(
         super.onCleared()
         activePlayer?.let { player ->
             activePlayer = null
+            try {
+                player.release()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        ambientPlayer?.let { player ->
+            ambientPlayer = null
             try {
                 player.release()
             } catch (e: Exception) {
@@ -152,6 +347,11 @@ class GroupChatViewModel(
             activePlayer = null
             try { player.stop(); player.release() } catch (e: Exception) {}
         }
+        ambientPlayer?.let { player ->
+            ambientPlayer = null
+            currentAmbientUrl = null
+            try { player.stop(); player.release() } catch (e: Exception) {}
+        }
     }
 
     init {
@@ -165,6 +365,7 @@ class GroupChatViewModel(
                 _participants.value = chars
                 if (chars.isNotEmpty()) {
                     _selectedSpeakerId.value = chars.first().id
+                    updateAmbientSound(chars.first().currentLocation)
                 }
             }
         }
@@ -172,6 +373,10 @@ class GroupChatViewModel(
 
     fun selectSpeaker(characterId: Int) {
         _selectedSpeakerId.value = characterId
+        val char = _participants.value.firstOrNull { it.id == characterId }
+        if (char != null) {
+            updateAmbientSound(char.currentLocation)
+        }
     }
 
     fun sendMessage(context: Context, serverUrl: String, token: String, text: String) {
@@ -312,6 +517,9 @@ class GroupChatViewModel(
                                         currentMood = newMood ?: currentChar.currentMood
                                     )
                                     repository.updateCharacter(updatedChar)
+                                    if (newLocation != null) {
+                                        updateAmbientSound(newLocation)
+                                    }
 
                                     // Refresh local participants list
                                     val ids = _group.value?.characterIdsString?.split(",")?.mapNotNull { it.trim().toIntOrNull() } ?: emptyList()
@@ -478,6 +686,11 @@ class GroupChatViewModel(
                         }
                     }
 
+                    // Adjust affinity towards other participants based on dialogue text content
+                    chars.filter { it.id != targetChar.id }.forEach { otherChar ->
+                        adjustAffinity(context, targetChar.name, otherChar.name, cleanText)
+                    }
+
                     _typingCompanionName.value = null
 
                     // Generate and play TTS audio response
@@ -518,7 +731,24 @@ class GroupChatViewModel(
                         banterCount++
                         val otherParticipants = chars.filter { it.id != targetChar.id }
                         if (otherParticipants.isNotEmpty()) {
-                            val nextSpeaker = otherParticipants.random()
+                            var nextSpeaker = otherParticipants.random()
+                            val lowerText = cleanText.lowercase()
+                            
+                            // Check for direct mentions to select the next speaker dynamically
+                            val mentionedChar = otherParticipants.firstOrNull { c ->
+                                val nameLower = c.name.lowercase()
+                                lowerText.contains("@$nameLower") || 
+                                lowerText.contains("hey $nameLower") || 
+                                lowerText.contains("what do you think, $nameLower") ||
+                                lowerText.contains("right, $nameLower?") ||
+                                lowerText.contains("$nameLower, ") ||
+                                lowerText.contains("$nameLower?")
+                            }
+                            
+                            if (mentionedChar != null) {
+                                nextSpeaker = mentionedChar
+                            }
+
                             banterJob?.cancel()
                             banterJob = viewModelScope.launch {
                                 delay(3000)
@@ -685,6 +915,9 @@ class GroupChatViewModel(
                                         currentMood = newMood ?: currentChar.currentMood
                                     )
                                     repository.updateCharacter(updatedChar)
+                                    if (newLocation != null) {
+                                        updateAmbientSound(newLocation)
+                                    }
                                 }
                             }
                         }
@@ -804,6 +1037,11 @@ class GroupChatViewModel(
                         }
                     }
 
+                    // Adjust affinity towards other participants based on dialogue text content
+                    chars.filter { it.id != targetChar.id }.forEach { otherChar ->
+                        adjustAffinity(context, targetChar.name, otherChar.name, cleanText)
+                    }
+
                     _typingCompanionName.value = null
 
                     // Generate and play TTS audio response
@@ -844,7 +1082,24 @@ class GroupChatViewModel(
                         banterCount++
                         val otherParticipants = chars.filter { it.id != targetChar.id }
                         if (otherParticipants.isNotEmpty()) {
-                            val nextSpeaker = otherParticipants.random()
+                            var nextSpeaker = otherParticipants.random()
+                            val lowerText = cleanText.lowercase()
+                            
+                            // Check for direct mentions to select the next speaker dynamically
+                            val mentionedChar = otherParticipants.firstOrNull { c ->
+                                val nameLower = c.name.lowercase()
+                                lowerText.contains("@$nameLower") || 
+                                lowerText.contains("hey $nameLower") || 
+                                lowerText.contains("what do you think, $nameLower") ||
+                                lowerText.contains("right, $nameLower?") ||
+                                lowerText.contains("$nameLower, ") ||
+                                lowerText.contains("$nameLower?")
+                            }
+                            
+                            if (mentionedChar != null) {
+                                nextSpeaker = mentionedChar
+                            }
+
                             banterJob?.cancel()
                             banterJob = viewModelScope.launch {
                                 delay(3000)

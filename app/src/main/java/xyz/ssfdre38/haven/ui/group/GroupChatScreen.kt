@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.blur
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -111,11 +112,46 @@ fun GroupChatScreen(
         listOf(Color(0xFF1E1035), Color(0xFF0C051A))
     }
 
+    val backdropMap = remember {
+        mapOf(
+            "lobby" to "https://images.unsplash.com/photo-1540518614846-7eded433c457?w=800&auto=format&fit=crop",
+            "fireplace" to "https://images.unsplash.com/photo-1545048702-79362596cdc9?w=800&auto=format&fit=crop",
+            "cozy" to "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=800&auto=format&fit=crop",
+            "rain" to "https://images.unsplash.com/photo-1428908728789-d2de25dbd4e2?w=800&auto=format&fit=crop",
+            "cafe" to "https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=800&auto=format&fit=crop",
+            "library" to "https://images.unsplash.com/photo-1507842217343-583bb7270b66?w=800&auto=format&fit=crop",
+            "bedroom" to "https://images.unsplash.com/photo-1505691938895-1758d7feb511?w=800&auto=format&fit=crop",
+            "garden" to "https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?w=800&auto=format&fit=crop"
+        )
+    }
+
+    val activeSpeaker = participants.firstOrNull { it.id == selectedSpeakerId }
+    val activeLocation = activeSpeaker?.currentLocation?.lowercase() ?: "lobby"
+    val backdropUrl = remember(activeLocation) {
+        backdropMap.entries.firstOrNull { activeLocation.contains(it.key) }?.value 
+            ?: backdropMap["lobby"]
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Brush.verticalGradient(mainGradient))
     ) {
+        if (backdropUrl != null) {
+            coil.compose.AsyncImage(
+                model = backdropUrl,
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(24.dp)
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF0C051A).copy(alpha = 0.65f))
+            )
+        }
         Scaffold(
             topBar = {
                 TopAppBar(
@@ -467,6 +503,33 @@ fun GroupChatScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(char.name, color = Color.White.copy(alpha = 0.8f))
                             }
+                        }
+
+                        val relations = remember(participants) { viewModel.loadRelations(context) }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text("Inter-Companion Sentiments:", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        var hasSentiments = false
+                        participants.forEach { sourceChar ->
+                            participants.forEach { targetChar ->
+                                if (sourceChar.id != targetChar.id) {
+                                    val rel = relations[sourceChar.name]?.get(targetChar.name) ?: GroupChatViewModel.CompanionRelation()
+                                    Text(
+                                        text = "${sourceChar.name} feels ${rel.sentiment} (${rel.affinity}/100) towards ${targetChar.name}",
+                                        color = Color.White.copy(alpha = 0.8f),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.padding(vertical = 4.dp)
+                                    )
+                                    hasSentiments = true
+                                }
+                            }
+                        }
+                        if (!hasSentiments) {
+                            Text("No relationships formed yet.", color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 },
