@@ -323,26 +323,54 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
             val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
             val serverUrl = "$formattedHost:${port.trim()}"
             
-            val serverGroups = HavenHttpClient.getGroups(serverUrl, token)
-            serverGroups.forEach { obj ->
-                val uuid = if (obj.has("id")) obj.getString("id") else obj.getString("uuid")
-                val name = obj.getString("name")
-                val characterNamesStr = if (obj.has("character_names")) obj.getString("character_names") else obj.getString("characterNames")
+            try {
+                val serverGroups = HavenHttpClient.getGroups(serverUrl, token)
+                val serverUuids = serverGroups.map { obj ->
+                    if (obj.has("id")) obj.getString("id") else obj.getString("uuid")
+                }.toSet()
                 
-                val existing = dataRepository.getGroupChatByUuid(uuid)
-                if (existing == null) {
+                serverGroups.forEach { obj ->
+                    val uuid = if (obj.has("id")) obj.getString("id") else obj.getString("uuid")
+                    val name = obj.getString("name")
+                    val characterNamesStr = if (obj.has("character_names")) obj.getString("character_names") else obj.getString("characterNames")
+                    
                     val names = characterNamesStr.split(",").map { it.trim() }
                     val resolvedIds = names.mapNotNull { charName ->
                         dataRepository.getCharacterByName(charName)?.id
                     }
-                    dataRepository.insertGroupChat(
-                        xyz.ssfdre38.haven.data.database.GroupChatEntity(
-                            name = name,
-                            characterIdsString = resolvedIds.joinToString(","),
-                            uuid = uuid
+                    val newIdsStr = resolvedIds.joinToString(",")
+                    
+                    val existing = dataRepository.getGroupChatByUuid(uuid)
+                    if (existing == null) {
+                        dataRepository.insertGroupChat(
+                            xyz.ssfdre38.haven.data.database.GroupChatEntity(
+                                name = name,
+                                characterIdsString = newIdsStr,
+                                uuid = uuid
+                            )
                         )
-                    )
+                    } else {
+                        if (existing.name != name || existing.characterIdsString != newIdsStr) {
+                            dataRepository.insertGroupChat(
+                                existing.copy(
+                                    name = name,
+                                    characterIdsString = newIdsStr
+                                )
+                            )
+                        }
+                    }
                 }
+                
+                // Cleanup groups deleted on the server
+                val localGroups = dataRepository.getAllGroupChats().first()
+                localGroups.forEach { grp ->
+                    val uuid = grp.uuid
+                    if (uuid != null && !serverUuids.contains(uuid)) {
+                        dataRepository.deleteGroupChat(grp)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }
