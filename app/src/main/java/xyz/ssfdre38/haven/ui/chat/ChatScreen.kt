@@ -2,6 +2,14 @@ package xyz.ssfdre38.haven.ui.chat
 
 import xyz.ssfdre38.haven.ui.components.VrmAvatarView
 
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.animation.core.*
@@ -98,6 +106,20 @@ fun ChatScreen(
     val isSpeaking by chatViewModel.isSpeaking.collectAsStateWithLifecycle()
     val errorMessage by chatViewModel.errorMessage.collectAsStateWithLifecycle()
 
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    var wasGenerating by remember { mutableStateOf(false) }
+    LaunchedEffect(isGenerating) {
+        if (wasGenerating && !isGenerating) {
+            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+        }
+        wasGenerating = isGenerating
+    }
+
+    val scope = rememberCoroutineScope()
+    var editingMessage by remember { mutableStateOf<MessageEntity?>(null) }
+    var immersiveMode by remember { mutableStateOf(false) }
+    var blurBackdrop by remember { mutableStateOf(false) }
+
     LaunchedEffect(errorMessage) {
         errorMessage?.let { msg ->
             Toast.makeText(context.applicationContext, msg, Toast.LENGTH_LONG).show()
@@ -130,6 +152,7 @@ fun ChatScreen(
         val currentLevel = (xp / 100) + 1
         if (previousLevel != null && currentLevel > previousLevel!!) {
             showLevelUpDialog = currentLevel
+            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
         }
         previousLevel = currentLevel
     }
@@ -218,6 +241,13 @@ fun ChatScreen(
         modifier = Modifier
             .fillMaxSize()
             .then(bgModifier)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onDoubleTap = {
+                        immersiveMode = !immersiveMode
+                    }
+                )
+            }
     ) {
         // Full-screen static background image (for immersion)
         val localChar = character
@@ -234,10 +264,12 @@ fun ChatScreen(
                 androidx.compose.foundation.Image(
                     painter = coil.compose.rememberAsyncImagePainter(model = request),
                     contentDescription = "Background",
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(if (blurBackdrop) Modifier.blur(20.dp) else Modifier),
                     contentScale = ContentScale.Crop,
                     alignment = Alignment.Center,
-                    alpha = 0.3f
+                    alpha = if (immersiveMode) 0.8f else 0.3f
                 )
             }
         }
@@ -245,67 +277,136 @@ fun ChatScreen(
         Scaffold(
             containerColor = Color.Transparent,
             topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        character?.let { char ->
-                            val avatarPulseAnim = rememberInfiniteTransition(label = "avatar_pulse")
-                            val avatarScale by avatarPulseAnim.animateFloat(
-                                initialValue = 1f,
-                                targetValue = if (isSpeaking) 1.12f else 1f,
-                                animationSpec = infiniteRepeatable(
-                                    animation = tween(500, easing = FastOutSlowInEasing),
-                                    repeatMode = RepeatMode.Reverse
-                                ),
-                                label = "avatarScale"
-                            )
-                            xyz.ssfdre38.haven.ui.main.CharacterAvatar(
-                                character = char,
-                                modifier = Modifier
-                                    .scale(avatarScale)
-                                    .size(36.dp)
-                                    .border(
-                                        if (isSpeaking) 1.5.dp else 0.dp,
-                                        if (isSpeaking) Color(0xFF4CAF50) else Color.Transparent,
-                                        CircleShape
+                if (!immersiveMode) {
+                    TopAppBar(
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                character?.let { char ->
+                                    val avatarPulseAnim = rememberInfiniteTransition(label = "avatar_pulse")
+                                    val avatarScale by avatarPulseAnim.animateFloat(
+                                        initialValue = 1f,
+                                        targetValue = if (isSpeaking) 1.12f else 1f,
+                                        animationSpec = infiniteRepeatable(
+                                            animation = tween(500, easing = FastOutSlowInEasing),
+                                            repeatMode = RepeatMode.Reverse
+                                        ),
+                                        label = "avatarScale"
                                     )
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = char.name,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    if (char.currentMood.isNotBlank()) {
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        var moodMenuExpanded by remember { mutableStateOf(false) }
-                                        Box {
-                                            Text(
-                                                text = getMoodEmoji(char.currentMood),
-                                                style = MaterialTheme.typography.titleMedium,
-                                                modifier = Modifier
-                                                    .clickable { moodMenuExpanded = true }
-                                                    .padding(2.dp)
+                                    xyz.ssfdre38.haven.ui.main.CharacterAvatar(
+                                        character = char,
+                                        modifier = Modifier
+                                            .scale(avatarScale)
+                                            .size(36.dp)
+                                            .border(
+                                                if (isSpeaking) 1.5.dp else 0.dp,
+                                                if (isSpeaking) Color(0xFF4CAF50) else Color.Transparent,
+                                                CircleShape
                                             )
-                                            DropdownMenu(
-                                                expanded = moodMenuExpanded,
-                                                onDismissRequest = { moodMenuExpanded = false }
-                                            ) {
-                                                DropdownMenuItem(
-                                                    text = {
-                                                        Text(
-                                                            text = "Current Mood: ${char.currentMood.replaceFirstChar { it.uppercase() }}",
-                                                            style = MaterialTheme.typography.bodyMedium
-                                                        )
-                                                    },
-                                                    onClick = { moodMenuExpanded = false }
-                                                )
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = char.name,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            if (char.currentMood.isNotBlank()) {
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                var moodMenuExpanded by remember { mutableStateOf(false) }
+                                                Box {
+                                                    Text(
+                                                        text = getMoodEmoji(char.currentMood),
+                                                        style = MaterialTheme.typography.titleMedium,
+                                                        modifier = Modifier
+                                                            .clickable { moodMenuExpanded = true }
+                                                            .padding(2.dp)
+                                                    )
+                                                    DropdownMenu(
+                                                        expanded = moodMenuExpanded,
+                                                        onDismissRequest = { moodMenuExpanded = false },
+                                                        modifier = Modifier.width(240.dp).background(MaterialTheme.colorScheme.surface)
+                                                    ) {
+                                                        val level = (char.relationshipXp / 100) + 1
+                                                        val xpInCurrentLevel = char.relationshipXp % 100
+                                                        val xpProgress = xpInCurrentLevel / 100f
+                                                        val relationshipTitle = when {
+                                                            level >= 20 -> "Partner"
+                                                            level >= 10 -> "Close Friend"
+                                                            level >= 5  -> "Friend"
+                                                            else        -> "Acquaintance"
+                                                        }
+
+                                                        Column(modifier = Modifier.padding(14.dp)) {
+                                                            Text(
+                                                                text = "Relationship Bond",
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                                                            )
+                                                            Spacer(modifier = Modifier.height(4.dp))
+                                                            Text(
+                                                                text = relationshipTitle,
+                                                                style = MaterialTheme.typography.titleMedium,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = MaterialTheme.colorScheme.onSurface
+                                                            )
+                                                            Spacer(modifier = Modifier.height(2.dp))
+                                                            Text(
+                                                                text = "Lv $level • $xpInCurrentLevel / 100 XP",
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                            )
+                                                            Spacer(modifier = Modifier.height(8.dp))
+                                                            LinearProgressIndicator(
+                                                                progress = { xpProgress },
+                                                                modifier = Modifier
+                                                                    .fillMaxWidth()
+                                                                    .height(5.dp)
+                                                                    .clip(CircleShape),
+                                                                color = when {
+                                                                    level >= 20 -> Color(0xFFFFD700)
+                                                                    level >= 10 -> Color(0xFF9C27B0)
+                                                                    level >= 5  -> Color(0xFF2196F3)
+                                                                    else        -> Color(0xFF4CAF50)
+                                                                },
+                                                                trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+                                                            )
+                                                            Spacer(modifier = Modifier.height(14.dp))
+                                                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                                                            Spacer(modifier = Modifier.height(12.dp))
+                                                            
+                                                            // Mood
+                                                            Text(
+                                                                text = "Current Mood: ${char.currentMood.replaceFirstChar { it.uppercase() }}",
+                                                                style = MaterialTheme.typography.bodyMedium,
+                                                                color = MaterialTheme.colorScheme.onSurface
+                                                            )
+                                                            
+                                                            // Location
+                                                            if (char.currentLocation.isNotBlank()) {
+                                                                Spacer(modifier = Modifier.height(6.dp))
+                                                                Text(
+                                                                    text = "📍 Location: ${char.currentLocation}",
+                                                                    style = MaterialTheme.typography.bodyMedium,
+                                                                    color = MaterialTheme.colorScheme.onSurface
+                                                                )
+                                                            }
+                                                            
+                                                            // Outfit
+                                                            if (char.currentOutfit.isNotBlank()) {
+                                                                Spacer(modifier = Modifier.height(6.dp))
+                                                                Text(
+                                                                    text = "👗 Outfit: ${char.currentOutfit}",
+                                                                    style = MaterialTheme.typography.bodyMedium,
+                                                                    color = MaterialTheme.colorScheme.onSurface
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
-                                    }
-                                }
                                 if (isGenerating) {
                                     Text(
                                         text = "Typing...",
@@ -387,6 +488,34 @@ fun ChatScreen(
                             expanded = expanded,
                             onDismissRequest = { expanded = false }
                         ) {
+                            DropdownMenuItem(
+                                text = { Text(if (blurBackdrop) "Disable Wallpaper Blur" else "Enable Wallpaper Blur") },
+                                onClick = {
+                                    expanded = false
+                                    blurBackdrop = !blurBackdrop
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Image,
+                                        contentDescription = "Blur Wallpaper"
+                                    )
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Immersive Mode") },
+                                onClick = {
+                                    expanded = false
+                                    immersiveMode = true
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Filled.AutoAwesome,
+                                        contentDescription = "Immersive Mode"
+                                    )
+                                }
+                            )
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                            
                             DropdownMenuItem(
                                 text = { Text("View Journal") },
                                 onClick = {
@@ -496,153 +625,157 @@ fun ChatScreen(
                     containerColor = Color.Transparent
                 )
             )
-        },
+        }
+    },
         bottomBar = {
-            Surface(
-                color = Color.Black.copy(alpha = 0.45f),
-                tonalElevation = 0.dp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                        .navigationBarsPadding()
+            if (!immersiveMode) {
+                Surface(
+                    color = Color.Black.copy(alpha = 0.45f),
+                    tonalElevation = 0.dp,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    // Selected image preview chip
-                    selectedImageUri?.let { uri ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(bottom = 6.dp)
-                        ) {
-                            AsyncImage(
-                                model = uri,
-                                contentDescription = "Attached image",
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(RoundedCornerShape(8.dp)),
-                                contentScale = ContentScale.Crop
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Image attached",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.weight(1f)
-                            )
+                    Column(
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                            .navigationBarsPadding()
+                    ) {
+                        // Selected image preview chip
+                        selectedImageUri?.let { uri ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            ) {
+                                AsyncImage(
+                                    model = uri,
+                                    contentDescription = "Attached image",
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(RoundedCornerShape(8.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Image attached",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(
+                                    onClick = { selectedImageUri = null },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Remove image",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        }
+                        val performSend = {
+                            val text = inputText.trim()
+                            val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+                            val ashHost = prefs.getString("ash_host", null)
+                            val ashPort = prefs.getString("ash_port", "18799")
+                            val token = prefs.getString("auth_token", null)
+                            if (ashHost.isNullOrBlank() || token.isNullOrBlank()) {
+                                Toast.makeText(context, "Please configure the server in Settings first", Toast.LENGTH_LONG).show()
+                            } else if (text.isNotBlank() || selectedImageUri != null) {
+                                val serverUrl = "${ashHost.trimEnd('/')}:$ashPort"
+                                val capturedUri = selectedImageUri
+                                inputText = ""
+                                selectedImageUri = null
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                                if (capturedUri != null) {
+                                    chatViewModel.sendPhotoMessage(context.applicationContext, serverUrl, token, text, capturedUri)
+                                } else {
+                                    chatViewModel.sendMessage(context.applicationContext, serverUrl, token, text)
+                                }
+                            }
+                        }
+                        val canSend = (inputText.isNotBlank() || selectedImageUri != null) && !isGenerating
+
+                        // Input row
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Attach image button
                             IconButton(
-                                onClick = { selectedImageUri = null },
-                                modifier = Modifier.size(24.dp)
+                                onClick = { imagePickerLauncher.launch("image/*") },
+                                modifier = Modifier.size(40.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Remove image",
-                                    modifier = Modifier.size(16.dp),
-                                    tint = MaterialTheme.colorScheme.error
+                                    imageVector = Icons.Default.Image,
+                                    contentDescription = "Attach image",
+                                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
                                 )
                             }
-                        }
-                    }
-                    val performSend = {
-                        val text = inputText.trim()
-                        val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
-                        val ashHost = prefs.getString("ash_host", null)
-                        val ashPort = prefs.getString("ash_port", "18799")
-                        val token = prefs.getString("auth_token", null)
-                        if (ashHost.isNullOrBlank() || token.isNullOrBlank()) {
-                            Toast.makeText(context, "Please configure the server in Settings first", Toast.LENGTH_LONG).show()
-                        } else if (text.isNotBlank() || selectedImageUri != null) {
-                            val serverUrl = "${ashHost.trimEnd('/')}:$ashPort"
-                            val capturedUri = selectedImageUri
-                            inputText = ""
-                            selectedImageUri = null
-                            if (capturedUri != null) {
-                                chatViewModel.sendPhotoMessage(context.applicationContext, serverUrl, token, text, capturedUri)
-                            } else {
-                                chatViewModel.sendMessage(context.applicationContext, serverUrl, token, text)
+
+                            // AI Portrait Generation Button!
+                            IconButton(
+                                onClick = { requestPortrait() },
+                                enabled = !isGenerating,
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.AutoAwesome,
+                                    contentDescription = "Request Portrait",
+                                    tint = if (isGenerating) Color.White.copy(alpha = 0.3f) else MaterialTheme.colorScheme.primary
+                                )
                             }
-                        }
-                    }
-                    val canSend = (inputText.isNotBlank() || selectedImageUri != null) && !isGenerating
 
-                    // Input row
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Attach image button
-                        IconButton(
-                            onClick = { imagePickerLauncher.launch("image/*") },
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Image,
-                                contentDescription = "Attach image",
-                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
-                            )
-                        }
-
-                        // AI Portrait Generation Button!
-                        IconButton(
-                            onClick = { requestPortrait() },
-                            enabled = !isGenerating,
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.AutoAwesome,
-                                contentDescription = "Request Portrait",
-                                tint = if (isGenerating) Color.White.copy(alpha = 0.3f) else MaterialTheme.colorScheme.primary
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(4.dp))
-                        OutlinedTextField(
-                            value = inputText,
-                            onValueChange = { inputText = it },
-                            placeholder = { Text("Message...", color = Color.White.copy(alpha = 0.5f)) },
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = Color.Black.copy(alpha = 0.25f),
-                                unfocusedContainerColor = Color.Black.copy(alpha = 0.15f),
-                                disabledContainerColor = Color.Black.copy(alpha = 0.05f),
-                                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                                unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
-                            ),
-                            modifier = Modifier
-                                .weight(1f)
-                                .onPreviewKeyEvent { keyEvent ->
-                                    if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.Enter) {
-                                        if (!keyEvent.isShiftPressed) {
-                                            if (canSend) {
-                                                performSend()
+                            Spacer(modifier = Modifier.width(4.dp))
+                            OutlinedTextField(
+                                value = inputText,
+                                onValueChange = { inputText = it },
+                                placeholder = { Text("Message...", color = Color.White.copy(alpha = 0.5f)) },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Black.copy(alpha = 0.25f),
+                                    unfocusedContainerColor = Color.Black.copy(alpha = 0.15f),
+                                    disabledContainerColor = Color.Black.copy(alpha = 0.05f),
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White
+                                ),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .onPreviewKeyEvent { keyEvent ->
+                                        if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.Enter) {
+                                            if (!keyEvent.isShiftPressed) {
+                                                if (canSend) {
+                                                    performSend()
+                                                }
+                                                true // consume event
+                                            } else {
+                                                false // let shift+enter insert newline
                                             }
-                                            true // consume event
                                         } else {
-                                            false // let shift+enter insert newline
+                                            false
                                         }
-                                    } else {
-                                        false
-                                    }
-                                },
-                            maxLines = 4,
-                            enabled = !isGenerating,
-                            shape = RoundedCornerShape(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(
-                            onClick = { performSend() },
-                            enabled = canSend,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .background(
-                                    if (canSend) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.surfaceVariant,
-                                    CircleShape
-                                )
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Send,
-                                contentDescription = "Send",
-                                tint = if (canSend) MaterialTheme.colorScheme.onPrimary
-                                       else MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                maxLines = 4,
+                                enabled = !isGenerating,
+                                shape = RoundedCornerShape(24.dp)
                             )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            IconButton(
+                                onClick = { performSend() },
+                                enabled = canSend,
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .background(
+                                        if (canSend) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.surfaceVariant,
+                                        CircleShape
+                                    )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = "Send",
+                                    tint = if (canSend) MaterialTheme.colorScheme.onPrimary
+                                           else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
@@ -668,22 +801,48 @@ fun ChatScreen(
         val configuration = androidx.compose.ui.platform.LocalConfiguration.current
         val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         val isTabletOrWide = configuration.screenWidthDp >= 600 || isLandscape
-
         Box(
             modifier = Modifier
-                .padding(innerPadding)
+                .padding(if (immersiveMode) PaddingValues(0.dp) else innerPadding)
                 .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures(onDoubleTap = { immersiveMode = !immersiveMode })
+                }
         ) {
+            // Sleek Level/XP progress bar at the very top of the chat area (just under top bar)
+            character?.let { char ->
+                val level = (char.relationshipXp / 100) + 1
+                val xpInCurrentLevel = char.relationshipXp % 100
+                val xpProgress = xpInCurrentLevel / 100f
+                val progressColor = when {
+                    level >= 20 -> Color(0xFFFFD700) // Gold
+                    level >= 10 -> Color(0xFF9C27B0) // Purple
+                    level >= 5  -> Color(0xFF2196F3) // Blue
+                    else        -> Color(0xFF4CAF50) // Green
+                }
+
+                LinearProgressIndicator(
+                    progress = { xpProgress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.5.dp)
+                        .align(Alignment.TopCenter),
+                    color = progressColor,
+                    trackColor = progressColor.copy(alpha = 0.12f)
+                )
+            }
+
             val vrmPath = character?.vrmModelPath
             val hasVrm = remember(vrmPath) { vrmPath?.let { File(it).exists() } == true }
 
             if (isTabletOrWide) {
                 Row(modifier = Modifier.fillMaxSize()) {
-                    // Left 3D Character View (40% width)
+                    // Left 3D Character View (40% width / 100% if immersive)
+                    val leftWeight = if (immersiveMode) 1f else 0.4f
                     if (hasVrm && vrmPath != null) {
                         Box(
                             modifier = Modifier
-                                .weight(0.4f)
+                                .weight(leftWeight)
                                 .fillMaxHeight()
                         ) {
                             VrmAvatarView(
@@ -698,51 +857,59 @@ fun ChatScreen(
                         // Fallback: 2D static large character avatar
                         Box(
                             modifier = Modifier
-                                .weight(0.4f)
+                                .weight(leftWeight)
                                 .fillMaxHeight(),
                             contentAlignment = Alignment.Center
                         ) {
                             character?.let { char ->
                                 xyz.ssfdre38.haven.ui.main.CharacterAvatar(
                                     character = char,
-                                    modifier = Modifier.size(200.dp)
+                                    modifier = Modifier.size(if (immersiveMode) 320.dp else 200.dp)
                                 )
                             }
                         }
                     }
 
                     // Right Chat Messages View (60% width)
-                    Box(
-                        modifier = Modifier
-                            .weight(0.6f)
-                            .fillMaxHeight()
-                    ) {
-                        LazyColumn(
-                            state = listState,
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                    if (!immersiveMode) {
+                        Box(
+                            modifier = Modifier
+                                .weight(0.6f)
+                                .fillMaxHeight()
                         ) {
-                            items(messages, key = { it.id }) { message ->
-                                val isLast = message.id == messages.lastOrNull { it.sender == "character" }?.id
-                                MessageBubble(
-                                    message = message,
-                                    character = character,
-                                    onImageClick = { activeFullscreenImage = it },
-                                    isLastMessage = isLast,
-                                    onRegenerateClick = {
-                                        val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
-                                        val ashHost = prefs.getString("ash_host", "") ?: ""
-                                        val ashPort = prefs.getString("ash_port", "18799") ?: "18799"
-                                        val token = prefs.getString("auth_token", "") ?: ""
-                                        if (ashHost.isNotBlank()) {
-                                            val serverUrl = "${ashHost.trimEnd('/')}:$ashPort"
-                                            chatViewModel.regenerateLastMessage(context.applicationContext, serverUrl, token)
-                                        }
-                                    },
-                                    speakText = speakText,
-                                    onPlayAudio = { chatViewModel.playAudio(it) }
-                                )
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(messages, key = { it.id }) { message ->
+                                    val isLast = message.id == messages.lastOrNull { it.sender == "character" }?.id
+                                    MessageBubble(
+                                        message = message,
+                                        character = character,
+                                        onImageClick = { activeFullscreenImage = it },
+                                        isLastMessage = isLast,
+                                        onRegenerateClick = {
+                                            val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+                                            val ashHost = prefs.getString("ash_host", "") ?: ""
+                                            val ashPort = prefs.getString("ash_port", "18799") ?: "18799"
+                                            val token = prefs.getString("auth_token", "") ?: ""
+                                            if (ashHost.isNotBlank()) {
+                                                val serverUrl = "${ashHost.trimEnd('/')}:$ashPort"
+                                                chatViewModel.regenerateLastMessage(context.applicationContext, serverUrl, token)
+                                            }
+                                        },
+                                        speakText = speakText,
+                                        onPlayAudio = { chatViewModel.playAudio(it) },
+                                        onEditClick = { editingMessage = it }
+                                    )
+                                }
+                                if (isGenerating) {
+                                    item {
+                                        TypingBubble(character = character)
+                                    }
+                                }
                             }
                         }
                     }
@@ -757,42 +924,94 @@ fun ChatScreen(
                         animationIndex = 0,
                         modifier = Modifier
                             .fillMaxSize()
-                            .alpha(0.45f) // slightly translucent for message readability
+                            .alpha(if (immersiveMode) 1.0f else 0.45f)
                     )
                 }
 
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(messages, key = { it.id }) { message ->
-                        val isLast = message.id == messages.lastOrNull { it.sender == "character" }?.id
-                        MessageBubble(
-                            message = message,
-                            character = character,
-                            onImageClick = { activeFullscreenImage = it },
-                            isLastMessage = isLast,
-                            onRegenerateClick = {
-                                val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
-                                val ashHost = prefs.getString("ash_host", "") ?: ""
-                                val ashPort = prefs.getString("ash_port", "18799") ?: "18799"
-                                val token = prefs.getString("auth_token", "") ?: ""
-                                if (ashHost.isNotBlank()) {
-                                    val serverUrl = "${ashHost.trimEnd('/')}:$ashPort"
-                                    chatViewModel.regenerateLastMessage(context.applicationContext, serverUrl, token)
-                                }
-                            },
-                            speakText = speakText,
-                            onPlayAudio = { chatViewModel.playAudio(it) }
-                        )
+                if (!immersiveMode) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(messages, key = { it.id }) { message ->
+                            val isLast = message.id == messages.lastOrNull { it.sender == "character" }?.id
+                            MessageBubble(
+                                message = message,
+                                character = character,
+                                onImageClick = { activeFullscreenImage = it },
+                                isLastMessage = isLast,
+                                onRegenerateClick = {
+                                    val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+                                    val ashHost = prefs.getString("ash_host", "") ?: ""
+                                    val ashPort = prefs.getString("ash_port", "18799") ?: "18799"
+                                    val token = prefs.getString("auth_token", "") ?: ""
+                                    if (ashHost.isNotBlank()) {
+                                        val serverUrl = "${ashHost.trimEnd('/')}:$ashPort"
+                                        chatViewModel.regenerateLastMessage(context.applicationContext, serverUrl, token)
+                                    }
+                                },
+                                speakText = speakText,
+                                onPlayAudio = { chatViewModel.playAudio(it) },
+                                onEditClick = { editingMessage = it }
+                            )
+                        }
+                        if (isGenerating) {
+                            item {
+                                TypingBubble(character = character)
+                            }
+                        }
                     }
                 }
             }
         }
     }
-}
+    editingMessage?.let { msg ->
+        var editFieldText by remember { mutableStateOf(msg.text) }
+        AlertDialog(
+            onDismissRequest = { editingMessage = null },
+            title = {
+                Text(
+                    text = "Edit Message",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            },
+            text = {
+                OutlinedTextField(
+                    value = editFieldText,
+                    onValueChange = { editFieldText = it },
+                    modifier = Modifier.fillMaxWidth().height(160.dp),
+                    label = { Text("Message Content") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val newText = editFieldText.trim()
+                        if (newText.isNotEmpty()) {
+                            scope.launch(Dispatchers.IO) {
+                                repository.insertMessage(msg.copy(text = newText))
+                            }
+                        }
+                        editingMessage = null
+                    }
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingMessage = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     showLevelUpDialog?.let { lv ->
         AlertDialog(
@@ -858,6 +1077,7 @@ fun ChatScreen(
             imageModel = imgModel,
             onDismiss = { activeFullscreenImage = null }
         )
+    }
     }
 }
 
@@ -1048,6 +1268,7 @@ private fun saveImageToGallery(context: android.content.Context, imageModel: Any
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MessageBubble(
     message: MessageEntity,
@@ -1057,6 +1278,7 @@ fun MessageBubble(
     onRegenerateClick: () -> Unit,
     speakText: (String) -> Unit,
     onPlayAudio: (String) -> Unit,
+    onEditClick: (MessageEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isUser = message.sender == "user"
@@ -1186,7 +1408,12 @@ fun MessageBubble(
                         else
                             Color(0xFF1A1A1A).copy(alpha = 0.7f), // Glassmorphic Companion dark grey
                         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                        modifier = Modifier.widthIn(max = bubbleMaxWidth)
+                        modifier = Modifier
+                            .widthIn(max = bubbleMaxWidth)
+                            .combinedClickable(
+                                onClick = { /* no-op */ },
+                                onLongClick = { onEditClick(message) }
+                            )
                     ) {
                         Text(
                             text = formatMessageText(contentParsed.cleanText, isUser),
@@ -1304,28 +1531,46 @@ fun parseMessageText(text: String): ParsedMessage {
     val strayCallRegex = "</?\\s*call[^>]*>".toRegex(RegexOption.IGNORE_CASE)
     processedText = processedText.replace(strayCallRegex, "").trim()
 
-    val thoughtRegex = "<\\s*thought\\s*>(.*?)<\\s*/\\s*thought\\s*>".toRegex(setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+    val thoughtRegex = "<\\s*(thought|thinking|reasoning|Reasoning/Plan|plan|thought_process)\\b[^>]*>(.*?)</\\s*(?:thought|thinking|reasoning|Reasoning/Plan|plan|thought_process)\\s*>".toRegex(setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
     val match = thoughtRegex.find(processedText)
     
     val rawParsed = if (match != null) {
-        val thoughtContent = match.groups[1]?.value?.trim()
+        val thoughtContent = match.groups[2]?.value?.trim()
         val cleanTextContent = processedText.replace(thoughtRegex, "").trim()
         ParsedMessage(thoughtContent, cleanTextContent)
     } else {
-        // Fallback 1: If only closing </thought> is present
-        val closingTagIndex = processedText.indexOf("</thought>", ignoreCase = true)
+        // Fallback 1: If only closing tag is present
+        var closingTagIndex = -1
+        var matchedTag = ""
+        val tags = listOf("thought", "thinking", "reasoning", "Reasoning/Plan", "plan", "thought_process")
+        for (tag in tags) {
+            val idx = processedText.indexOf("</$tag>", ignoreCase = true)
+            if (idx != -1) {
+                closingTagIndex = idx
+                matchedTag = tag
+                break
+            }
+        }
         if (closingTagIndex != -1) {
-            val thoughtContent = processedText.substring(0, closingTagIndex).replace("<thought>", "", ignoreCase = true).trim()
-            val cleanTextContent = processedText.substring(closingTagIndex + "</thought>".length).trim()
+            val thoughtContent = processedText.substring(0, closingTagIndex).replace("<$matchedTag>", "", ignoreCase = true).trim()
+            val cleanTextContent = processedText.substring(closingTagIndex + "</$matchedTag>".length).trim()
             ParsedMessage(
                 thought = if (thoughtContent.isNotBlank()) thoughtContent else null,
                 cleanText = cleanTextContent
             )
         } else {
-            // Fallback 2: If only opening <thought> is present (cut-off)
-            val openingTagIndex = processedText.indexOf("<thought>", ignoreCase = true)
+            // Fallback 2: If only opening tag is present (cut-off)
+            var openingTagIndex = -1
+            for (tag in tags) {
+                val idx = processedText.indexOf("<$tag>", ignoreCase = true)
+                if (idx != -1) {
+                    openingTagIndex = idx
+                    matchedTag = tag
+                    break
+                }
+            }
             if (openingTagIndex != -1) {
-                val thoughtContent = processedText.substring(openingTagIndex + "<thought>".length).trim()
+                val thoughtContent = processedText.substring(openingTagIndex + "<$matchedTag>".length).trim()
                 ParsedMessage(
                     thought = if (thoughtContent.isNotBlank()) thoughtContent else null,
                     cleanText = ""
@@ -1479,5 +1724,83 @@ private fun getMoodEmoji(mood: String): String {
         lower.contains("aroused") -> "😳"
         lower.contains("neutral") -> "😐"
         else -> "✨"
+    }
+}
+
+@Composable
+fun TypingBubble(
+    character: CharacterEntity?,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.Start
+    ) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            if (character != null) {
+                xyz.ssfdre38.haven.ui.main.CharacterAvatar(
+                    character = character,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Text("🌸", style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Surface(
+            shape = RoundedCornerShape(
+                topStart = 2.dp,
+                topEnd = 16.dp,
+                bottomStart = 16.dp,
+                bottomEnd = 16.dp
+            ),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.12f))
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val transition = rememberInfiniteTransition(label = "typing_dots")
+                repeat(3) { index ->
+                    val delay = index * 150
+                    val floatAnim by transition.animateFloat(
+                        initialValue = 0f,
+                        targetValue = -6f,
+                        animationSpec = infiniteRepeatable(
+                            animation = keyframes {
+                                durationMillis = 600
+                                0.0f at delay with FastOutLinearInEasing
+                                -6.0f at delay + 150 with LinearOutSlowInEasing
+                                0.0f at delay + 300 with FastOutLinearInEasing
+                                0.0f at 600
+                            },
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "dot_$index"
+                    )
+                    Box(
+                        modifier = Modifier
+                            .graphicsLayer { translationY = floatAnim }
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.onSurfaceVariant)
+                    )
+                }
+            }
+        }
     }
 }

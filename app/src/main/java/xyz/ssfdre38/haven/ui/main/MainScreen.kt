@@ -808,6 +808,10 @@ fun MainScreen(
                 var firstMessage by remember { mutableStateOf("") }
                 var systemPrompt by remember { mutableStateOf("") }
 
+                var sdPrompt by remember { mutableStateOf("") }
+                var generatedAvatarPath by remember { mutableStateOf<String?>(null) }
+                var isGeneratingAvatar by remember { mutableStateOf(false) }
+
                 AlertDialog(
                     onDismissRequest = { showManualCreateDialog = false },
                     title = { Text("Manual Companion Setup") },
@@ -955,6 +959,98 @@ fun MainScreen(
                                 label = { Text("System Instruction Override (Optional)") },
                                 modifier = Modifier.fillMaxWidth()
                             )
+
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "AI Avatar Creator",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            if (generatedAvatarPath != null) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp)
+                                ) {
+                                    AsyncImage(
+                                        model = File(generatedAvatarPath!!),
+                                        contentDescription = "Generated Avatar Preview",
+                                        modifier = Modifier
+                                            .size(72.dp)
+                                            .clip(CircleShape)
+                                            .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column {
+                                        Text("Avatar Generated!", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                        TextButton(
+                                            onClick = { generatedAvatarPath = null },
+                                            contentPadding = PaddingValues(0.dp)
+                                        ) {
+                                            Text("Regenerate", color = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                }
+                            } else {
+                                OutlinedTextField(
+                                    value = sdPrompt,
+                                    onValueChange = { sdPrompt = it },
+                                    label = { Text("Avatar Generation Prompt") },
+                                    placeholder = { Text("Leave blank for automatic prompt...") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = {
+                                        val sdHost = sharedPrefs.getString("sd_host", "") ?: ""
+                                        if (sdHost.isBlank()) {
+                                            Toast.makeText(context, "Configure SD server in Settings first", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            isGeneratingAvatar = true
+                                            val finalPrompt = sdPrompt.ifBlank {
+                                                val descPrompt = if (description.isNotBlank()) ", $description" else ""
+                                                "portrait of $name, high quality anime style$descPrompt"
+                                            }
+                                            xyz.ssfdre38.haven.data.network.HavenHttpClient.generateImage(
+                                                context = context,
+                                                sdServerUrl = sdHost,
+                                                prompt = finalPrompt,
+                                                onResult = { result ->
+                                                    isGeneratingAvatar = false
+                                                    result.fold(
+                                                        onSuccess = { path ->
+                                                            generatedAvatarPath = path
+                                                        },
+                                                        onFailure = { err ->
+                                                            (context as? android.app.Activity)?.runOnUiThread {
+                                                                Toast.makeText(context, "Generation failed: ${err.message}", Toast.LENGTH_LONG).show()
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                            )
+                                        }
+                                    },
+                                    enabled = !isGeneratingAvatar && name.isNotBlank(),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    if (isGeneratingAvatar) {
+                                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Generating Avatar...")
+                                    } else {
+                                        Icon(imageVector = Icons.Default.Cloud, contentDescription = null)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Generate Avatar with SD AI")
+                                    }
+                                }
+                            }
                         }
                     },
                     confirmButton = {
@@ -968,12 +1064,13 @@ fun MainScreen(
                                         personality = personality.trim(),
                                         firstMessage = firstMessage.trim(),
                                         voiceId = voiceId.trim(),
-                                        systemPrompt = systemPrompt.trim()
+                                        systemPrompt = systemPrompt.trim(),
+                                        avatarPath = generatedAvatarPath
                                     )
                                     showManualCreateDialog = false
                                 }
                             },
-                            enabled = name.isNotBlank()
+                            enabled = name.isNotBlank() && !isGeneratingAvatar
                         ) {
                             Text("Create")
                         }

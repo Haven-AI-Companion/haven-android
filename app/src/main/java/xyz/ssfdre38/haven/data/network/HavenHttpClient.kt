@@ -89,10 +89,12 @@ object HavenHttpClient {
         token: String,
         conversationId: String? = null,
         displayName: String? = null,
+        messageUuid: String? = null,
+        onStart: (String?) -> Unit = {},
         onToken: (String) -> Unit,
         onComplete: () -> Unit,
         onFailure: (Exception) -> Unit
-    ) {
+    ): okhttp3.Call {
         client.connectionPool.evictAll()
         val url = "${serverUrl.trimEnd('/')}/api/chat"
         val requestBodyJson = JSONObject().apply {
@@ -107,14 +109,18 @@ object HavenHttpClient {
             }
         }.toString()
 
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url(url)
             .post(requestBodyJson.toRequestBody(JSON_MEDIA_TYPE))
             .addHeader("Authorization", "Bearer $token")
             .addHeader("Connection", "close")
-            .build()
+        if (messageUuid != null) {
+            requestBuilder.addHeader("X-Request-UUID", messageUuid)
+        }
+        val request = requestBuilder.build()
 
-        client.newCall(request).enqueue(object : okhttp3.Callback {
+        val call = client.newCall(request)
+        call.enqueue(object : okhttp3.Callback {
             override fun onFailure(call: okhttp3.Call, e: IOException) {
                 onFailure(e)
             }
@@ -127,6 +133,9 @@ object HavenHttpClient {
                     }
 
                     try {
+                        val messageUuid = response.header("X-Message-UUID")
+                        onStart(messageUuid)
+
                         val reader = response.body?.charStream()?.buffered()
                         if (reader == null) {
                             onFailure(Exception("Response body is empty"))
@@ -146,6 +155,7 @@ object HavenHttpClient {
                 }
             }
         })
+        return call
     }
 
     /**

@@ -201,7 +201,8 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
         personality: String,
         firstMessage: String,
         voiceId: String,
-        systemPrompt: String = ""
+        systemPrompt: String = "",
+        avatarPath: String? = null
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             val char = CharacterEntity(
@@ -210,7 +211,8 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                 personality = personality,
                 firstMessage = firstMessage,
                 voiceId = voiceId.ifBlank { "en_US-amy-medium" },
-                systemPrompt = systemPrompt
+                systemPrompt = systemPrompt,
+                avatarPath = avatarPath
             )
             val charId = dataRepository.insertCharacter(char).toInt()
             if (firstMessage.isNotBlank()) {
@@ -232,7 +234,7 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                 put("scenario", "")
                 put("firstMessage", firstMessage)
                 put("systemPrompt", systemPrompt)
-                put("avatarPath", org.json.JSONObject.NULL)
+                put("avatarPath", avatarPath ?: org.json.JSONObject.NULL)
             }
             xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
                 context,

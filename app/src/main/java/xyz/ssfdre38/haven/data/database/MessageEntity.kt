@@ -24,5 +24,6 @@ data class MessageEntity(
     val text: String,
     val imagePath: String? = null,
     val audioPath: String? = null,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val messageUuid: String? = null
 )

@@ -108,12 +108,16 @@ class ChatViewModel(
     override fun onCleared() {
         super.onCleared()
         stopAudio()
+        currentCall?.cancel()
+        currentCall = null
     }
 
     // Holds the partial streamed response being built
     private var streamingMessageId: Int = -1
     private var streamBuffer = StringBuilder()
     private var dbWriteJob: kotlinx.coroutines.Job? = null
+    private var currentCall: okhttp3.Call? = null
+    private val activeStreamUuids = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     fun syncMessages(context: Context, serverUrl: String, token: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -362,9 +366,16 @@ class ChatViewModel(
             )
             xyz.ssfdre38.haven.ui.widget.HavenAppWidgetProvider.triggerUpdate(context)
 
+            val messageUuid = java.util.UUID.randomUUID().toString()
+
             // Insert a placeholder message for character response (will update as tokens arrive)
             val placeholderMsgId = repository.insertMessage(
-                MessageEntity(characterId = characterId, sender = "character", text = "")
+                MessageEntity(
+                    characterId = characterId,
+                    sender = "character",
+                    text = "",
+                    messageUuid = messageUuid
+                )
             ).toInt()
             streamingMessageId = placeholderMsgId
             streamBuffer.clear()
@@ -378,13 +389,65 @@ class ChatViewModel(
                 }
             }
 
-            HavenHttpClient.streamChat(
+            var receivedUuid: String? = null
+            var isAborted = false
+
+            currentCall?.cancel()
+            currentCall = HavenHttpClient.streamChat(
                 serverUrl = serverUrl,
                 prompt = fullPrompt,
                 token = token,
                 conversationId = conversationId,
                 displayName = userName,
+                messageUuid = messageUuid,
+                onStart = { uuid ->
+                    if (uuid != null) {
+                        receivedUuid = uuid
+                        
+                        // Check if this UUID is already active or if it's already in the database
+                        if (activeStreamUuids.contains(uuid)) {
+                            isAborted = true
+                            currentCall?.cancel()
+                            viewModelScope.launch(Dispatchers.Main) {
+                                _isGenerating.value = false
+                            }
+                            viewModelScope.launch(Dispatchers.IO) {
+                                repository.deleteMessageById(placeholderMsgId)
+                            }
+                            return@streamChat
+                        }
+                        
+                        activeStreamUuids.add(uuid)
+                        
+                        viewModelScope.launch(Dispatchers.IO) {
+                            val existing = repository.getMessageByUuid(uuid)
+                            if (existing != null && existing.id != placeholderMsgId) { // Safeguard against checking our own placeholder
+                                isAborted = true
+                                currentCall?.cancel()
+                                activeStreamUuids.remove(uuid)
+                                viewModelScope.launch(Dispatchers.Main) {
+                                    _isGenerating.value = false
+                                }
+                                repository.deleteMessageById(placeholderMsgId)
+                            } else {
+                                // Update placeholder message with the server-acknowledged UUID
+                                repository.insertMessage(
+                                    MessageEntity(
+                                        id = placeholderMsgId,
+                                        characterId = characterId,
+                                        sender = "character",
+                                        text = "",
+                                        messageUuid = uuid
+                                    )
+                                )
+                            }
+                        }
+                    } else {
+                        activeStreamUuids.add(messageUuid)
+                    }
+                },
                 onToken = { token ->
+                    if (isAborted) return@streamChat
                     streamBuffer.append(token)
                     val snapshot = streamBuffer.toString()
                     dbWriteJob?.cancel()
@@ -394,12 +457,15 @@ class ChatViewModel(
                                 id = streamingMessageId,
                                 characterId = characterId,
                                 sender = "character",
-                                text = cleanStreamingText(snapshot)
+                                text = cleanStreamingText(snapshot),
+                                messageUuid = receivedUuid
                             )
                         )
                     }
                 },
                 onComplete = {
+                    if (isAborted) return@streamChat
+                    activeStreamUuids.remove(receivedUuid ?: messageUuid)
                     _isGenerating.value = false
                     val fullText = streamBuffer.toString().trim()
                     
@@ -964,6 +1030,9 @@ ${character.value?.name ?: "Companion"}: $cleanText"""
                     }
                 },
                 onFailure = { error ->
+                    if (!isAborted) {
+                        activeStreamUuids.remove(receivedUuid ?: messageUuid)
+                    }
                     _isGenerating.value = false
                     _errorMessage.value = "Connection error: ${error.message}"
                     dbWriteJob?.cancel()

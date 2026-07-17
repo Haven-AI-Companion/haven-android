@@ -38,6 +38,9 @@ interface HavenDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: MessageEntity): Long
 
+    @Query("SELECT * FROM messages WHERE messageUuid = :uuid LIMIT 1")
+    suspend fun getMessageByUuid(uuid: String): MessageEntity?
+
     @Delete
     suspend fun deleteMessage(message: MessageEntity)
 
