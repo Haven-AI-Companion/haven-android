@@ -30,7 +30,7 @@ interface DataRepository {
     suspend fun deleteMessageById(id: Int)
     suspend fun clearMessagesForCharacter(characterId: Int)
     suspend fun getLastMessage(characterId: Int): MessageEntity?
-    suspend fun importTavernCard(context: Context, inputStream: InputStream, cardBytes: ByteArray): Boolean
+    suspend fun importTavernCard(context: Context, inputStream: InputStream, cardBytes: ByteArray): CharacterEntity?
     fun getDiaryEntries(characterId: Int): Flow<List<DiaryEntryEntity>>
     suspend fun insertDiaryEntry(entry: DiaryEntryEntity): Long
     suspend fun clearDiaryEntriesForCharacter(characterId: Int)
@@ -121,9 +121,9 @@ class DefaultDataRepository(private val havenDao: HavenDao) : DataRepository {
     override suspend fun clearMemoriesForCharacter(characterId: Int) = havenDao.clearMemoriesForCharacter(characterId)
     override suspend fun addXpAndIncrementMessages(characterId: Int, xp: Int) = havenDao.addXpAndIncrementMessages(characterId, xp)
     
-    override suspend fun importTavernCard(context: Context, inputStream: InputStream, cardBytes: ByteArray): Boolean {
+    override suspend fun importTavernCard(context: Context, inputStream: InputStream, cardBytes: ByteArray): CharacterEntity? {
         // Parse metadata
-        val charaData = xyz.ssfdre38.haven.data.parser.TavernCardParser.parse(inputStream) ?: return false
+        val charaData = xyz.ssfdre38.haven.data.parser.TavernCardParser.parse(inputStream) ?: return null
         
         // Save the avatar image bytes locally
         val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
@@ -139,7 +139,7 @@ class DefaultDataRepository(private val havenDao: HavenDao) : DataRepository {
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            return false
+            return null
         }
         
         // Save to DB
@@ -167,6 +167,6 @@ class DefaultDataRepository(private val havenDao: HavenDao) : DataRepository {
             )
         }
         
-        return true
+        return entity.copy(id = charId)
     }
 }

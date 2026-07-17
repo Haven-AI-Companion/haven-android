@@ -355,6 +355,20 @@ class GroupChatViewModel(
         }
     }
 
+    private fun saveCompanionToServer(context: Context, char: CharacterEntity) {
+        val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+        val host = sharedPrefs.getString("ash_host", null)
+        val port = sharedPrefs.getString("ash_port", "18799")
+        val token = sharedPrefs.getString("auth_token", null)
+        if (!host.isNullOrBlank() && !token.isNullOrBlank()) {
+            val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+            val serverUrl = "$formattedHost:${port?.trim()}"
+            viewModelScope.launch(Dispatchers.IO) {
+                HavenHttpClient.saveCompanion(context, serverUrl, token, char)
+            }
+        }
+    }
+
     fun stopBanter() {
         banterJob?.cancel()
         banterJob = null
@@ -537,6 +551,7 @@ class GroupChatViewModel(
                                         currentMood = newMood ?: currentChar.currentMood
                                     )
                                     repository.updateCharacter(updatedChar)
+                                    saveCompanionToServer(context, updatedChar)
                                     if (newLocation != null) {
                                         updateAmbientSound(newLocation)
                                     }
@@ -569,9 +584,9 @@ class GroupChatViewModel(
                                                         if (localPath != null) {
                                                             val latestChar = repository.getCharacterById(targetChar.id)
                                                             if (latestChar != null) {
-                                                                repository.updateCharacter(
-                                                                    latestChar.copy(avatarPath = localPath)
-                                                                )
+                                                                 val updatedWithAvatar = latestChar.copy(avatarPath = localPath)
+                                                                 repository.updateCharacter(updatedWithAvatar)
+                                                                 saveCompanionToServer(context, updatedWithAvatar)
                                                                 // Refresh again
                                                                 _participants.value = ids.mapNotNull { repository.getCharacterById(it) }
                                                             }
@@ -962,6 +977,7 @@ class GroupChatViewModel(
                                         currentMood = newMood ?: currentChar.currentMood
                                     )
                                     repository.updateCharacter(updatedChar)
+                                    saveCompanionToServer(context, updatedChar)
                                     if (newLocation != null) {
                                         updateAmbientSound(newLocation)
                                     }

@@ -233,6 +233,20 @@ class ChatViewModel(
          HavenHttpClient.saveCompanion(context, serverUrl, token, char)
      }
 
+     private fun saveCompanionToServer(context: Context, char: CharacterEntity) {
+         val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+         val host = sharedPrefs.getString("ash_host", null)
+         val port = sharedPrefs.getString("ash_port", "18799")
+         val token = sharedPrefs.getString("auth_token", null)
+         if (!host.isNullOrBlank() && !token.isNullOrBlank()) {
+             val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+             val serverUrl = "$formattedHost:${port?.trim()}"
+             viewModelScope.launch(Dispatchers.IO) {
+                 HavenHttpClient.saveCompanion(context, serverUrl, token, char)
+             }
+         }
+     }
+
     fun sendMessage(context: Context, serverUrl: String, token: String, text: String) {
         viewModelScope.launch(Dispatchers.IO) {
             _isGenerating.value = true
@@ -399,8 +413,9 @@ class ChatViewModel(
             if (conversationId.isNullOrBlank()) {
                 conversationId = java.util.UUID.randomUUID().toString()
                 if (char != null) {
-                    repository.updateCharacter(char.copy(conversationId = conversationId))
-                    saveCompanionToServer(context, serverUrl, token, char.copy(conversationId = conversationId))
+                    val newChar = char.copy(conversationId = conversationId)
+                    repository.updateCharacter(newChar)
+                    saveCompanionToServer(context, serverUrl, token, newChar)
                 }
             }
 
@@ -587,6 +602,7 @@ class ChatViewModel(
                                         clothingState = newClothingState ?: currentChar.clothingState
                                     )
                                     repository.updateCharacter(updatedChar)
+                                    saveCompanionToServer(context, updatedChar)
 
                                     if (appearanceChanged) {
                                         val bodyTypeVal = updatedChar.bodyType
@@ -642,9 +658,9 @@ class ChatViewModel(
                                                                          imagePath = localPath
                                                                      )
                                                                  )
-                                                                 repository.updateCharacter(
-                                                                     latestChar.copy(avatarPath = localPath)
-                                                                 )
+                                                                 val updatedWithAvatar = latestChar.copy(avatarPath = localPath)
+                                                                 repository.updateCharacter(updatedWithAvatar)
+                                                                 saveCompanionToServer(context, updatedWithAvatar)
                                                              }
                                                          }
                                                      } catch (e: Exception) {
@@ -675,9 +691,9 @@ class ChatViewModel(
                                                              if (localPath != null) {
                                                                  val latestChar = repository.getCharacterById(characterId)
                                                                  if (latestChar != null) {
-                                                                     repository.updateCharacter(
-                                                                         latestChar.copy(vrmModelPath = localPath)
-                                                                     )
+                                                                     val updatedWithVrm = latestChar.copy(vrmModelPath = localPath)
+                                                                     repository.updateCharacter(updatedWithVrm)
+                                                                     saveCompanionToServer(context, updatedWithVrm)
                                                                      xyz.ssfdre38.haven.ui.widget.HavenAppWidgetProvider.triggerUpdate(context)
                                                                  }
                                                              }
@@ -780,6 +796,7 @@ class ChatViewModel(
                                                 if (char != null) {
                                                     val updatedChar = char.copy(avatarPath = localPath)
                                                     repository.updateCharacter(updatedChar)
+                                                    saveCompanionToServer(context, updatedChar)
                                                     
                                                     // Push the updated shortcut/avatar to the Android system to refresh the active Chat Bubble icon!
                                                     try {
@@ -866,7 +883,9 @@ class ChatViewModel(
                                             if (localPath != null) {
                                                 val char = repository.getCharacterById(characterId)
                                                 if (char != null) {
-                                                    repository.updateCharacter(char.copy(vrmModelPath = localPath))
+                                                    val updatedWithVrm = char.copy(vrmModelPath = localPath)
+                                                    repository.updateCharacter(updatedWithVrm)
+                                                    saveCompanionToServer(context, updatedWithVrm)
                                                     xyz.ssfdre38.haven.ui.widget.HavenAppWidgetProvider.triggerUpdate(context)
                                                 }
                                             }
@@ -915,6 +934,7 @@ class ChatViewModel(
                                          if (char != null) {
                                              val updatedChar = char.copy(avatarPath = localPath)
                                              repository.updateCharacter(updatedChar)
+                                             saveCompanionToServer(context, updatedChar)
                                              
                                              // Push the updated shortcut/avatar to the Android system to refresh the active Chat Bubble icon!
                                              try {
@@ -1084,6 +1104,7 @@ ${character.value?.name ?: "Companion"}: $cleanText"""
                                 if (char != null) {
                                      val updatedChar = char.copy(avatarPath = imagePath)
                                      repository.updateCharacter(updatedChar)
+                                     saveCompanionToServer(context, updatedChar)
                                      try {
                                          xyz.ssfdre38.haven.data.work.ProactiveMessageWorker.publishShortcut(context, updatedChar)
                                      } catch (e: Exception) {

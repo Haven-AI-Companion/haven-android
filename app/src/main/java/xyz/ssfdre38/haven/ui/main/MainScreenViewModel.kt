@@ -172,8 +172,26 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                 }
                 
                 val inputStream = ByteArrayInputStream(bytes)
-                val success = dataRepository.importTavernCard(context, inputStream, bytes)
-                if (success) {
+                val importedChar = dataRepository.importTavernCard(context, inputStream, bytes)
+                if (importedChar != null) {
+                    // Enqueue companion sync to push profile to C# server
+                    val payload = org.json.JSONObject().apply {
+                        put("name", importedChar.name)
+                        put("voiceId", importedChar.voiceId.ifBlank { "en_US-amy-medium" })
+                        put("description", importedChar.description)
+                        put("personality", importedChar.personality)
+                        put("scenario", importedChar.scenario)
+                        put("firstMessage", importedChar.firstMessage)
+                        put("systemPrompt", importedChar.systemPrompt)
+                        put("avatarPath", importedChar.avatarPath ?: org.json.JSONObject.NULL)
+                    }
+                    xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                        context,
+                        xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_SAVE_COMPANION,
+                        payload
+                    )
+                    xyz.ssfdre38.haven.data.sync.SyncQueueManager.processQueue(context)
+                    
                     _importState.value = ImportStatus.Success
                 } else {
                     _importState.value = ImportStatus.Error(Exception("Failed to parse card metadata. Make sure it is a valid SillyTavern card."))
@@ -312,8 +330,8 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
         }
     }
 
-    fun syncGroupChats(context: Context) {
-        viewModelScope.launch(Dispatchers.IO) {
+    fun syncGroupChats(context: Context): kotlinx.coroutines.Job {
+        return viewModelScope.launch(Dispatchers.IO) {
             val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
             val host = sharedPrefs.getString("ash_host", "") ?: ""
             val port = sharedPrefs.getString("ash_port", "") ?: ""
@@ -382,8 +400,17 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
     private val _serverCompanions = MutableStateFlow<List<CharacterEntity>>(emptyList())
     val serverCompanions: StateFlow<List<CharacterEntity>> = _serverCompanions.asStateFlow()
 
-    fun loadServerCompanions(context: Context) {
-        viewModelScope.launch(Dispatchers.IO) {
+    private fun getJsonStringCaseInsensitive(obj: org.json.JSONObject, vararg keys: String, fallback: String = ""): String {
+        for (key in keys) {
+            if (obj.has(key) && !obj.isNull(key)) {
+                return obj.getString(key)
+            }
+        }
+        return fallback
+    }
+
+    fun loadServerCompanions(context: Context): kotlinx.coroutines.Job {
+        return viewModelScope.launch(Dispatchers.IO) {
             val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
             val host = sharedPrefs.getString("ash_host", "") ?: ""
             val port = sharedPrefs.getString("ash_port", "") ?: ""
@@ -414,60 +441,22 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                     val list = mutableListOf<CharacterEntity>()
                     for (i in 0 until jsonArray.length()) {
                         val obj = jsonArray.getJSONObject(i)
-                        val name = obj.getString("name")
-                        val avatarPath = when {
-                            obj.has("avatar_path") && !obj.isNull("avatar_path") -> obj.getString("avatar_path")
-                            obj.has("avatarPath") && !obj.isNull("avatarPath") -> obj.getString("avatarPath")
-                            else -> null
-                        }
-                        val voiceId = when {
-                            obj.has("voice_id") && !obj.isNull("voice_id") -> obj.getString("voice_id")
-                            obj.has("voiceId") && !obj.isNull("voiceId") -> obj.getString("voiceId")
-                            else -> "en_US-amy-medium"
-                        }
-                        val description = if (obj.has("description") && !obj.isNull("description")) obj.getString("description") else ""
-                        val personality = if (obj.has("personality") && !obj.isNull("personality")) obj.getString("personality") else ""
-                        val scenario = if (obj.has("scenario") && !obj.isNull("scenario")) obj.getString("scenario") else ""
-                        val firstMessage = when {
-                            obj.has("first_message") && !obj.isNull("first_message") -> obj.getString("first_message")
-                            obj.has("firstMessage") && !obj.isNull("firstMessage") -> obj.getString("firstMessage")
-                            else -> ""
-                        }
-                        val systemPrompt = when {
-                            obj.has("system_prompt") && !obj.isNull("system_prompt") -> obj.getString("system_prompt")
-                            obj.has("systemPrompt") && !obj.isNull("systemPrompt") -> obj.getString("systemPrompt")
-                            else -> ""
-                        }
-                        val currentOutfit = when {
-                            obj.has("current_outfit") && !obj.isNull("current_outfit") -> obj.getString("current_outfit")
-                            obj.has("currentOutfit") && !obj.isNull("currentOutfit") -> obj.getString("currentOutfit")
-                            else -> ""
-                        }
-                        val currentLocation = when {
-                            obj.has("current_location") && !obj.isNull("current_location") -> obj.getString("current_location")
-                            obj.has("currentLocation") && !obj.isNull("currentLocation") -> obj.getString("currentLocation")
-                            else -> ""
-                        }
-                        val currentMood = when {
-                            obj.has("current_mood") && !obj.isNull("current_mood") -> obj.getString("current_mood")
-                            obj.has("currentMood") && !obj.isNull("currentMood") -> obj.getString("currentMood")
-                            else -> ""
-                        }
-                        val bodyType = when {
-                            obj.has("body_type") && !obj.isNull("body_type") -> obj.getString("body_type")
-                            obj.has("bodyType") && !obj.isNull("bodyType") -> obj.getString("bodyType")
-                            else -> ""
-                        }
-                        val bodyShape = when {
-                            obj.has("body_shape") && !obj.isNull("body_shape") -> obj.getString("body_shape")
-                            obj.has("bodyShape") && !obj.isNull("bodyShape") -> obj.getString("bodyShape")
-                            else -> ""
-                        }
-                        val clothingState = when {
-                            obj.has("clothing_state") && !obj.isNull("clothing_state") -> obj.getString("clothing_state")
-                            obj.has("clothingState") && !obj.isNull("clothingState") -> obj.getString("clothingState")
-                            else -> ""
-                        }
+                        val name = getJsonStringCaseInsensitive(obj, "name", "Name")
+                        if (name.isBlank()) continue
+
+                        val avatarPath = getJsonStringCaseInsensitive(obj, "avatar_path", "avatarPath", "AvatarPath").ifBlank { null }
+                        val voiceId = getJsonStringCaseInsensitive(obj, "voice_id", "voiceId", "VoiceId", fallback = "en_US-amy-medium")
+                        val description = getJsonStringCaseInsensitive(obj, "description", "Description")
+                        val personality = getJsonStringCaseInsensitive(obj, "personality", "Personality")
+                        val scenario = getJsonStringCaseInsensitive(obj, "scenario", "Scenario")
+                        val firstMessage = getJsonStringCaseInsensitive(obj, "first_message", "firstMessage", "FirstMessage")
+                        val systemPrompt = getJsonStringCaseInsensitive(obj, "system_prompt", "systemPrompt", "SystemPrompt")
+                        val currentOutfit = getJsonStringCaseInsensitive(obj, "current_outfit", "currentOutfit", "CurrentOutfit")
+                        val currentLocation = getJsonStringCaseInsensitive(obj, "current_location", "currentLocation", "CurrentLocation")
+                        val currentMood = getJsonStringCaseInsensitive(obj, "current_mood", "currentMood", "CurrentMood")
+                        val bodyType = getJsonStringCaseInsensitive(obj, "body_type", "bodyType", "BodyType")
+                        val bodyShape = getJsonStringCaseInsensitive(obj, "body_shape", "bodyShape", "BodyShape")
+                        val clothingState = getJsonStringCaseInsensitive(obj, "clothing_state", "clothingState", "ClothingState")
 
                         val resolvedAvatarUrl = if (!avatarPath.isNullOrBlank()) {
                             if (avatarPath.startsWith("/")) {
@@ -493,11 +482,11 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                         val existing = dataRepository.getCharacterByName(name)
                         if (existing != null) {
                             val updated = existing.copy(
-                                voiceId = voiceId,
-                                description = description,
-                                personality = personality,
-                                scenario = scenario,
-                                systemPrompt = systemPrompt,
+                                voiceId = if (voiceId.isNotBlank()) voiceId else existing.voiceId,
+                                description = if (description.isNotBlank()) description else existing.description,
+                                personality = if (personality.isNotBlank()) personality else existing.personality,
+                                scenario = if (scenario.isNotBlank()) scenario else existing.scenario,
+                                systemPrompt = if (systemPrompt.isNotBlank()) systemPrompt else existing.systemPrompt,
                                 avatarPath = if (!avatarPath.isNullOrBlank() && (existing.avatarPath.isNullOrBlank() || !File(existing.avatarPath).exists() || existing.avatarPath.startsWith("/uploads/") || existing.avatarPath.startsWith("http"))) finalAvatarPath else existing.avatarPath,
                                 bodyType = if (bodyType.isNotBlank()) bodyType else existing.bodyType,
                                 bodyShape = if (bodyShape.isNotBlank()) bodyShape else existing.bodyShape,
