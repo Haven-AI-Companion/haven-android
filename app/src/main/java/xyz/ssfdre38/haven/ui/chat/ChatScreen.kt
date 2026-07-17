@@ -284,6 +284,12 @@ fun ChatScreen(
                                         Spacer(modifier = Modifier.width(6.dp))
                                         MiniAudioVisualizer()
                                     }
+                                } else if (char.currentMood.isNotBlank()) {
+                                    Text(
+                                        text = char.currentMood.replaceFirstChar { it.uppercase() },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                    )
                                 }
                             }
                         }

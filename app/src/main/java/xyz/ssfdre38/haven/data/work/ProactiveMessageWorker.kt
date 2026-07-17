@@ -103,12 +103,31 @@ class ProactiveMessageWorker(
             val shortcutId = character.id.toString()
             publishShortcut(context, character)
 
+            val iconCompat = if (character.avatarPath != null) {
+                val file = File(character.avatarPath)
+                if (file.exists()) {
+                    val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+                    if (bitmap != null) {
+                        androidx.core.graphics.drawable.IconCompat.createWithBitmap(bitmap)
+                    } else {
+                        androidx.core.graphics.drawable.IconCompat.createWithResource(context, android.R.drawable.stat_notify_chat)
+                    }
+                } else {
+                    androidx.core.graphics.drawable.IconCompat.createWithResource(context, android.R.drawable.stat_notify_chat)
+                }
+            } else {
+                androidx.core.graphics.drawable.IconCompat.createWithResource(context, android.R.drawable.stat_notify_chat)
+            }
+
             val userPerson = androidx.core.app.Person.Builder()
                 .setName("You")
                 .build()
 
             val companionPerson = androidx.core.app.Person.Builder()
                 .setName(character.name)
+                .setKey(shortcutId)
+                .setIcon(iconCompat)
+                .setBot(true)
                 .build()
 
             val messagingStyle = NotificationCompat.MessagingStyle(userPerson)
@@ -129,29 +148,13 @@ class ProactiveMessageWorker(
                 PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
 
-            val iconCompat = if (character.avatarPath != null) {
-                val file = File(character.avatarPath)
-                if (file.exists()) {
-                    val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-                    if (bitmap != null) {
-                        androidx.core.graphics.drawable.IconCompat.createWithBitmap(bitmap)
-                    } else {
-                        androidx.core.graphics.drawable.IconCompat.createWithResource(context, android.R.drawable.stat_notify_chat)
-                    }
-                } else {
-                    androidx.core.graphics.drawable.IconCompat.createWithResource(context, android.R.drawable.stat_notify_chat)
-                }
-            } else {
-                androidx.core.graphics.drawable.IconCompat.createWithResource(context, android.R.drawable.stat_notify_chat)
-            }
-
             val bubbleMetadata = NotificationCompat.BubbleMetadata.Builder(
                 bubblePendingIntent,
                 iconCompat
             )
                 .setDesiredHeight(600)
                 .setAutoExpandBubble(true)
-                .setSuppressNotification(true)
+                .setSuppressNotification(false)
                 .build()
 
             // Build notification utilizing native chat bubble style and metadata
