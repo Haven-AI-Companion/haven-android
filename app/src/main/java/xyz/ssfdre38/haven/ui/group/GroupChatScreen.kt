@@ -21,6 +21,9 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.ui.window.Dialog
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -71,6 +74,7 @@ fun GroupChatScreen(
     }
     
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showGalleryDialog by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
     var inputText by remember { mutableStateOf("") }
@@ -197,6 +201,13 @@ fun GroupChatScreen(
                             Icon(
                                 imageVector = Icons.Default.Tune,
                                 contentDescription = "Banter Settings",
+                                tint = Color.White
+                            )
+                        }
+                        IconButton(onClick = { showGalleryDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Image,
+                                contentDescription = "Gallery",
                                 tint = Color.White
                             )
                         }
@@ -550,6 +561,133 @@ fun GroupChatScreen(
                 titleContentColor = Color.White,
                 textContentColor = Color.White.copy(alpha = 0.8f)
             )
+        }
+
+        if (showGalleryDialog) {
+            val sharedImages = remember(messages) {
+                messages.filter { !it.imagePath.isNullOrBlank() }
+            }
+            val urlRegex = remember { "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.-]+)|(/uploads/[%a-zA-Z_0-9.-]+)".toRegex(RegexOption.IGNORE_CASE) }
+            var activeFullscreenImage by remember { mutableStateOf<GroupMessageEntity?>(null) }
+
+            AlertDialog(
+                onDismissRequest = { showGalleryDialog = false },
+                title = { 
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Group Gallery", color = Color.White, style = MaterialTheme.typography.titleLarge)
+                        IconButton(onClick = { showGalleryDialog = false }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                        }
+                    }
+                },
+                text = {
+                    Box(modifier = Modifier.fillMaxWidth().height(400.dp)) {
+                        if (sharedImages.isEmpty()) {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("No shared images in this room yet.", color = Color.White.copy(alpha = 0.5f))
+                            }
+                        } else {
+                            androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+                                columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(3),
+                                contentPadding = PaddingValues(4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                items(sharedImages.size) { index ->
+                                    val msg = sharedImages[index]
+                                    val file = java.io.File(msg.imagePath!!)
+                                    
+                                    Box(
+                                        modifier = Modifier
+                                            .aspectRatio(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                            .clickable { activeFullscreenImage = msg }
+                                    ) {
+                                        AsyncImage(
+                                            model = file,
+                                            contentDescription = "Shared photo",
+                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                containerColor = Color(0xFF1E1035),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+            )
+
+            // Fullscreen lightbox view
+            if (activeFullscreenImage != null) {
+                val msg = activeFullscreenImage!!
+                val file = java.io.File(msg.imagePath!!)
+                val senderName = if (msg.sender == "user") "You" else participants.firstOrNull { it.id == msg.characterId }?.name ?: "Companion"
+                
+                Dialog(
+                    onDismissRequest = { activeFullscreenImage = null },
+                    properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.95f))
+                            .clickable { activeFullscreenImage = null },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier.fillMaxSize().padding(16.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Shared by $senderName",
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    if (!msg.text.isNullOrBlank()) {
+                                        Text(
+                                            text = msg.text.replace(urlRegex, "").trim(),
+                                            color = Color.White.copy(alpha = 0.8f),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            maxLines = 2,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                                IconButton(onClick = { activeFullscreenImage = null }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                                }
+                            }
+                            
+                            AsyncImage(
+                                model = file,
+                                contentDescription = "Fullscreen photo",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(12.dp)),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
