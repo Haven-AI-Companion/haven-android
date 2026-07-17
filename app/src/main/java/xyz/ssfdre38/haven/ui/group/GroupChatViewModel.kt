@@ -38,7 +38,15 @@ class GroupChatViewModel(
     private val streamBuffer = StringBuilder()
 
     val autoBanterEnabled = MutableStateFlow(true)
+    val banterLimit = MutableStateFlow(2) // -1 means Infinite, positive numbers are limits
     private var banterCount = 0
+    private var banterJob: kotlinx.coroutines.Job? = null
+
+    fun stopBanter() {
+        banterJob?.cancel()
+        banterJob = null
+        banterCount = 0
+    }
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
@@ -61,6 +69,7 @@ class GroupChatViewModel(
     }
 
     fun sendMessage(context: Context, serverUrl: String, token: String, text: String) {
+        stopBanter()
         banterCount = 0
         val targetSpeakerId = _selectedSpeakerId.value
         val chars = _participants.value
@@ -368,13 +377,18 @@ class GroupChatViewModel(
                     }
 
                     // ── Auto Banter Turn trigger ──
-                    if (autoBanterEnabled.value && banterCount < 2) {
+                    val currentLimit = banterLimit.value
+                    val shouldContinueBanter = autoBanterEnabled.value && 
+                        (currentLimit == -1 || banterCount < currentLimit)
+
+                    if (shouldContinueBanter) {
                         banterCount++
                         val otherParticipants = chars.filter { it.id != targetChar.id }
                         if (otherParticipants.isNotEmpty()) {
                             val nextSpeaker = otherParticipants.random()
-                            viewModelScope.launch {
-                                delay(2500)
+                            banterJob?.cancel()
+                            banterJob = viewModelScope.launch {
+                                delay(3000)
                                 triggerBanterReply(context, serverUrl, token, nextSpeaker)
                             }
                         }
@@ -556,13 +570,18 @@ class GroupChatViewModel(
                         repository.addXpAndIncrementMessages(targetChar.id, 5)
                     }
 
-                    if (autoBanterEnabled.value && banterCount < 2) {
+                    val currentLimit = banterLimit.value
+                    val shouldContinueBanter = autoBanterEnabled.value && 
+                        (currentLimit == -1 || banterCount < currentLimit)
+
+                    if (shouldContinueBanter) {
                         banterCount++
                         val otherParticipants = chars.filter { it.id != targetChar.id }
                         if (otherParticipants.isNotEmpty()) {
                             val nextSpeaker = otherParticipants.random()
-                            viewModelScope.launch {
-                                delay(2500)
+                            banterJob?.cancel()
+                            banterJob = viewModelScope.launch {
+                                delay(3000)
                                 triggerBanterReply(context, serverUrl, token, nextSpeaker)
                             }
                         }

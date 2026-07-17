@@ -16,6 +16,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -55,6 +57,8 @@ fun GroupChatScreen(
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val selectedSpeakerId by viewModel.selectedSpeakerId.collectAsStateWithLifecycle()
     val isGenerating by viewModel.isGenerating.collectAsStateWithLifecycle()
+    
+    var showSettingsDialog by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
     var inputText by remember { mutableStateOf("") }
@@ -130,7 +134,26 @@ fun GroupChatScreen(
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color.Transparent
-                    )
+                    ),
+                    actions = {
+                        val autoBanter by viewModel.autoBanterEnabled.collectAsStateWithLifecycle()
+                        if (autoBanter && isGenerating) {
+                            IconButton(onClick = { viewModel.stopBanter() }) {
+                                Icon(
+                                    imageVector = Icons.Default.Stop,
+                                    contentDescription = "Stop Banter",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                        IconButton(onClick = { showSettingsDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription = "Banter Settings",
+                                tint = Color.White
+                            )
+                        }
+                    }
                 )
             },
         bottomBar = {
@@ -292,6 +315,69 @@ fun GroupChatScreen(
                     )
                 }
             }
+        }
+
+        if (showSettingsDialog) {
+            val autoBanter by viewModel.autoBanterEnabled.collectAsStateWithLifecycle()
+            val banterLimit by viewModel.banterLimit.collectAsStateWithLifecycle()
+
+            AlertDialog(
+                onDismissRequest = { showSettingsDialog = false },
+                title = { Text("Group Chat Settings") },
+                text = {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Auto Banter", color = Color.White, style = MaterialTheme.typography.bodyLarge)
+                            Switch(
+                                checked = autoBanter,
+                                onCheckedChange = { viewModel.autoBanterEnabled.value = it }
+                            )
+                        }
+                        
+                        if (autoBanter) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("Consecutive Turn Limit:", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            val limits = listOf(
+                                Pair(2, "2 turns (Standard)"),
+                                Pair(5, "5 turns (Extended)"),
+                                Pair(10, "10 turns (Conversational)"),
+                                Pair(-1, "Infinite (Autonomous Loop)")
+                            )
+                            
+                            limits.forEach { (limitVal, label) ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { viewModel.banterLimit.value = limitVal }
+                                        .padding(vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = banterLimit == limitVal,
+                                        onClick = { viewModel.banterLimit.value = limitVal }
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(label, color = Color.White.copy(alpha = 0.8f))
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showSettingsDialog = false }) {
+                        Text("Done", color = MaterialTheme.colorScheme.primary)
+                    }
+                },
+                containerColor = Color(0xFF1E1035),
+                titleContentColor = Color.White,
+                textContentColor = Color.White.copy(alpha = 0.8f)
+            )
         }
     }
 }
