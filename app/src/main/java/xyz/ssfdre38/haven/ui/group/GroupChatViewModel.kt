@@ -134,6 +134,25 @@ class GroupChatViewModel(
     private val _typingCompanionName = MutableStateFlow<String?>(null)
     val typingCompanionName: StateFlow<String?> = _typingCompanionName.asStateFlow()
 
+    private val _lastRoomEvent = MutableStateFlow<String?>(null)
+    val lastRoomEvent: StateFlow<String?> = _lastRoomEvent.asStateFlow()
+
+    fun extractRoomEvent(charName: String, cleanText: String, newOutfit: String?, newLocation: String?, newMood: String?): String? {
+        val actions = mutableListOf<String>()
+        if (newOutfit != null) actions.add("changed outfit to $newOutfit")
+        if (newLocation != null) actions.add("moved location to $newLocation")
+        if (newMood != null) actions.add("mood became $newMood")
+        
+        val asteriskRegex = "\\*(.*?)\\*".toRegex()
+        val matches = asteriskRegex.findAll(cleanText).map { it.groupValues[1].trim() }.toList()
+        if (matches.isNotEmpty()) {
+            actions.addAll(matches.take(2))
+        }
+        
+        if (actions.isEmpty()) return null
+        return "$charName ${actions.joinToString(" and ")}."
+    }
+
     data class CompanionRelation(
         val affinity: Int = 50,
         val sentiment: String = "neutral"
@@ -343,6 +362,7 @@ class GroupChatViewModel(
         streamingMessageId = -1
         _isGenerating.value = false
         _typingCompanionName.value = null
+        _lastRoomEvent.value = null
         activePlayer?.let { player ->
             activePlayer = null
             try { player.stop(); player.release() } catch (e: Exception) {}
@@ -458,7 +478,7 @@ class GroupChatViewModel(
             }
 
             // 3. Compile prompt
-            val prompt = compilePrompt(text, targetChar, chars, userName)
+            val prompt = compilePrompt(context, text, targetChar, chars, userName)
 
             // 4. Stream response
             HavenHttpClient.streamChat(
@@ -691,6 +711,11 @@ class GroupChatViewModel(
                         adjustAffinity(context, targetChar.name, otherChar.name, cleanText)
                     }
 
+                    val eventText = extractRoomEvent(targetChar.name, cleanText, newOutfit, newLocation, newMood)
+                    if (eventText != null) {
+                        _lastRoomEvent.value = eventText
+                    }
+
                     _typingCompanionName.value = null
 
                     // Generate and play TTS audio response
@@ -777,6 +802,7 @@ class GroupChatViewModel(
     }
 
     private suspend fun compilePrompt(
+        context: Context,
         currentInput: String,
         targetChar: CharacterEntity,
         allChars: List<CharacterEntity>,
@@ -793,6 +819,27 @@ class GroupChatViewModel(
             appendLine("[System Instruction: You can dynamically update your location, outfit, or expression/mood if the context changes by including '[Location: name]', '[Outfit: description]', or '[Mood: expression]' inside your <thought>...</thought> block. Example: '<thought>[Outfit: nightgown] [Location: bedroom] [Mood: sleepy]</thought> Goodnight!' Only change these when it makes sense for the chat flow.]")
             appendLine("[System Instruction: Format roleplay actions, physical gestures, and immediate/direct thoughts using asterisks (e.g. *smiles and waves*, *thinking to myself: this is interesting*). Do not use square brackets [like this] for roleplay actions or thoughts. Understand that $userName will also use asterisks for their actions and thoughts.]")
             appendLine("[System Instruction: You have access to the 'generate_portrait' tool. You should invoke it whenever $userName asks for a picture, photo, selfie, or visual update, or when you decide on your own to show $userName what you are doing. To call the tool, you MUST output the tag <call>generate_portrait</call> immediately after your </thought> tag (before your conversational dialogue). Do not output any arguments. The app will automatically generate the image and display it to the user.]")
+
+            // Inject recent room situation events
+            val lastEvent = lastRoomEvent.value
+            if (!lastEvent.isNullOrBlank()) {
+                appendLine()
+                appendLine("[Current Room Situation: $lastEvent. You MUST acknowledge and react to this situation naturally in your thoughts and dialogue.]")
+            }
+
+            // Append mutual companion relationship sentiments
+            val relations = loadRelations(context)
+            val companionRelations = relations[targetChar.name]
+            if (companionRelations != null && companionRelations.isNotEmpty()) {
+                appendLine()
+                appendLine("[Your relationship with other companions in this room:]")
+                companionRelations.forEach { (otherName, rel) ->
+                    appendLine("- You feel like their ${rel.sentiment} (affinity: ${rel.affinity}/100) towards $otherName.")
+                }
+            }
+
+            appendLine()
+            appendLine("[System Instruction: You are in an intimate, open, or romantic setting. Pay close attention to physical contact, touch, affection, and intimacy. If another companion is showing affection to $userName or to you, react with appropriate warmth, jealousy, passion, or teasing playfulness based on your relationship settings.]")
 
             // Load long-term memories from their single-companion chats
             val memories = repository.getRecentMemories(targetChar.id, 10)
@@ -865,7 +912,7 @@ class GroupChatViewModel(
                 }
             }
 
-            val prompt = compileBanterPrompt(targetChar, chars, userName)
+            val prompt = compileBanterPrompt(context, targetChar, chars, userName)
 
             HavenHttpClient.streamChat(
                 serverUrl = serverUrl,
@@ -1042,6 +1089,11 @@ class GroupChatViewModel(
                         adjustAffinity(context, targetChar.name, otherChar.name, cleanText)
                     }
 
+                    val eventText = extractRoomEvent(targetChar.name, cleanText, newOutfit, newLocation, newMood)
+                    if (eventText != null) {
+                        _lastRoomEvent.value = eventText
+                    }
+
                     _typingCompanionName.value = null
 
                     // Generate and play TTS audio response
@@ -1128,6 +1180,7 @@ class GroupChatViewModel(
     }
 
     private suspend fun compileBanterPrompt(
+        context: Context,
         targetChar: CharacterEntity,
         allChars: List<CharacterEntity>,
         userName: String
@@ -1141,6 +1194,27 @@ class GroupChatViewModel(
             appendLine("[System Instructions: You are currently writing the response for ${targetChar.name} ONLY. Do not write dialogues or thoughts for other characters. Respond to the other participants naturally, having a back-and-forth dialogue.]")
             appendLine("[System Rule: Before responding, you MUST write down your inner thoughts, plans, or reasoning inside <thought>...</thought> tags, followed by your actual response to $userName. Do not omit the tags.]")
             appendLine("[System Instruction: Format roleplay actions, physical gestures, and immediate/direct thoughts using asterisks (e.g. *smiles and waves*, *thinking to myself: this is interesting*). Do not use square brackets [like this] for roleplay actions or thoughts. Understand that $userName will also use asterisks for their actions and thoughts.]")
+
+            // Inject recent room situation events
+            val lastEvent = lastRoomEvent.value
+            if (!lastEvent.isNullOrBlank()) {
+                appendLine()
+                appendLine("[Current Room Situation: $lastEvent. You MUST acknowledge and react to this situation naturally in your thoughts and dialogue.]")
+            }
+
+            // Append mutual companion relationship sentiments
+            val relations = loadRelations(context)
+            val companionRelations = relations[targetChar.name]
+            if (companionRelations != null && companionRelations.isNotEmpty()) {
+                appendLine()
+                appendLine("[Your relationship with other companions in this room:]")
+                companionRelations.forEach { (otherName, rel) ->
+                    appendLine("- You feel like their ${rel.sentiment} (affinity: ${rel.affinity}/100) towards $otherName.")
+                }
+            }
+
+            appendLine()
+            appendLine("[System Instruction: You are in an intimate, open, or romantic setting. Pay close attention to physical contact, touch, affection, and intimacy. If another companion is showing affection to $userName or to you, react with appropriate warmth, jealousy, passion, or teasing playfulness based on your relationship settings.]")
 
             // Load long-term memories from their single-companion chats
             val memories = repository.getRecentMemories(targetChar.id, 10)
