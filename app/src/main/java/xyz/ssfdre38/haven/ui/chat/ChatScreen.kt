@@ -1591,8 +1591,8 @@ fun parseMessageText(text: String): ParsedMessage {
 fun cleanMessageTextSpacing(input: String): String {
     var text = input
 
-    // 1. Fix spaces around apostrophes (e.g. "I ' m" -> "I'm", "isn ' t" -> "isn't", "don ' t" -> "don't")
-    val apostropheRegex = """(\b\w+)\s*'\s*([a-zA-Z]+)""".toRegex()
+    // 1. Fix spaces around contractions/possessive apostrophes only (e.g. "I ' m" -> "I'm", "isn ' t" -> "isn't", "don ' t" -> "don't")
+    val apostropheRegex = """(\b\w+)\s*'\s*(s|t|m|re|ve|ll|d)\b""".toRegex(RegexOption.IGNORE_CASE)
     text = text.replace(apostropheRegex, "$1'$2")
 
     // 2. Fix spaces before punctuation marks (e.g. "hello !" -> "hello!", "going ." -> "going.")
@@ -1660,15 +1660,32 @@ fun formatMessageText(text: String, isUser: Boolean): androidx.compose.ui.text.A
         }
 
         var activePartsCount = 0
-        for (pair in processedParts) {
+        for (i in processedParts.indices) {
+            val pair = processedParts[i]
             val rawText = pair.first
             val isAction = pair.second
             val trimmed = rawText.trim()
             if (trimmed.isEmpty()) continue
 
-            // Transition between dialogue and action adds a newline for readability
+            // Determine if we should add a newline before this part
             if (activePartsCount > 0) {
-                append("\n")
+                val prevPair = processedParts[i - 1]
+                val prevTextTrimmed = prevPair.first.trim()
+                
+                // Add newline if there's a sentence-ending punctuation or quotation mark boundary
+                val endsWithSentencePunct = prevTextTrimmed.endsWith(".") || 
+                                           prevTextTrimmed.endsWith("!") || 
+                                           prevTextTrimmed.endsWith("?") || 
+                                           prevTextTrimmed.endsWith("\"")
+                
+                val startsWithQuote = trimmed.startsWith("\"")
+
+                if (endsWithSentencePunct || startsWithQuote) {
+                    append("\n")
+                } else {
+                    // Inline transition: ensure exactly one space between parts
+                    append(" ")
+                }
             }
             activePartsCount++
 
