@@ -21,6 +21,7 @@ import xyz.ssfdre38.haven.data.database.AppDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 
 class WakeWordService : Service() {
@@ -164,6 +165,7 @@ class WakeWordService : Service() {
 
     override fun onDestroy() {
         stopListening()
+        scope.cancel()
         super.onDestroy()
     }
 
@@ -202,4 +204,5 @@ class WakeWordService : Service() {
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPendingIntent)
             .build()
     }
+
 }

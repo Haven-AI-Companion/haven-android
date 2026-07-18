@@ -24,6 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.conflate
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -194,15 +195,20 @@ fun ChatScreen(
     }
 
     // Auto-scroll while companion response is streaming
-    val lastMessageText = remember { derivedStateOf { messages.lastOrNull()?.text ?: "" } }
-    LaunchedEffect(lastMessageText.value) {
-        if (isGenerating && messages.isNotEmpty()) {
-            val layoutInfo = listState.layoutInfo
-            val lastVisibleItem = layoutInfo.visibleItemsInfo.lastOrNull()
-            val isAtBottom = lastVisibleItem == null || lastVisibleItem.index >= layoutInfo.totalItemsCount - 2
-            if (isAtBottom) {
-                listState.scrollToItem(messages.size - 1)
-            }
+    LaunchedEffect(isGenerating) {
+        if (isGenerating) {
+            snapshotFlow { messages.lastOrNull()?.text ?: "" }
+                .conflate()
+                .collect { text ->
+                    if (messages.isNotEmpty()) {
+                        val layoutInfo = listState.layoutInfo
+                        val lastVisibleItem = layoutInfo.visibleItemsInfo.lastOrNull()
+                        val isAtBottom = lastVisibleItem == null || lastVisibleItem.index >= layoutInfo.totalItemsCount - 2
+                        if (isAtBottom) {
+                            listState.scrollToItem(messages.size - 1)
+                        }
+                    }
+                }
         }
     }
 

@@ -921,53 +921,63 @@ fun CameraPreviewView(
         val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
 
         LaunchedEffect(cameraProviderFuture, lifecycleOwner) {
-            val cameraProvider = withContext(Dispatchers.IO) {
-                try {
-                    cameraProviderFuture.get()
-                } catch (e: Exception) {
-                    null
-                }
-            } ?: return@LaunchedEffect
-
-            val preview = Preview.Builder().build().apply {
-                setSurfaceProvider(previewView.surfaceProvider)
-            }
-
-            var lastFrameTime = 0L
-            val imageAnalysis = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-                .apply {
-                    setAnalyzer(java.util.concurrent.Executors.newSingleThreadExecutor()) { imageProxy ->
-                        val currentTime = System.currentTimeMillis()
-                        if (currentTime - lastFrameTime >= 2000) {
-                            lastFrameTime = currentTime
-                            try {
-                                val jpegBytes = imageProxy.toJpegBytes()
-                                if (jpegBytes != null) {
-                                    val base64String = Base64.encodeToString(jpegBytes, Base64.NO_WRAP)
-                                    viewModel.sendCameraFrame(base64String)
-                                }
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
-                        }
-                        imageProxy.close()
-                    }
-                }
-
-            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
-
+            val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+            var cameraProvider: ProcessCameraProvider? = null
             try {
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(
-                    lifecycleOwner,
-                    cameraSelector,
-                    preview,
-                    imageAnalysis
-                )
-            } catch (e: Exception) {
-                e.printStackTrace()
+                val provider = withContext(Dispatchers.IO) {
+                    try {
+                        cameraProviderFuture.get()
+                    } catch (e: Exception) {
+                        null
+                    }
+                } ?: return@LaunchedEffect
+                cameraProvider = provider
+
+                val preview = Preview.Builder().build().apply {
+                    setSurfaceProvider(previewView.surfaceProvider)
+                }
+
+                var lastFrameTime = 0L
+                val imageAnalysis = ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build()
+                    .apply {
+                        setAnalyzer(executor) { imageProxy ->
+                            val currentTime = System.currentTimeMillis()
+                            if (currentTime - lastFrameTime >= 2000) {
+                                lastFrameTime = currentTime
+                                try {
+                                    val jpegBytes = imageProxy.toJpegBytes()
+                                    if (jpegBytes != null) {
+                                        val base64String = Base64.encodeToString(jpegBytes, Base64.NO_WRAP)
+                                        viewModel.sendCameraFrame(base64String)
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                            imageProxy.close()
+                        }
+                    }
+
+                val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+
+                try {
+                    cameraProvider.unbindAll()
+                    cameraProvider.bindToLifecycle(
+                        lifecycleOwner,
+                        cameraSelector,
+                        preview,
+                        imageAnalysis
+                    )
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+
+                kotlinx.coroutines.awaitCancellation()
+            } finally {
+                cameraProvider?.unbindAll()
+                executor.shutdown()
             }
         }
 

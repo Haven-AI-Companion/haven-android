@@ -62,15 +62,16 @@ fun MemoryVaultScreen(
     val token = remember { prefs.getString("auth_token", "") ?: "" }
 
     LaunchedEffect(characterId) {
-        coroutineScope.launch(Dispatchers.IO) {
-            character = repository.getCharacterById(characterId)
+        val char = kotlinx.coroutines.withContext(Dispatchers.IO) {
+            repository.getCharacterById(characterId)
         }
+        character = char
     }
 
     LaunchedEffect(character) {
         val charName = character?.name ?: return@LaunchedEffect
         if (serverUrl.isNotBlank() && token.isNotBlank()) {
-            coroutineScope.launch(Dispatchers.IO) {
+            kotlinx.coroutines.withContext(Dispatchers.IO) {
                 val serverMemories = HavenHttpClient.getMemories(serverUrl, token, charName)
                 if (serverMemories.isNotEmpty()) {
                     repository.clearMemoriesForCharacter(characterId)

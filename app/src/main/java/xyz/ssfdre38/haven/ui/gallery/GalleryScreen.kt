@@ -75,6 +75,7 @@ fun GalleryScreen(
     
     val context = LocalContext.current
     var galleryItems by remember { mutableStateOf<List<GalleryItem>>(emptyList()) }
+    val failedDeletes = remember { java.util.Collections.synchronizedSet(mutableSetOf<String>()) }
 
     // Re-compile gallery items by combining database records with physical files on disk
     LaunchedEffect(messages, characterName) {
@@ -84,7 +85,7 @@ fun GalleryScreen(
 
                 // 1. Add all images from DB messages — only include files that actually exist on THIS device
                 val dbItems = messages
-                    .filter { it.imagePath != null }
+                    .filter { it.imagePath != null && !failedDeletes.contains(it.imagePath) }
                     .mapNotNull { msg ->
                         val f = File(msg.imagePath!!)
                         if (f.exists()) GalleryItem(file = f, prompt = msg.text, messageId = msg.id) else null
@@ -102,7 +103,7 @@ fun GalleryScreen(
                     for (companionDir in dirsToScan) {
                         if (companionDir.exists() && companionDir.isDirectory) {
                             val files = companionDir.listFiles { file ->
-                                file.isFile && (file.name.endsWith(".png") || file.name.endsWith(".jpg") || file.name.endsWith(".webp"))
+                                file.isFile && (file.name.endsWith(".png") || file.name.endsWith(".jpg") || file.name.endsWith(".webp")) && !failedDeletes.contains(file.absolutePath)
                             }
                             files?.forEach { file ->
                                 if (items.none { it.file.name == file.name }) {
@@ -162,11 +163,16 @@ fun GalleryScreen(
                             // Delete duplicate file from disk
                             try {
                                 if (dup.file.exists() && dup.file.absolutePath != primaryItem.file.absolutePath) {
-                                    dup.file.delete()
-                                    consolidatedCount++
+                                    val deleted = dup.file.delete()
+                                    if (deleted) {
+                                        consolidatedCount++
+                                    } else {
+                                        failedDeletes.add(dup.file.absolutePath)
+                                    }
                                 }
                             } catch (e: Exception) {
                                 e.printStackTrace()
+                                failedDeletes.add(dup.file.absolutePath)
                             }
                         }
                     }

@@ -52,6 +52,7 @@ import xyz.ssfdre38.haven.ui.chat.formatMessageText
 import xyz.ssfdre38.haven.ui.components.VrmAvatarView
 import java.io.File
 import androidx.compose.ui.input.key.*
+import kotlinx.coroutines.flow.conflate
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -111,15 +112,20 @@ fun GroupChatScreen(
     }
 
     // Auto-scroll while group responses are streaming
-    val lastMessageText = remember { derivedStateOf { filteredMessages.lastOrNull()?.text ?: "" } }
-    LaunchedEffect(lastMessageText.value) {
-        if (isGenerating && filteredMessages.isNotEmpty()) {
-            val layoutInfo = listState.layoutInfo
-            val lastVisibleItem = layoutInfo.visibleItemsInfo.lastOrNull()
-            val isAtBottom = lastVisibleItem == null || lastVisibleItem.index >= layoutInfo.totalItemsCount - 2
-            if (isAtBottom) {
-                listState.scrollToItem(filteredMessages.size - 1)
-            }
+    LaunchedEffect(isGenerating) {
+        if (isGenerating) {
+            snapshotFlow { filteredMessages.lastOrNull()?.text ?: "" }
+                .conflate()
+                .collect { text ->
+                    if (filteredMessages.isNotEmpty()) {
+                        val layoutInfo = listState.layoutInfo
+                        val lastVisibleItem = layoutInfo.visibleItemsInfo.lastOrNull()
+                        val isAtBottom = lastVisibleItem == null || lastVisibleItem.index >= layoutInfo.totalItemsCount - 2
+                        if (isAtBottom) {
+                            listState.scrollToItem(filteredMessages.size - 1)
+                        }
+                    }
+                }
         }
     }
 

@@ -105,10 +105,10 @@ interface HavenDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMemory(memory: MemoryEntity): Long
 
-    @Query("SELECT * FROM memories WHERE characterId = :characterId ORDER BY createdAt DESC")
+    @Query("SELECT * FROM memories WHERE characterId = :characterId ORDER BY createdAt DESC, id DESC")
     fun getMemoriesForCharacter(characterId: Int): Flow<List<MemoryEntity>>
 
-    @Query("SELECT * FROM memories WHERE characterId = :characterId ORDER BY createdAt DESC LIMIT :limit")
+    @Query("SELECT * FROM memories WHERE characterId = :characterId ORDER BY createdAt DESC, id DESC LIMIT :limit")
     suspend fun getRecentMemories(characterId: Int, limit: Int = 20): List<MemoryEntity>
 
     @Delete
