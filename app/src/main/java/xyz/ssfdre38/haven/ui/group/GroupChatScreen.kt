@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.alpha
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -48,6 +49,7 @@ import xyz.ssfdre38.haven.data.database.GroupMessageEntity
 import xyz.ssfdre38.haven.ui.chat.parseImageUrls
 import xyz.ssfdre38.haven.ui.chat.parseMessageText
 import xyz.ssfdre38.haven.ui.chat.formatMessageText
+import xyz.ssfdre38.haven.ui.components.VrmAvatarView
 import java.io.File
 import androidx.compose.ui.input.key.*
 
@@ -108,6 +110,19 @@ fun GroupChatScreen(
         previousSize = filteredMessages.size
     }
 
+    // Auto-scroll while group responses are streaming
+    val lastMessageText = remember { derivedStateOf { filteredMessages.lastOrNull()?.text ?: "" } }
+    LaunchedEffect(lastMessageText.value) {
+        if (isGenerating && filteredMessages.isNotEmpty()) {
+            val layoutInfo = listState.layoutInfo
+            val lastVisibleItem = layoutInfo.visibleItemsInfo.lastOrNull()
+            val isAtBottom = lastVisibleItem == null || lastVisibleItem.index >= layoutInfo.totalItemsCount - 2
+            if (isAtBottom) {
+                listState.scrollToItem(filteredMessages.size - 1)
+            }
+        }
+    }
+
     LaunchedEffect(serverUrl, token) {
         if (serverUrl.isNotBlank() && token.isNotBlank()) {
             viewModel.syncGroupMessages(context, serverUrl, token)
@@ -131,12 +146,36 @@ fun GroupChatScreen(
         )
     }
 
-    val activeSpeaker = participants.firstOrNull { it.id == selectedSpeakerId }
-    val activeLocation = activeSpeaker?.currentLocation?.lowercase() ?: "lobby"
-    val backdropUrl = remember(activeLocation) {
-        backdropMap.entries.firstOrNull { activeLocation.contains(it.key) }?.value 
-            ?: backdropMap["lobby"]
+    val typingCompanionName by viewModel.typingCompanionName.collectAsStateWithLifecycle()
+    val activeSpeakerEntity = remember(participants, typingCompanionName, selectedSpeakerId, filteredMessages) {
+        if (typingCompanionName != null) {
+            participants.firstOrNull { it.name.equals(typingCompanionName, ignoreCase = true) }
+        } else if (selectedSpeakerId != -1) {
+            participants.firstOrNull { it.id == selectedSpeakerId }
+        } else {
+            val lastCharMsg = filteredMessages.lastOrNull { it.sender == "character" }
+            if (lastCharMsg != null) {
+                participants.firstOrNull { it.id == lastCharMsg.characterId }
+            } else {
+                null
+            }
+        }
     }
+
+    val activeSpeaker = activeSpeakerEntity ?: participants.firstOrNull { it.id == selectedSpeakerId }
+    val activeLocation = activeSpeaker?.currentLocation?.lowercase() ?: "lobby"
+    val manualBackdrop = group?.backdropType ?: ""
+    val backdropUrl = remember(activeLocation, manualBackdrop) {
+        val key = if (manualBackdrop.isNotBlank() && manualBackdrop != "auto") {
+            manualBackdrop
+        } else {
+            backdropMap.keys.firstOrNull { activeLocation.contains(it) } ?: "lobby"
+        }
+        backdropMap[key] ?: backdropMap["lobby"]
+    }
+
+    val activeVrmPath = activeSpeakerEntity?.vrmModelPath
+    val hasActiveVrm = remember(activeVrmPath) { activeVrmPath?.let { File(it).exists() } == true }
 
     Box(
         modifier = modifier
@@ -157,6 +196,22 @@ fun GroupChatScreen(
                     .fillMaxSize()
                     .background(Color(0xFF0C051A).copy(alpha = 0.65f))
             )
+        }
+
+        if (hasActiveVrm && activeVrmPath != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .alpha(0.45f)
+            ) {
+                VrmAvatarView(
+                    modelPath = activeVrmPath,
+                    mood = activeSpeakerEntity?.currentMood ?: "neutral",
+                    isSpeaking = isGenerating && typingCompanionName?.equals(activeSpeakerEntity?.name, ignoreCase = true) == true,
+                    animationIndex = 0,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
         Scaffold(
             topBar = {
@@ -477,6 +532,12 @@ fun GroupChatScreen(
             val groupVal = group
             var tempScenario by remember(groupVal) { mutableStateOf(groupVal?.scenario ?: "") }
             var tempSystemPrompt by remember(groupVal) { mutableStateOf(groupVal?.systemPrompt ?: "") }
+            var tempBackdrop by remember(groupVal) { mutableStateOf(groupVal?.backdropType ?: "auto") }
+            var tempAmbient by remember(groupVal) { mutableStateOf(groupVal?.ambientType ?: "auto") }
+            var tempBanterDelay by remember(groupVal) { mutableStateOf(groupVal?.banterDelay ?: 3) }
+
+            val relations = remember(participants) { viewModel.loadRelations(context) }
+            var tempRelations by remember(relations) { mutableStateOf(relations) }
 
             AlertDialog(
                 onDismissRequest = { showSettingsDialog = false },
@@ -504,6 +565,74 @@ fun GroupChatScreen(
                             textStyle = androidx.compose.ui.text.TextStyle(color = Color.White),
                             maxLines = 3
                         )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text("Room Atmosphere / Backdrop:", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val backdrops = listOf(
+                            "auto" to "Auto",
+                            "lobby" to "Lobby",
+                            "fireplace" to "Fireplace",
+                            "cozy" to "Cozy Room",
+                            "rain" to "Rainy",
+                            "cafe" to "Cafe",
+                            "library" to "Library",
+                            "bedroom" to "Bedroom",
+                            "garden" to "Garden"
+                        )
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        ) {
+                            items(backdrops) { (id, label) ->
+                                val selected = tempBackdrop == id
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = { tempBackdrop = id },
+                                    label = { Text(label) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        labelColor = Color.White
+                                    )
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text("Ambient Audio Loop:", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val ambients = listOf(
+                            "auto" to "Auto Match",
+                            "none" to "No Sound",
+                            "fireplace" to "Fireplace",
+                            "rain" to "Rain",
+                            "cafe" to "Cafe",
+                            "library" to "Library"
+                        )
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        ) {
+                            items(ambients) { (id, label) ->
+                                val selected = tempAmbient == id
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = { tempAmbient = id },
+                                    label = { Text(label) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        labelColor = Color.White
+                                    )
+                                )
+                            }
+                        }
 
                         Spacer(modifier = Modifier.height(16.dp))
                         HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
@@ -549,6 +678,35 @@ fun GroupChatScreen(
                                     Text(label, color = Color.White.copy(alpha = 0.8f))
                                 }
                             }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("Banter Turn Typing Delay:", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            val delays = listOf(
+                                0 to "Instant",
+                                2 to "2s Delay",
+                                5 to "5s Delay",
+                                10 to "10s Delay"
+                            )
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                            ) {
+                                items(delays) { (sec, label) ->
+                                    val selected = tempBanterDelay == sec
+                                    FilterChip(
+                                        selected = selected,
+                                        onClick = { tempBanterDelay = sec },
+                                        label = { Text(label) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                            labelColor = Color.White
+                                        )
+                                    )
+                                }
+                            }
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
@@ -588,7 +746,6 @@ fun GroupChatScreen(
                             }
                         }
 
-                        val relations = remember(participants) { viewModel.loadRelations(context) }
                         Spacer(modifier = Modifier.height(16.dp))
                         HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
                         Spacer(modifier = Modifier.height(12.dp))
@@ -600,26 +757,78 @@ fun GroupChatScreen(
                         participants.forEach { sourceChar ->
                             participants.forEach { targetChar ->
                                 if (sourceChar.id != targetChar.id) {
-                                    val rel = relations[sourceChar.name]?.get(targetChar.name) ?: GroupChatViewModel.CompanionRelation()
-                                    Text(
-                                        text = "${sourceChar.name} feels ${rel.sentiment} (${rel.affinity}/100) towards ${targetChar.name}",
-                                        color = Color.White.copy(alpha = 0.8f),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        modifier = Modifier.padding(vertical = 4.dp)
-                                    )
+                                    val sourceMap = tempRelations[sourceChar.name] ?: emptyMap()
+                                    val rel = sourceMap[targetChar.name] ?: GroupChatViewModel.CompanionRelation()
+                                    
+                                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                                        Text(
+                                            text = "${sourceChar.name} → ${targetChar.name}: feels ${rel.sentiment} (${rel.affinity}/100)",
+                                            color = Color.White,
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            OutlinedTextField(
+                                                value = rel.sentiment,
+                                                onValueChange = { newSent ->
+                                                    val updatedMap = sourceMap.toMutableMap()
+                                                    updatedMap[targetChar.name] = rel.copy(sentiment = newSent)
+                                                    val updatedRelations = tempRelations.toMutableMap()
+                                                    updatedRelations[sourceChar.name] = updatedMap
+                                                    tempRelations = updatedRelations
+                                                },
+                                                placeholder = { Text("neutral", color = Color.White.copy(alpha = 0.3f)) },
+                                                modifier = Modifier.weight(0.4f),
+                                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 13.sp),
+                                                maxLines = 1,
+                                                colors = OutlinedTextFieldDefaults.colors(
+                                                    unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                                    focusedBorderColor = MaterialTheme.colorScheme.primary
+                                                )
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Slider(
+                                                value = rel.affinity.toFloat(),
+                                                onValueChange = { newVal ->
+                                                    val newAffinity = newVal.toInt()
+                                                    val newSentiment = viewModel.detectRelationshipTitle(targetChar, newAffinity)
+                                                    val updatedMap = sourceMap.toMutableMap()
+                                                    updatedMap[targetChar.name] = rel.copy(affinity = newAffinity, sentiment = newSentiment)
+                                                    val updatedRelations = tempRelations.toMutableMap()
+                                                    updatedRelations[sourceChar.name] = updatedMap
+                                                    tempRelations = updatedRelations
+                                                },
+                                                valueRange = 0f..100f,
+                                                modifier = Modifier.weight(0.6f)
+                                            )
+                                        }
+                                    }
                                     hasSentiments = true
                                 }
                             }
                         }
                         if (!hasSentiments) {
-                            Text("No relationships formed yet.", color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.bodyMedium)
+                            Text("No relationships formed yet. Add at least two companions.", color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        viewModel.updateGroupConfig(context, serverUrl, token, tempScenario, tempSystemPrompt)
+                        viewModel.updateGroupConfig(
+                            context = context,
+                            serverUrl = serverUrl,
+                            token = token,
+                            scenario = tempScenario,
+                            systemPrompt = tempSystemPrompt,
+                            backdropType = tempBackdrop,
+                            ambientType = tempAmbient,
+                            banterDelay = tempBanterDelay
+                        )
                         viewModel.updateParticipants(context, serverUrl, token, tempSelectedParticipants.toList())
+                        viewModel.saveRelations(context, tempRelations)
                         showSettingsDialog = false
                     }) {
                         Text("Apply", color = MaterialTheme.colorScheme.primary)

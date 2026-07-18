@@ -133,20 +133,141 @@ class ChatViewModel(
             val serverMsgs = HavenHttpClient.getConversationMessages(serverUrl, token, conversationId)
             val localMsgs = repository.getMessagesForCharacter(characterId).first()
             
-            if (serverMsgs.size == localMsgs.size) {
-                return@launch
+            // 1. Find common prefix of messages that match exactly
+            var commonPrefixLength = 0
+            while (commonPrefixLength < localMsgs.size && commonPrefixLength < serverMsgs.size) {
+                val localMsg = localMsgs[commonPrefixLength]
+                val serverObj = serverMsgs[commonPrefixLength]
+                val role = serverObj.getString("role")
+                val content = serverObj.getString("content")
+                
+                val localRole = if (localMsg.sender == "user") "user" else "assistant"
+                val cleanLocal = localMsg.text.trim()
+                val cleanServer = cleanFinalText(content).trim()
+                
+                if (localRole == role && cleanLocal == cleanServer) {
+                    commonPrefixLength++
+                } else {
+                    break
+                }
             }
             
-            if (serverMsgs.size < localMsgs.size) {
-                // Client has new offline messages! Push them to the server
-                for (i in serverMsgs.size until localMsgs.size) {
-                    val localMsg = localMsgs[i]
+            if (commonPrefixLength == localMsgs.size && commonPrefixLength == serverMsgs.size) {
+                return@launch // Fully synchronized
+            }
+            
+            if (localMsgs.size > commonPrefixLength) {
+                // Client has new offline messages!
+                val localOfflineMsgs = localMsgs.subList(commonPrefixLength, localMsgs.size)
+                val hasNewServerMsgs = serverMsgs.size > commonPrefixLength
+                
+                if (hasNewServerMsgs) {
+                    // Delete local offline messages first to allow correct chronological placement of server messages
+                    for (msg in localOfflineMsgs) {
+                        repository.deleteMessage(msg)
+                    }
+                    
+                    // Pull and append new server messages
+                    for (i in commonPrefixLength until serverMsgs.size) {
+                        val obj = serverMsgs[i]
+                        val role = obj.getString("role")
+                        val content = obj.getString("content")
+                        val sender = if (role == "user") "user" else "character"
+                        
+                        // Extract state tags
+                        if (sender == "character") {
+                            val outfitRegex = "\\[\\s*Out\\s*fit\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+                            val locationRegex = "\\[\\s*Loc\\s*ation\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+                            val moodRegex = "\\[\\s*Mood\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+                            val clothingStateRegex = "\\[\\s*Clothing\\s*State\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+
+                            val newOutfit = outfitRegex.find(content)?.groups?.get(1)?.value?.trim()
+                            val newLocation = locationRegex.find(content)?.groups?.get(1)?.value?.trim()
+                            val newMood = moodRegex.find(content)?.groups?.get(1)?.value?.trim()
+                            val newClothingState = clothingStateRegex.find(content)?.groups?.get(1)?.value?.trim()
+
+                            if (newOutfit != null || newLocation != null || newMood != null || newClothingState != null) {
+                                val current = repository.getCharacterById(characterId)
+                                if (current != null) {
+                                    val updated = current.copy(
+                                        currentOutfit = newOutfit ?: current.currentOutfit,
+                                        currentLocation = newLocation ?: current.currentLocation,
+                                        currentMood = newMood ?: current.currentMood,
+                                        clothingState = newClothingState ?: current.clothingState
+                                    )
+                                    repository.updateCharacter(updated)
+                                }
+                            }
+                        }
+
+                        val cleanText = cleanFinalText(content)
+                        if (sender == "character") {
+                            val actionRegex = "\\[\\s*ACTION\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+                            actionRegex.findAll(content).forEach { match ->
+                                val actionTag = match.groups[1]?.value ?: ""
+                                executeAndroidAction(context, actionTag)
+                            }
+                        }
+
+                        val msgId = repository.insertMessage(
+                            MessageEntity(
+                                characterId = characterId,
+                                sender = sender,
+                                text = cleanText
+                            )
+                        ).toInt()
+
+                        val urlRegex = "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.-]+)|(/uploads/[%a-zA-Z_0-9.-]+)".toRegex(RegexOption.IGNORE_CASE)
+                        val urlMatch = urlRegex.find(content)
+                        if (urlMatch != null) {
+                            val rawUrl = urlMatch.value
+                            val resolvedUrl = if (rawUrl.startsWith("/")) {
+                                val host = serverUrl.trimEnd('/')
+                                if (host.startsWith("http")) "$host$rawUrl" else "http://$host$rawUrl"
+                            } else {
+                                rawUrl
+                            }
+                            try {
+                                val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, char.name)
+                                if (localPath != null) {
+                                    repository.insertMessage(
+                                        MessageEntity(
+                                            id = msgId,
+                                            characterId = characterId,
+                                            sender = sender,
+                                            text = cleanText,
+                                            imagePath = localPath
+                                        )
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                    }
+                }
+                
+                // Re-insert and push local offline messages to server
+                for (localMsg in localOfflineMsgs) {
+                    if (hasNewServerMsgs) {
+                        repository.insertMessage(
+                            MessageEntity(
+                                characterId = characterId,
+                                sender = localMsg.sender,
+                                text = localMsg.text,
+                                imagePath = localMsg.imagePath,
+                                audioPath = localMsg.audioPath,
+                                timestamp = localMsg.timestamp,
+                                messageUuid = localMsg.messageUuid
+                            )
+                        )
+                    }
                     val role = if (localMsg.sender == "user") "user" else "assistant"
                     HavenHttpClient.addConversationMessage(serverUrl, token, conversationId, role, localMsg.text)
                 }
             } else {
-                // Server has new messages! Append them locally
-                for (i in localMsgs.size until serverMsgs.size) {
+                // Server has new messages only! Pull them and append locally
+                for (i in commonPrefixLength until serverMsgs.size) {
                     val obj = serverMsgs[i]
                     val role = obj.getString("role")
                     val content = obj.getString("content")
@@ -386,7 +507,7 @@ class ChatViewModel(
                     append("\n")
                 }
                 append("$userName: $text\n")
-                append("${char?.name ?: "Companion"}:")
+                append("${char?.name ?: "Companion"}: ")
             }
 
             // Insert user message into database
@@ -582,6 +703,7 @@ class ChatViewModel(
                             newClothingState = m?.groups[1]?.value?.trim()
                         }
                     }
+                    val cleanedText = getFinalCleanedText(fullText, char, newMood)
 
                     if (newOutfit != null || newLocation != null || newMood != null || newBodyType != null || newBodyShape != null || newClothingState != null) {
                             viewModelScope.launch(Dispatchers.IO) {
@@ -710,10 +832,10 @@ class ChatViewModel(
                     }
 
                     val hasToolTag = toolCallRegex.containsMatchIn(fullText)
-                    val hasImplicitTrigger = !hasToolTag && shouldAutoTriggerPortrait(cleanText)
+                    val hasImplicitTrigger = !hasToolTag && shouldAutoTriggerPortrait(cleanedText)
 
                     if (hasToolTag || hasImplicitTrigger) {
-                        val cleanedText = cleanFinalText(fullText)
+                        
                         
                         // Immediately clean up the message in the DB to hide the raw tool call from the user
                         dbWriteJob?.cancel()
@@ -813,8 +935,8 @@ class ChatViewModel(
                                 }
                             }
                         }
-                    } else if (avatar3dRegex.containsMatchIn(fullText) || shouldAutoTrigger3DAvatar(cleanText)) {
-                        val cleanedText = cleanFinalText(fullText)
+                    } else if (avatar3dRegex.containsMatchIn(fullText) || shouldAutoTrigger3DAvatar(cleanedText)) {
+                        
                         
                         // Immediately clean up the message in the DB
                         viewModelScope.launch(Dispatchers.IO) {
@@ -902,13 +1024,13 @@ class ChatViewModel(
                         dbWriteJob = viewModelScope.launch(Dispatchers.IO) {
                             val lastMsg = repository.getLastMessage(characterId)
                             if (lastMsg != null && lastMsg.sender == "character") {
-                                repository.insertMessage(lastMsg.copy(text = cleanText))
+                                repository.insertMessage(lastMsg.copy(text = cleanedText))
                             }
                         }
 
                         // Parse clean text for inline image URLs to download and save locally
                         val urlRegex = "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.-]+)|(/uploads/[%a-zA-Z_0-9.-]+)".toRegex(RegexOption.IGNORE_CASE)
-                        val urlMatch = urlRegex.find(cleanText)
+                        val urlMatch = urlRegex.find(cleanedText)
                         if (urlMatch != null) {
                             val rawUrl = urlMatch.value
                             val resolvedUrl = if (rawUrl.startsWith("/")) {
@@ -1032,7 +1154,8 @@ ${character.value?.name ?: "Companion"}: $cleanText"""
                             serverUrl = serverUrl,
                             token = token,
                             text = cleanText,
-                            voice = currentVoice
+                            voice = currentVoice,
+                            companion = character.value?.name
                         ) { result ->
                             result.onSuccess { relativeUrl ->
                                 val resolvedUrl = if (relativeUrl.startsWith("/")) {
@@ -1319,6 +1442,48 @@ ${character.value?.name ?: "Companion"}: $cleanText"""
         
         return text.trim()
     }
+
+    private fun getFinalCleanedText(fullText: String, currentChar: CharacterEntity?, defaultMood: String?): String {
+        val clean = cleanFinalText(fullText)
+        if (clean.isNotBlank()) return clean
+
+        // Fallback: Try to extract thought content
+        val parsed = parseMessageText(fullText)
+        val parsedThought = parsed.thought
+        val cleanThoughtText = parsedThought?.let { t ->
+            t.replace("\\[\\s*(?:Outfit|Location|Mood|Tool|Call|BodyType|BodyShape|ClothingState|ACTION)\\s*:.*?\\s*\\]".toRegex(RegexOption.IGNORE_CASE), "")
+             .replace("<\\s*call\\s*>.*?<\\s*/\\s*call\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL), "")
+             .replace("</?\\s*(?:thought|thinking|reasoning|Reasoning/Plan|plan|thought_process)[^>]*>".toRegex(RegexOption.IGNORE_CASE), "")
+             .trim()
+        }
+        if (!cleanThoughtText.isNullOrBlank()) {
+            return cleanThoughtText
+        }
+
+        // Determine if we generated an image or 3D avatar
+        val toolCallRegex = "(?:\\[\\s*(?:Tool\\s*(?:Call\\s*)?:\\s*)?generate_portr?ait\\s*\\])|(?:<\\s*call\\s*>\\s*generate_portr?ait\\s*<\\s*/\\s*call\\s*>)|(?:<\\s*call\\s*:\\s*generate_portr?ait\\s*>)".toRegex(RegexOption.IGNORE_CASE)
+        val avatar3dRegex = "(?:\\[\\s*(?:Tool\\s*(?:Call\\s*)?:\\s*)?generate_3d_avatar\\s*\\])|(?:<\\s*call\\s*>\\s*generate_3d_avatar\\s*<\\s*/\\s*call\\s*>)|(?:<\\s*call\\s*:\\s*generate_3d_avatar\\s*>)".toRegex(RegexOption.IGNORE_CASE)
+        val isImage = toolCallRegex.containsMatchIn(fullText) || shouldAutoTriggerPortrait(clean)
+        val is3d = avatar3dRegex.containsMatchIn(fullText) || shouldAutoTrigger3DAvatar(clean)
+
+        if (isImage) {
+            return "*poses for a portrait*"
+        }
+        if (is3d) {
+            return "*shows 3D avatar*"
+        }
+
+        val mood = currentChar?.currentMood ?: defaultMood ?: "smiling"
+        return when {
+            mood.contains("sleep", ignoreCase = true) || mood.contains("tired", ignoreCase = true) -> "*yawns softly and looks at you*"
+            mood.contains("sad", ignoreCase = true) || mood.contains("cry", ignoreCase = true) -> "*looks down, sighing softly*"
+            mood.contains("angry", ignoreCase = true) || mood.contains("mad", ignoreCase = true) -> "*looks at you with a slight frown*"
+            mood.contains("happy", ignoreCase = true) || mood.contains("smile", ignoreCase = true) || mood.contains("excited", ignoreCase = true) -> "*smiles warmly at you*"
+            mood.contains("blush", ignoreCase = true) || mood.contains("shy", ignoreCase = true) || mood.contains("nervous", ignoreCase = true) -> "*blushes slightly, looking at you*"
+            else -> "*looks at you thoughtfully*"
+        }
+    }
+
 
     private fun executeAndroidAction(context: Context, actionTag: String) {
         val lower = actionTag.trim().lowercase()

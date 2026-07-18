@@ -267,6 +267,42 @@ object HavenHttpClient {
     }
 
     /**
+     * Downloads an image from an HTTP URL and saves it to a group-chat-specific internal storage directory,
+     * returning the local file path. This keeps group chat images separate from companion galleries.
+     */
+    fun downloadGroupImage(context: Context, imageUrl: String, groupId: Int): String? {
+        val request = okhttp3.Request.Builder().url(imageUrl).build()
+        try {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val bytes = response.body?.bytes()
+                    if (bytes != null) {
+                        val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+                        val imagesDir = File(baseDir, "group_chats/images/$groupId")
+                        if (!imagesDir.exists()) imagesDir.mkdirs()
+                        
+                        val ext = if (imageUrl.lowercase().endsWith(".webp")) ".webp"
+                                  else if (imageUrl.lowercase().endsWith(".jpg") || imageUrl.lowercase().endsWith(".jpeg")) ".jpg"
+                                  else ".png"
+                        
+                        val sdf = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
+                        val dateTime = sdf.format(java.util.Date())
+                        val file = File(imagesDir, "group_${groupId}_$dateTime$ext")
+                        
+                        java.io.FileOutputStream(file).use { fos ->
+                            fos.write(bytes)
+                        }
+                        return file.absolutePath
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return null
+    }
+
+    /**
      * Downloads a GLB model file from an HTTP URL and saves it to internal storage under vrm_models directory.
      */
     fun downloadGlb(context: Context, modelUrl: String, characterName: String): String? {
@@ -347,12 +383,16 @@ object HavenHttpClient {
         token: String,
         text: String,
         voice: String,
+        companion: String? = null,
         onResult: (Result<String>) -> Unit
     ) {
         val url = "${serverUrl.trimEnd('/')}/api/tts"
         val requestBodyJson = JSONObject().apply {
             put("text", text)
             put("voice", voice)
+            if (!companion.isNullOrBlank()) {
+                put("companion", companion)
+            }
         }.toString()
 
         val request = Request.Builder()
@@ -707,7 +747,8 @@ object HavenHttpClient {
         token: String,
         fileBytes: ByteArray,
         fileName: String,
-        mimeType: String
+        mimeType: String,
+        companionName: String? = null
     ): String? {
         val url = "${serverUrl.trimEnd('/')}/api/upload"
         val fileMediaType = mimeType.toMediaTypeOrNull()
@@ -715,6 +756,11 @@ object HavenHttpClient {
         val requestBody = okhttp3.MultipartBody.Builder()
             .setType(okhttp3.MultipartBody.FORM)
             .addFormDataPart("file", fileName, fileBody)
+            .apply {
+                if (!companionName.isNullOrBlank()) {
+                    addFormDataPart("companion", companionName)
+                }
+            }
             .build()
         val request = Request.Builder()
             .url(url)
@@ -759,9 +805,40 @@ object HavenHttpClient {
                         "webp" -> "image/webp"
                         else -> "image/png"
                     }
-                    val uploadedUrl = uploadFile(serverUrl, token, bytes, file.name, mimeType)
+                    val uploadedUrl = uploadFile(
+                        serverUrl = serverUrl,
+                        token = token,
+                        fileBytes = bytes,
+                        fileName = file.name,
+                        mimeType = mimeType,
+                        companionName = character.name
+                    )
                     if (!uploadedUrl.isNullOrBlank()) {
                         serverAvatarPath = uploadedUrl
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+
+        var serverVrmPath = character.vrmModelPath
+        
+        if (context != null && !character.vrmModelPath.isNullOrBlank() && !character.vrmModelPath.startsWith("/uploads/") && !character.vrmModelPath.startsWith("http")) {
+            val file = java.io.File(character.vrmModelPath)
+            if (file.exists()) {
+                try {
+                    val bytes = file.readBytes()
+                    val uploadedUrl = uploadFile(
+                        serverUrl = serverUrl,
+                        token = token,
+                        fileBytes = bytes,
+                        fileName = file.name,
+                        mimeType = "model/gltf-binary",
+                        companionName = character.name
+                    )
+                    if (!uploadedUrl.isNullOrBlank()) {
+                        serverVrmPath = uploadedUrl
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -788,6 +865,9 @@ object HavenHttpClient {
             put("bodyType", character.bodyType)
             put("bodyShape", character.bodyShape)
             put("clothingState", character.clothingState)
+            put("relationshipXp", character.relationshipXp)
+            put("messageCount", character.messageCount)
+            put("vrmModelPath", serverVrmPath ?: JSONObject.NULL)
         }.toString()
 
         val request = Request.Builder()

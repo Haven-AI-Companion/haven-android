@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import java.io.File
+import xyz.ssfdre38.haven.ui.chat.parseMessageText
 
 class GroupChatViewModel(
     private val groupId: Int,
@@ -62,14 +63,29 @@ class GroupChatViewModel(
     private var ambientPlayer: android.media.MediaPlayer? = null
     private var currentAmbientUrl: String? = null
 
+    fun updateRelationship(context: Context, sourceCharName: String, targetCharName: String, affinity: Int, sentiment: String) {
+        val current = loadRelations(context).toMutableMap()
+        val inner = (current[sourceCharName] ?: emptyMap()).toMutableMap()
+        inner[targetCharName] = CompanionRelation(affinity = affinity, sentiment = sentiment)
+        current[sourceCharName] = inner
+        saveRelations(context, current)
+    }
+
     fun updateAmbientSoundForGroup() {
-        val grp = _group.value
-        val scenario = grp?.scenario ?: ""
+        val grp = _group.value ?: return
+        val scenario = grp.scenario
         val activeChar = _participants.value.firstOrNull { it.id == _selectedSpeakerId.value }
         val location = activeChar?.currentLocation ?: ""
         
-        val combined = "$scenario|$location".lowercase()
-        val matchUrl = ambientAudioMap.entries.firstOrNull { combined.contains(it.key) }?.value
+        val manualAmbient = grp.ambientType
+        val matchUrl = when {
+            manualAmbient == "none" -> null
+            manualAmbient.isNotBlank() && manualAmbient != "auto" -> ambientAudioMap[manualAmbient]
+            else -> {
+                val combined = "$scenario|$location".lowercase()
+                ambientAudioMap.entries.firstOrNull { combined.contains(it.key) }?.value
+            }
+        }
         
         viewModelScope.launch(Dispatchers.Main) {
             if (matchUrl == null) {
@@ -214,7 +230,7 @@ class GroupChatViewModel(
         }
     }
 
-    private fun detectRelationshipTitle(targetChar: CharacterEntity?, affinity: Int): String {
+    fun detectRelationshipTitle(targetChar: CharacterEntity?, affinity: Int): String {
         return when {
             affinity >= 95 -> "devoted lover"
             affinity >= 85 -> {
@@ -228,8 +244,21 @@ class GroupChatViewModel(
             affinity >= 70 -> "close friend"
             affinity >= 50 -> "friendly"
             affinity >= 35 -> "neutral"
-            else -> "distant"
+            affinity >= 20 -> "distant"
+            else -> "hostile"
         }
+    }
+
+    /** Resolves (serverUrl, token) from SharedPrefs. Returns null pair if not configured. */
+    private fun resolveServerCredentials(context: Context): Pair<String, String>? {
+        val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+        val host = prefs.getString("ash_host", null) ?: return null
+        if (host.isBlank()) return null
+        val port = prefs.getString("ash_port", "18799") ?: "18799"
+        val token = prefs.getString("auth_token", null) ?: return null
+        if (token.isBlank()) return null
+        val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+        return Pair("$formattedHost:${port.trim()}", token)
     }
 
     fun adjustAffinity(context: Context, sourceCharName: String, targetCharName: String, text: String) {
@@ -278,16 +307,12 @@ class GroupChatViewModel(
                 )
 
                 // Sync system message to server
-                val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
-                val host = sharedPrefs.getString("ash_host", null)
-                val port = sharedPrefs.getString("ash_port", "18799")
-                val token = sharedPrefs.getString("auth_token", null)
-                val groupUuid = _group.value?.uuid
-                
-                if (!host.isNullOrBlank() && !token.isNullOrBlank() && !groupUuid.isNullOrBlank()) {
-                    val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
-                    val serverUrl = "$formattedHost:${port?.trim() ?: "18799"}"
-                    
+                // Fall back to DB if _group.value hasn't been updated yet (race condition on init)
+                val groupUuid = (_group.value?.uuid ?: repository.getGroupChatById(groupId)?.uuid)
+                val creds = resolveServerCredentials(context)
+
+                if (creds != null && !groupUuid.isNullOrBlank()) {
+                    val (serverUrl, token) = creds
                     val success = HavenHttpClient.saveGroupMessage(serverUrl, token, groupUuid, "system", null, systemMsgText)
                     if (!success) {
                         val payload = org.json.JSONObject().apply {
@@ -408,14 +433,26 @@ class GroupChatViewModel(
         serverUrl: String,
         token: String,
         scenario: String,
-        systemPrompt: String
+        systemPrompt: String,
+        backdropType: String = "",
+        ambientType: String = "",
+        banterDelay: Int = 0
     ) {
         val grp = _group.value ?: return
-        val updatedGrp = grp.copy(scenario = scenario, systemPrompt = systemPrompt)
+        val updatedGrp = grp.copy(
+            scenario = scenario,
+            systemPrompt = systemPrompt,
+            backdropType = backdropType,
+            ambientType = ambientType,
+            banterDelay = banterDelay
+        )
         
         viewModelScope.launch(Dispatchers.IO) {
             repository.insertGroupChat(updatedGrp)
             _group.value = updatedGrp
+            
+            // Re-evaluate sound loop dynamically on change
+            updateAmbientSoundForGroup()
             
             // Push changes to server
             val characterNames = _participants.value.map { it.name }.joinToString(",")
@@ -438,16 +475,10 @@ class GroupChatViewModel(
     }
 
     private fun saveCompanionToServer(context: Context, char: CharacterEntity) {
-        val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
-        val host = sharedPrefs.getString("ash_host", null)
-        val port = sharedPrefs.getString("ash_port", "18799")
-        val token = sharedPrefs.getString("auth_token", null)
-        if (!host.isNullOrBlank() && !token.isNullOrBlank()) {
-            val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
-            val serverUrl = "$formattedHost:${port?.trim()}"
-            viewModelScope.launch(Dispatchers.IO) {
-                HavenHttpClient.saveCompanion(context, serverUrl, token, char)
-            }
+        val creds = resolveServerCredentials(context) ?: return
+        val (serverUrl, token) = creds
+        viewModelScope.launch(Dispatchers.IO) {
+            HavenHttpClient.saveCompanion(context, serverUrl, token, char)
         }
     }
 
@@ -472,7 +503,13 @@ class GroupChatViewModel(
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            val grp = repository.getGroupChatById(groupId)
+            var grp = repository.getGroupChatById(groupId)
+            if (grp != null && grp.uuid.isNullOrBlank()) {
+                // Assign a UUID at load time so syncing works from the very first session
+                val newUuid = java.util.UUID.randomUUID().toString()
+                grp = grp.copy(uuid = newUuid)
+                repository.insertGroupChat(grp)
+            }
             _group.value = grp
             if (grp != null) {
                 val ids = grp.characterIdsString.split(",")
@@ -630,6 +667,8 @@ class GroupChatViewModel(
                     val moodMatch = moodRegex.find(fullText)
                     newMood = moodMatch?.groups[1]?.value?.trim()
 
+                    val cleanedText = getFinalCleanedText(fullText, targetChar, newMood)
+
                     if (newOutfit != null || newLocation != null || newMood != null) {
                             viewModelScope.launch(Dispatchers.IO) {
                                 val currentChar = repository.getCharacterById(targetChar.id)
@@ -699,17 +738,21 @@ class GroupChatViewModel(
                         }
 
                     val hasToolTag = toolCallRegex.containsMatchIn(fullText)
-                    val hasImplicitTrigger = !hasToolTag && shouldAutoTriggerPortrait(cleanText)
+                    val hasImplicitTrigger = !hasToolTag && shouldAutoTriggerPortrait(cleanedText)
 
                     if (hasToolTag || hasImplicitTrigger) {
-                        val cleanedText = fullText.replace(toolCallRegex, "").trim()
-                        val textWithoutThoughts = cleanText
+                        val parsed = parseMessageText(fullText)
+                        val finalDbText = if (cleanText.isNotBlank()) {
+                            fullText.replace(toolCallRegex, "").trim()
+                        } else {
+                            "$cleanedText <thought>${parsed.thought ?: ""}</thought>"
+                        }
                         
                         // Immediately clean up the message in the DB to hide the raw tool call from the user
                         viewModelScope.launch(Dispatchers.IO) {
                             val lastMsg = repository.getLastGroupMessage(groupId)
                             if (lastMsg != null && lastMsg.sender == "character") {
-                                repository.insertGroupMessage(lastMsg.copy(text = cleanedText))
+                                repository.insertGroupMessage(lastMsg.copy(text = finalDbText))
                             }
                         }
 
@@ -758,7 +801,7 @@ class GroupChatViewModel(
                                         
                                         // Download and save the portrait
                                         try {
-                                            val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, targetChar.name)
+                                            val localPath = HavenHttpClient.downloadGroupImage(context, resolvedUrl, groupId)
                                             if (localPath != null) {
                                                 val finalMsg = repository.getLastGroupMessage(groupId)
                                                 if (finalMsg != null && finalMsg.sender == "character") {
@@ -773,9 +816,17 @@ class GroupChatViewModel(
                             }
                         }
                     } else {
+                        // Immediately clean up the message in the DB to hide any raw thought block residues or tag remnants
+                        viewModelScope.launch(Dispatchers.IO) {
+                            val lastMsg = repository.getLastGroupMessage(groupId)
+                            if (lastMsg != null && lastMsg.sender == "character") {
+                                repository.insertGroupMessage(lastMsg.copy(text = cleanedText))
+                            }
+                        }
+
                         // Download inline generated image if present
                         val urlRegex = "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.-]+)|(/uploads/[%a-zA-Z_0-9.-]+)".toRegex(RegexOption.IGNORE_CASE)
-                        val urlMatch = urlRegex.find(cleanText)
+                        val urlMatch = urlRegex.find(cleanedText)
                         if (urlMatch != null) {
                             val rawUrl = urlMatch.value
                             val resolvedUrl = if (rawUrl.startsWith("/")) {
@@ -787,7 +838,7 @@ class GroupChatViewModel(
                             
                             viewModelScope.launch(Dispatchers.IO) {
                                 try {
-                                    val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, targetChar.name)
+                                    val localPath = HavenHttpClient.downloadGroupImage(context, resolvedUrl, groupId)
                                     if (localPath != null) {
                                         val lastMsg = repository.getLastGroupMessage(groupId)
                                         if (lastMsg != null && lastMsg.sender == "character") {
@@ -806,13 +857,13 @@ class GroupChatViewModel(
                     // Push response to server
                     if (groupUuid != null) {
                         viewModelScope.launch(Dispatchers.IO) {
-                            val success = HavenHttpClient.saveGroupMessage(serverUrl, token, groupUuid, "character", targetChar.name, cleanText)
+                            val success = HavenHttpClient.saveGroupMessage(serverUrl, token, groupUuid, "character", targetChar.name, cleanedText)
                             if (!success) {
                                 val payload = org.json.JSONObject().apply {
                                     put("group_id", groupUuid)
                                     put("sender", "character")
                                     put("character_name", targetChar.name)
-                                    put("content", cleanText)
+                                    put("content", cleanedText)
                                 }
                                 xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
                                     context,
@@ -844,7 +895,8 @@ class GroupChatViewModel(
                                 serverUrl = serverUrl,
                                 token = token,
                                 text = cleanText,
-                                voice = currentVoice
+                                voice = currentVoice,
+                                companion = targetChar.name
                             ) { result ->
                                 result.onSuccess { relativeUrl ->
                                     val resolvedUrl = if (relativeUrl.startsWith("/")) {
@@ -876,9 +928,12 @@ class GroupChatViewModel(
                             val activeSpeakerMood = newMood ?: targetChar.currentMood ?: ""
                             val nextSpeaker = selectNextBanterSpeaker(targetChar, otherParticipants, cleanText, activeSpeakerMood)
 
+                            _typingCompanionName.value = nextSpeaker.name
                             banterJob?.cancel()
                             banterJob = viewModelScope.launch {
-                                delay(3000)
+                                val delaySecs = _group.value?.banterDelay ?: 3
+                                val delayMs = if (delaySecs > 0) delaySecs * 1000L else 500L
+                                delay(delayMs)
                                 triggerBanterReply(context, serverUrl, token, nextSpeaker)
                             }
                         }
@@ -914,8 +969,22 @@ class GroupChatViewModel(
         val roomScenario = grp?.scenario ?: ""
         val roomSystemPrompt = grp?.systemPrompt ?: ""
 
+        // Build the identity header for THIS character first.
+        // The server (Controllers.cs:515) detects "You are " at the start and splits on \n\n
+        // to extract the per-companion system prompt, applying their local JSON override
+        // instead of the global soul.json. Without this prefix the server ignored individual
+        // companion personalities and answered as the generic "Ash" global identity.
+        val identityBlock = buildString {
+            appendLine("You are ${targetChar.name}.")
+            if (targetChar.personality.isNotBlank()) appendLine("Personality: ${targetChar.personality}")
+            if (targetChar.scenario.isNotBlank())   appendLine("Scenario: ${targetChar.scenario}")
+            if (targetChar.systemPrompt.isNotBlank()) appendLine(targetChar.systemPrompt)
+            append("You are speaking with $userName. Always address them as $userName.")
+        }
+
         val systemContext = buildString {
-            appendLine("This is a multi-companion group chat between $userName and the following characters:")
+            // Multi-companion context follows the identity block (server splits on first \n\n)
+            appendLine("[Group Context: This is a multi-companion group chat between $userName and the following characters:]")
             allChars.forEach { c ->
                 appendLine("- ${c.name}. Personality: ${c.personality}. Current Location: ${c.currentLocation.ifBlank { "Group Lobby" }}. Current Outfit: ${c.currentOutfit.ifBlank { "Casual" }}. Current Mood: ${c.currentMood.ifBlank { "neutral" }}")
             }
@@ -978,7 +1047,9 @@ class GroupChatViewModel(
             "$senderName: $cleanText"
         }
 
-        return "$systemContext\n\n=== Conversation History ===\n$formattedHistory\n$userName: $currentInput\n${targetChar.name}:"
+        // identityBlock + \n\n is the split point the server uses to extract systemPrompt.
+        // Everything after the first \n\n becomes the user-turn prompt body.
+        return "$identityBlock\n\n$systemContext\n\n=== Conversation History ===\n$formattedHistory\n$userName: $currentInput\n${targetChar.name}: "
     }
 
     fun triggerBanterReply(context: Context, serverUrl: String, token: String, targetChar: CharacterEntity) {
@@ -1068,6 +1139,8 @@ class GroupChatViewModel(
                     val moodMatch = moodRegex.find(fullText)
                     val newMood = moodMatch?.groups[1]?.value?.trim()
 
+                    val cleanedText = getFinalCleanedText(fullText, targetChar, newMood)
+
                     if (newOutfit != null || newLocation != null || newMood != null) {
                             viewModelScope.launch(Dispatchers.IO) {
                                 val currentChar = repository.getCharacterById(targetChar.id)
@@ -1087,20 +1160,24 @@ class GroupChatViewModel(
                         }
 
                     val toolCallRegex = "(?:\\[\\s*(?:Tool\\s*(?:Call\\s*)?:\\s*)?generate_portr?ait\\s*\\])|(?:<\\s*call\\s*>\\s*generate_portr?ait\\s*<\\s*/\\s*call\\s*>)|(?:<\\s*call\\s*:\\s*generate_portr?ait\\s*>)".toRegex(RegexOption.IGNORE_CASE)
-                    val cleanText = fullText.replace(thoughtRegex, "").replace(toolCallRegex, "").trim()
-                    
                     val targetId = streamingMessageId
-                    viewModelScope.launch(Dispatchers.IO) {
-                        val msg = repository.getGroupMessageById(targetId)
-                        if (msg != null) {
-                            repository.insertGroupMessage(msg.copy(text = cleanText))
-                        }
-                    }
-
+                    val cleanText = cleanFinalText(fullText)
                     val hasToolTag = toolCallRegex.containsMatchIn(fullText)
-                    val hasImplicitTrigger = !hasToolTag && shouldAutoTriggerPortrait(cleanText)
+                    val hasImplicitTrigger = !hasToolTag && shouldAutoTriggerPortrait(cleanedText)
 
                     if (hasToolTag || hasImplicitTrigger) {
+                        val parsed = parseMessageText(fullText)
+                        val finalDbText = if (cleanText.isNotBlank()) {
+                            fullText.replace(toolCallRegex, "").trim()
+                        } else {
+                            "$cleanedText <thought>${parsed.thought ?: ""}</thought>"
+                        }
+                        viewModelScope.launch(Dispatchers.IO) {
+                            val msg = repository.getGroupMessageById(targetId)
+                            if (msg != null) {
+                                repository.insertGroupMessage(msg.copy(text = finalDbText))
+                            }
+                        }
                         viewModelScope.launch(Dispatchers.IO) {
                             val currentChar = repository.getCharacterById(targetChar.id)
                             val outfitPrompt = if (currentChar != null) {
@@ -1143,7 +1220,7 @@ class GroupChatViewModel(
                                         }
                                         
                                         try {
-                                            val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, targetChar.name)
+                                            val localPath = HavenHttpClient.downloadGroupImage(context, resolvedUrl, groupId)
                                             if (localPath != null) {
                                                 val finalMsg = repository.getGroupMessageById(targetId)
                                                 if (finalMsg != null) {
@@ -1160,7 +1237,7 @@ class GroupChatViewModel(
                     } else {
                         // Download inline generated image if present
                         val urlRegex = "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.-]+)|(/uploads/[%a-zA-Z_0-9.-]+)".toRegex(RegexOption.IGNORE_CASE)
-                        val urlMatch = urlRegex.find(cleanText)
+                        val urlMatch = urlRegex.find(cleanedText)
                         if (urlMatch != null) {
                             val rawUrl = urlMatch.value
                             val resolvedUrl = if (rawUrl.startsWith("/")) {
@@ -1172,7 +1249,7 @@ class GroupChatViewModel(
                             
                             viewModelScope.launch(Dispatchers.IO) {
                                 try {
-                                    val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, targetChar.name)
+                                    val localPath = HavenHttpClient.downloadGroupImage(context, resolvedUrl, groupId)
                                     if (localPath != null) {
                                         val lastMsg = repository.getGroupMessageById(targetId)
                                         if (lastMsg != null) {
@@ -1190,13 +1267,13 @@ class GroupChatViewModel(
 
                     if (groupUuid != null) {
                         viewModelScope.launch(Dispatchers.IO) {
-                            val success = HavenHttpClient.saveGroupMessage(serverUrl, token, groupUuid, "character", targetChar.name, cleanText)
+                            val success = HavenHttpClient.saveGroupMessage(serverUrl, token, groupUuid, "character", targetChar.name, cleanedText)
                             if (!success) {
                                 val payload = org.json.JSONObject().apply {
                                     put("group_id", groupUuid)
                                     put("sender", "character")
                                     put("character_name", targetChar.name)
-                                    put("content", cleanText)
+                                    put("content", cleanedText)
                                 }
                                 xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
                                     context,
@@ -1209,10 +1286,10 @@ class GroupChatViewModel(
 
                     // Adjust affinity towards other participants based on dialogue text content
                     chars.filter { it.id != targetChar.id }.forEach { otherChar ->
-                        adjustAffinity(context, targetChar.name, otherChar.name, cleanText)
+                        adjustAffinity(context, targetChar.name, otherChar.name, cleanedText)
                     }
 
-                    val eventText = extractRoomEvent(targetChar.name, cleanText, newOutfit, newLocation, newMood)
+                    val eventText = extractRoomEvent(targetChar.name, cleanedText, newOutfit, newLocation, newMood)
                     if (eventText != null) {
                         _lastRoomEvent.value = eventText
                     }
@@ -1221,14 +1298,15 @@ class GroupChatViewModel(
 
                     // Generate and play TTS audio response
                     val currentVoice = targetChar.voiceId ?: "en_US-amy-medium"
-                    if (cleanText.isNotBlank()) {
+                    if (cleanedText.isNotBlank()) {
                         val autoSpeak = sharedPrefs.getBoolean("auto_speak", true)
                         if (autoSpeak) {
                             HavenHttpClient.generateTts(
                                 serverUrl = serverUrl,
                                 token = token,
-                                text = cleanText,
-                                voice = currentVoice
+                                text = cleanedText,
+                                voice = currentVoice,
+                                companion = targetChar.name
                             ) { result ->
                                 result.onSuccess { relativeUrl ->
                                     val resolvedUrl = if (relativeUrl.startsWith("/")) {
@@ -1258,11 +1336,14 @@ class GroupChatViewModel(
                         val otherParticipants = chars.filter { it.id != targetChar.id }
                         if (otherParticipants.isNotEmpty()) {
                             val activeSpeakerMood = newMood ?: targetChar.currentMood ?: ""
-                            val nextSpeaker = selectNextBanterSpeaker(targetChar, otherParticipants, cleanText, activeSpeakerMood)
+                            val nextSpeaker = selectNextBanterSpeaker(targetChar, otherParticipants, cleanedText, activeSpeakerMood)
 
+                            _typingCompanionName.value = nextSpeaker.name
                             banterJob?.cancel()
                             banterJob = viewModelScope.launch {
-                                delay(3000)
+                                val delaySecs = _group.value?.banterDelay ?: 3
+                                val delayMs = if (delaySecs > 0) delaySecs * 1000L else 500L
+                                delay(delayMs)
                                 triggerBanterReply(context, serverUrl, token, nextSpeaker)
                             }
                         }
@@ -1293,8 +1374,18 @@ class GroupChatViewModel(
         allChars: List<CharacterEntity>,
         userName: String
     ): String {
+        // Same "You are " prefix as compilePrompt so the server's override detection
+        // applies the companion's local JSON persona rather than the global soul.json.
+        val identityBlock = buildString {
+            appendLine("You are ${targetChar.name}.")
+            if (targetChar.personality.isNotBlank()) appendLine("Personality: ${targetChar.personality}")
+            if (targetChar.scenario.isNotBlank())   appendLine("Scenario: ${targetChar.scenario}")
+            if (targetChar.systemPrompt.isNotBlank()) appendLine(targetChar.systemPrompt)
+            append("You are speaking with $userName. Always address them as $userName.")
+        }
+
         val systemContext = buildString {
-            appendLine("This is a multi-companion group chat between $userName and the following characters:")
+            appendLine("[Group Context: This is a multi-companion group chat between $userName and the following characters:]")
             allChars.forEach { c ->
                 appendLine("- ${c.name}. Personality: ${c.personality}. Current Location: ${c.currentLocation.ifBlank { "Group Lobby" }}. Current Outfit: ${c.currentOutfit.ifBlank { "Casual" }}. Current Mood: ${c.currentMood.ifBlank { "neutral" }}")
             }
@@ -1346,7 +1437,7 @@ class GroupChatViewModel(
             "$senderName: $cleanText"
         }
 
-        return "$systemContext\n\n=== Conversation History ===\n$formattedHistory\n${targetChar.name}:"
+        return "$identityBlock\n\n$systemContext\n\n=== Conversation History ===\n$formattedHistory\n${targetChar.name}: "
     }
 
     private fun cleanStreamingText(rawText: String): String {
@@ -1389,6 +1480,58 @@ class GroupChatViewModel(
         return text.trim()
     }
 
+    private fun cleanFinalText(rawText: String): String {
+        var text = rawText
+        val thoughtRegex = "<\\s*thought\\s*>.*?<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
+        text = text.replace(thoughtRegex, "")
+        val callRegex = "<\\s*call\\s*>.*?<\\s*/\\s*call\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
+        text = text.replace(callRegex, "")
+        val bracketCallRegex = "\\[\\s*(?:Tool\\s*(?:Call\\s*)?:\\s*)?generate_portr?ait\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+        text = text.replace(bracketCallRegex, "")
+        val strayTagsRegex = "</?\\s*(?:thought|call|tool)[^>]*>".toRegex(RegexOption.IGNORE_CASE)
+        text = text.replace(strayTagsRegex, "")
+        val stateRegex = "\\[\\s*(?:Outfit|Location|Mood|Tool|Call|BodyType|BodyShape|ClothingState|ACTION)\\s*:.*?\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
+        text = text.replace(stateRegex, "")
+        return text.trim()
+    }
+
+    private fun getFinalCleanedText(fullText: String, targetChar: CharacterEntity?, defaultMood: String?): String {
+        val clean = cleanFinalText(fullText)
+        if (clean.isNotBlank()) return clean
+
+        // Fallback: Try to extract thought content
+        val parsed = parseMessageText(fullText)
+        val parsedThought = parsed.thought
+        val cleanThoughtText = parsedThought?.let { t ->
+            t.replace("\\[\\s*(?:Outfit|Location|Mood|Tool|Call|BodyType|BodyShape|ClothingState|ACTION)\\s*:.*?\\s*\\]".toRegex(RegexOption.IGNORE_CASE), "")
+             .replace("<\\s*call\\s*>.*?<\\s*/\\s*call\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL), "")
+             .replace("</?\\s*(?:thought|thinking|reasoning|Reasoning/Plan|plan|thought_process)[^>]*>".toRegex(RegexOption.IGNORE_CASE), "")
+             .trim()
+        }
+        if (!cleanThoughtText.isNullOrBlank()) {
+            return cleanThoughtText
+        }
+
+        // Determine if we generated an image
+        val toolCallRegex = "(?:\\[\\s*(?:Tool\\s*(?:Call\\s*)?:\\s*\\+?)?generate_portr?ait\\s*\\])|(?:<\\s*call\\s*>\\s*generate_portr?ait\\s*<\\s*/\\s*call\\s*>)|(?:<\\s*call\\s*:\\s*generate_portr?ait\\s*>)".toRegex(RegexOption.IGNORE_CASE)
+        val isImage = toolCallRegex.containsMatchIn(fullText) || shouldAutoTriggerPortrait(clean)
+
+        if (isImage) {
+            return "*poses for a portrait*"
+        }
+
+        val mood = targetChar?.currentMood ?: defaultMood ?: "smiling"
+        return when {
+            mood.contains("sleep", ignoreCase = true) || mood.contains("tired", ignoreCase = true) -> "*yawns softly and looks at you*"
+            mood.contains("sad", ignoreCase = true) || mood.contains("cry", ignoreCase = true) -> "*looks down, sighing softly*"
+            mood.contains("angry", ignoreCase = true) || mood.contains("mad", ignoreCase = true) -> "*looks at you with a slight frown*"
+            mood.contains("happy", ignoreCase = true) || mood.contains("smile", ignoreCase = true) || mood.contains("excited", ignoreCase = true) -> "*smiles warmly at you*"
+            mood.contains("blush", ignoreCase = true) || mood.contains("shy", ignoreCase = true) || mood.contains("nervous", ignoreCase = true) -> "*blushes slightly, looking at you*"
+            else -> "*looks at you thoughtfully*"
+        }
+    }
+
+
     private fun shouldAutoTriggerPortrait(text: String): Boolean {
         val cleanLower = text.lowercase()
         val phrases = listOf(
@@ -1408,8 +1551,20 @@ class GroupChatViewModel(
 
     fun syncGroupMessages(context: Context, serverUrl: String, token: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            val grp = repository.getGroupChatById(groupId) ?: return@launch
-            val groupUuid = grp.uuid ?: return@launch
+            var grp = repository.getGroupChatById(groupId) ?: return@launch
+
+            // Ensure group has a UUID — generate and persist if missing
+            var groupUuid = grp.uuid
+            if (groupUuid.isNullOrBlank()) {
+                groupUuid = java.util.UUID.randomUUID().toString()
+                grp = grp.copy(uuid = groupUuid)
+                repository.insertGroupChat(grp)
+                _group.value = grp
+            }
+
+            // Always ensure the group is registered on the server
+            val characterNames = _participants.value.map { it.name }.joinToString(",")
+            HavenHttpClient.saveGroup(serverUrl, token, groupUuid, grp.name, characterNames, grp.scenario, grp.systemPrompt)
             val serverMsgs = HavenHttpClient.getGroupMessages(serverUrl, token, groupUuid)
             val localMsgs = repository.getGroupMessages(groupId).first()
             val participants = _participants.value
@@ -1422,9 +1577,12 @@ class GroupChatViewModel(
                 // Client has new offline group messages! Push them to the server
                 for (i in serverMsgs.size until localMsgs.size) {
                     val localMsg = localMsgs[i]
-                    val charName = if (localMsg.sender == "character") {
-                        participants.firstOrNull { it.id == localMsg.characterId }?.name
-                    } else null
+                    val charName = when (localMsg.sender) {
+                        "character" -> participants.firstOrNull { it.id == localMsg.characterId }?.name
+                        else -> null  // user and system messages don't have a character name
+                    }
+                    // Skip blank placeholder messages (streaming artifacts)
+                    if (localMsg.text.isBlank()) continue
                     HavenHttpClient.saveGroupMessage(serverUrl, token, groupUuid, localMsg.sender, charName, localMsg.text)
                 }
             } else {
@@ -1465,7 +1623,7 @@ class GroupChatViewModel(
                             rawUrl
                         }
                         try {
-                            val localPath = HavenHttpClient.downloadImage(context, resolvedUrl, characterName ?: "companion")
+                            val localPath = HavenHttpClient.downloadGroupImage(context, resolvedUrl, groupId)
                             if (localPath != null) {
                                 repository.insertGroupMessage(
                                     GroupMessageEntity(

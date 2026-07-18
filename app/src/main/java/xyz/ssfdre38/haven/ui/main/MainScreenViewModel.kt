@@ -464,6 +464,10 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                         val bodyType = getJsonStringCaseInsensitive(obj, "body_type", "bodyType", "BodyType")
                         val bodyShape = getJsonStringCaseInsensitive(obj, "body_shape", "bodyShape", "BodyShape")
                         val clothingState = getJsonStringCaseInsensitive(obj, "clothing_state", "clothingState", "ClothingState")
+                        val conversationId = getJsonStringCaseInsensitive(obj, "conversation_id", "conversationId", "ConversationId").ifBlank { null }
+                        val relationshipXp = obj.optInt("relationshipXp", obj.optInt("relationship_xp", 0))
+                        val messageCount = obj.optInt("messageCount", obj.optInt("message_count", 0))
+                        val vrmModelPath = getJsonStringCaseInsensitive(obj, "vrm_model_path", "vrmModelPath", "VrmModelPath").ifBlank { null }
 
                         val resolvedAvatarUrl = if (!avatarPath.isNullOrBlank()) {
                             if (avatarPath.startsWith("/")) {
@@ -485,6 +489,26 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                             }
                         }
 
+                        val resolvedVrmUrl = if (!vrmModelPath.isNullOrBlank()) {
+                            if (vrmModelPath.startsWith("/")) {
+                                if (formattedHost.startsWith("http")) "$formattedHost:$port$vrmModelPath" else "http://$formattedHost:$port$vrmModelPath"
+                            } else {
+                                vrmModelPath
+                            }
+                        } else null
+
+                        var finalVrmPath = vrmModelPath
+                        if (!resolvedVrmUrl.isNullOrBlank()) {
+                            try {
+                                val localPath = HavenHttpClient.downloadGlb(context, resolvedVrmUrl, name)
+                                if (localPath != null) {
+                                    finalVrmPath = localPath
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+
                         // Auto-sync: if character already exists locally, update their profile fields with the server configuration
                         val existing = dataRepository.getCharacterByName(name)
                         if (existing != null) {
@@ -500,7 +524,11 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                                 currentOutfit = if (currentOutfit.isNotBlank()) currentOutfit else existing.currentOutfit,
                                 currentLocation = if (currentLocation.isNotBlank()) currentLocation else existing.currentLocation,
                                 currentMood = if (currentMood.isNotBlank()) currentMood else existing.currentMood,
-                                clothingState = if (clothingState.isNotBlank()) clothingState else existing.clothingState
+                                clothingState = if (clothingState.isNotBlank()) clothingState else existing.clothingState,
+                                conversationId = if (!conversationId.isNullOrBlank()) conversationId else existing.conversationId,
+                                relationshipXp = Math.max(relationshipXp, existing.relationshipXp),
+                                messageCount = Math.max(messageCount, existing.messageCount),
+                                vrmModelPath = if (!vrmModelPath.isNullOrBlank() && (existing.vrmModelPath.isNullOrBlank() || !File(existing.vrmModelPath).exists() || existing.vrmModelPath.startsWith("/uploads/") || existing.vrmModelPath.startsWith("http"))) finalVrmPath else existing.vrmModelPath
                             )
                             dataRepository.insertCharacter(updated)
                         } else {
@@ -522,7 +550,11 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                                     currentMood = currentMood,
                                     bodyType = bodyType,
                                     bodyShape = bodyShape,
-                                    clothingState = clothingState
+                                    clothingState = clothingState,
+                                    conversationId = conversationId,
+                                    relationshipXp = relationshipXp,
+                                    messageCount = messageCount,
+                                    vrmModelPath = finalVrmPath
                                 )
                                 val newId = dataRepository.insertCharacter(newChar).toInt()
                                 if (firstMessage.isNotBlank()) {

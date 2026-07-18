@@ -32,7 +32,7 @@ interface HavenDao {
     @Delete
     suspend fun deleteCharacter(character: CharacterEntity)
 
-    @Query("SELECT * FROM messages WHERE characterId = :characterId ORDER BY timestamp ASC")
+    @Query("SELECT * FROM messages WHERE characterId = :characterId ORDER BY id ASC")
     fun getMessagesForCharacter(characterId: Int): Flow<List<MessageEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -53,7 +53,7 @@ interface HavenDao {
     @Query("DELETE FROM messages WHERE characterId = :characterId")
     suspend fun clearMessagesForCharacter(characterId: Int)
 
-    @Query("SELECT * FROM messages WHERE characterId = :characterId ORDER BY timestamp DESC LIMIT 1")
+    @Query("SELECT * FROM messages WHERE characterId = :characterId ORDER BY id DESC LIMIT 1")
     suspend fun getLastMessage(characterId: Int): MessageEntity?
 
     @Query("SELECT * FROM diary_entries WHERE characterId = :characterId ORDER BY dateString DESC")
@@ -86,7 +86,7 @@ interface HavenDao {
     @Delete
     suspend fun deleteGroupChat(group: GroupChatEntity)
 
-    @Query("SELECT * FROM group_messages WHERE groupId = :groupId ORDER BY timestamp ASC")
+    @Query("SELECT * FROM group_messages WHERE groupId = :groupId ORDER BY id ASC")
     fun getGroupMessages(groupId: Int): Flow<List<GroupMessageEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -95,7 +95,7 @@ interface HavenDao {
     @Query("DELETE FROM group_messages WHERE groupId = :groupId")
     suspend fun clearGroupMessages(groupId: Int)
 
-    @Query("SELECT * FROM group_messages WHERE groupId = :groupId ORDER BY timestamp DESC LIMIT 1")
+    @Query("SELECT * FROM group_messages WHERE groupId = :groupId ORDER BY id DESC LIMIT 1")
     suspend fun getLastGroupMessage(groupId: Int): GroupMessageEntity?
 
     @Query("SELECT * FROM group_messages WHERE id = :id")

@@ -12,8 +12,8 @@ android {
         applicationId = "xyz.ssfdre38.haven"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 11209
+        versionName = "1.12.9"
     }
 
     signingConfigs {

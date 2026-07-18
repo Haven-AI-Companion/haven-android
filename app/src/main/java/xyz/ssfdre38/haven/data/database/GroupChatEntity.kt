@@ -11,5 +11,8 @@ data class GroupChatEntity(
     val createdAt: Long = System.currentTimeMillis(),
     val uuid: String? = null,
     val scenario: String = "",
-    val systemPrompt: String = ""
+    val systemPrompt: String = "",
+    val backdropType: String = "",
+    val ambientType: String = "",
+    val banterDelay: Int = 0 // Delay in seconds between banter turns
 )

@@ -193,6 +193,19 @@ fun ChatScreen(
         previousSize = messages.size
     }
 
+    // Auto-scroll while companion response is streaming
+    val lastMessageText = remember { derivedStateOf { messages.lastOrNull()?.text ?: "" } }
+    LaunchedEffect(lastMessageText.value) {
+        if (isGenerating && messages.isNotEmpty()) {
+            val layoutInfo = listState.layoutInfo
+            val lastVisibleItem = layoutInfo.visibleItemsInfo.lastOrNull()
+            val isAtBottom = lastVisibleItem == null || lastVisibleItem.index >= layoutInfo.totalItemsCount - 2
+            if (isAtBottom) {
+                listState.scrollToItem(messages.size - 1)
+            }
+        }
+    }
+
     // Sync chat logs from server
     LaunchedEffect(Unit) {
         val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
@@ -806,9 +819,6 @@ fun ChatScreen(
             modifier = Modifier
                 .padding(if (immersiveMode) PaddingValues(0.dp) else innerPadding)
                 .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTapGestures(onDoubleTap = { immersiveMode = !immersiveMode })
-                }
         ) {
             // Sleek Level/XP progress bar at the very top of the chat area (just under top bar)
             character?.let { char ->
