@@ -705,6 +705,7 @@ class GroupChatViewModel(
                                         }
                                         val args = org.json.JSONObject().apply {
                                             put("description", outfitPrompt)
+                                            _group.value?.name?.let { put("group_name", it) }
                                         }
                                         HavenHttpClient.executeTool(
                                             serverUrl = serverUrl,
@@ -782,6 +783,7 @@ class GroupChatViewModel(
                             
                             val args = org.json.JSONObject().apply {
                                 put("description", outfitPrompt)
+                                _group.value?.name?.let { put("group_name", it) }
                             }
                             
                             HavenHttpClient.executeTool(
@@ -1213,6 +1215,7 @@ class GroupChatViewModel(
                             
                             val args = org.json.JSONObject().apply {
                                 put("description", outfitPrompt)
+                                _group.value?.name?.let { put("group_name", it) }
                             }
                             
                             HavenHttpClient.executeTool(
