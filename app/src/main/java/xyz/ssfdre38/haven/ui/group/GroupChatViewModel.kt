@@ -1477,6 +1477,9 @@ class GroupChatViewModel(
         val partialBracketRegex = "\\[[a-zA-Z\\s:]*$".toRegex()
         text = text.replace(partialBracketRegex, "")
         
+        // 8. Remove any special LLM control/template tokens (e.g. <|channel>, <|im_end|>)
+        text = text.replace("<\\|[^>]*>".toRegex(), "")
+        
         return text.trim()
     }
 
@@ -1492,6 +1495,10 @@ class GroupChatViewModel(
         text = text.replace(strayTagsRegex, "")
         val stateRegex = "\\[\\s*(?:Outfit|Location|Mood|Tool|Call|BodyType|BodyShape|ClothingState|ACTION)\\s*:.*?\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
         text = text.replace(stateRegex, "")
+        
+        // 6. Remove any special LLM control/template tokens (e.g. <|channel>, <|im_end|>)
+        text = text.replace("<\\|[^>]*>".toRegex(), "")
+        
         return text.trim()
     }
 

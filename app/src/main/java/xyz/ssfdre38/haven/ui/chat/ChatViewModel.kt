@@ -1424,6 +1424,9 @@ ${character.value?.name ?: "Companion"}: $cleanText"""
         val partialBracketRegex = "\\[[a-zA-Z\\s:]*$".toRegex()
         text = text.replace(partialBracketRegex, "")
         
+        // 8. Remove any special LLM control/template tokens (e.g. <|channel>, <|im_end|>)
+        text = text.replace("<\\|[^>]*>".toRegex(), "")
+        
         return text.trim()
     }
 
@@ -1449,6 +1452,9 @@ ${character.value?.name ?: "Companion"}: $cleanText"""
         // 5. Remove any loose brackets/state markers
         val stateRegex = "\\[\\s*(?:Outfit|Location|Mood|Tool|Call|BodyType|BodyShape|ClothingState|ACTION)\\s*:.*?\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
         text = text.replace(stateRegex, "")
+        
+        // 6. Remove any special LLM control/template tokens (e.g. <|channel>, <|im_end|>)
+        text = text.replace("<\\|[^>]*>".toRegex(), "")
         
         return text.trim()
     }
