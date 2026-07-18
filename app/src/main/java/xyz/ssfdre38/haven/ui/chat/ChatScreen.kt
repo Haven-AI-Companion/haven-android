@@ -868,6 +868,14 @@ fun ChatScreen(
 
             val vrmPath = character?.vrmModelPath
             val hasVrm = remember(vrmPath) { vrmPath?.let { File(it).exists() } == true }
+            val currentAnimationIndex = remember(character?.currentMood, isSpeaking) {
+                val moodClean = character?.currentMood?.lowercase() ?: "neutral"
+                when {
+                    isSpeaking && (moodClean.contains("happy") || moodClean.contains("excited") || moodClean.contains("joy") || moodClean.contains("smile") || moodClean.contains("laugh")) -> 1
+                    moodClean.contains("think") || moodClean.contains("ponder") || moodClean.contains("reflect") || moodClean.contains("neutral") || moodClean.contains("thoughtful") -> 2
+                    else -> 0
+                }
+            }
 
             if (isTabletOrWide) {
                 Row(modifier = Modifier.fillMaxSize()) {
@@ -883,7 +891,7 @@ fun ChatScreen(
                                 modelPath = vrmPath,
                                 mood = character?.currentMood ?: "neutral",
                                 isSpeaking = isSpeaking,
-                                animationIndex = 0,
+                                animationIndex = currentAnimationIndex,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -955,7 +963,7 @@ fun ChatScreen(
                         modelPath = vrmPath,
                         mood = character?.currentMood ?: "neutral",
                         isSpeaking = isSpeaking,
-                        animationIndex = 0,
+                        animationIndex = currentAnimationIndex,
                         modifier = Modifier
                             .fillMaxSize()
                             .alpha(if (immersiveMode) 1.0f else 0.45f)

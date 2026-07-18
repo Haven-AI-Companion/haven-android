@@ -182,6 +182,15 @@ fun GroupChatScreen(
 
     val activeVrmPath = activeSpeakerEntity?.vrmModelPath
     val hasActiveVrm = remember(activeVrmPath) { activeVrmPath?.let { File(it).exists() } == true }
+    val currentAnimationIndex = remember(activeSpeakerEntity?.currentMood, typingCompanionName, isGenerating) {
+        val moodClean = activeSpeakerEntity?.currentMood?.lowercase() ?: "neutral"
+        val isSpeaking = isGenerating && typingCompanionName?.equals(activeSpeakerEntity?.name, ignoreCase = true) == true
+        when {
+            isSpeaking && (moodClean.contains("happy") || moodClean.contains("excited") || moodClean.contains("joy") || moodClean.contains("smile") || moodClean.contains("laugh")) -> 1
+            moodClean.contains("think") || moodClean.contains("ponder") || moodClean.contains("reflect") || moodClean.contains("neutral") || moodClean.contains("thoughtful") -> 2
+            else -> 0
+        }
+    }
 
     Box(
         modifier = modifier
@@ -214,7 +223,7 @@ fun GroupChatScreen(
                     modelPath = activeVrmPath,
                     mood = activeSpeakerEntity?.currentMood ?: "neutral",
                     isSpeaking = isGenerating && typingCompanionName?.equals(activeSpeakerEntity?.name, ignoreCase = true) == true,
-                    animationIndex = 0,
+                    animationIndex = currentAnimationIndex,
                     modifier = Modifier.fillMaxSize()
                 )
             }
