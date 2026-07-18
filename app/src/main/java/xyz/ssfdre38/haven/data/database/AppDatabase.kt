@@ -43,6 +43,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "haven_database"
                 )
                 .addMigrations(MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                .fallbackToDestructiveMigrationFrom(1, 2, 3, 4, 5, 6, 7, 8, 9)
                 // Removed fallbackToDestructiveMigration to prevent silent, catastrophic loss of local companion logs, XP, and diaries on schema updates.
                 // Write explicit migrations when schema changes are introduced.
                 .build()

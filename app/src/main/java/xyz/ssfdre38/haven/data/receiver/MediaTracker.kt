@@ -51,4 +51,12 @@ object MediaTracker {
             e.printStackTrace()
         }
     }
+
+    fun unregister(context: Context) {
+        try {
+            context.unregisterReceiver(receiver)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 }

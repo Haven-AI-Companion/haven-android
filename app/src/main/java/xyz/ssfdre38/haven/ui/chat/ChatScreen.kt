@@ -272,12 +272,29 @@ fun ChatScreen(
         val localChar = character
         if (localChar != null && localChar.avatarPath != null) {
             val bgFile = remember(localChar.avatarPath) { File(localChar.avatarPath) }
-            if (bgFile.exists()) {
-                val request = remember(bgFile.absolutePath, bgFile.lastModified()) {
+            var fileExists by remember(localChar.avatarPath) { mutableStateOf(false) }
+            var lastModified by remember(localChar.avatarPath) { mutableStateOf(0L) }
+
+            LaunchedEffect(localChar.avatarPath) {
+                withContext(Dispatchers.IO) {
+                    try {
+                        val exists = bgFile.exists()
+                        fileExists = exists
+                        if (exists) {
+                            lastModified = bgFile.lastModified()
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+
+            if (fileExists) {
+                val request = remember(localChar.avatarPath, lastModified) {
                     coil.request.ImageRequest.Builder(context)
                         .data(bgFile)
-                        .memoryCacheKey(bgFile.absolutePath + "_" + bgFile.lastModified())
-                        .diskCacheKey(bgFile.absolutePath + "_" + bgFile.lastModified())
+                        .memoryCacheKey(bgFile.absolutePath + "_" + lastModified)
+                        .diskCacheKey(bgFile.absolutePath + "_" + lastModified)
                         .build()
                 }
                 androidx.compose.foundation.Image(

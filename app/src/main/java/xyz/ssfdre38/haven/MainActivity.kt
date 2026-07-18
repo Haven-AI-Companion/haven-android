@@ -15,8 +15,9 @@ import xyz.ssfdre38.haven.data.work.ProactiveMessageWorker
 import xyz.ssfdre38.haven.theme.HavenTheme
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.launch
-
+import kotlinx.coroutines.cancel
 class MainActivity : ComponentActivity() {
+    private val activityScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -79,7 +80,7 @@ class MainActivity : ComponentActivity() {
         // Initialize offline sync queueing
         try {
             xyz.ssfdre38.haven.data.sync.SyncQueueManager.registerNetworkCallback(this)
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            activityScope.launch {
                 xyz.ssfdre38.haven.data.sync.SyncQueueManager.processQueue(applicationContext)
             }
         } catch (e: Exception) {
@@ -111,5 +112,19 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    override fun onDestroy() {
+        try {
+            activityScope.cancel()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        try {
+            xyz.ssfdre38.haven.data.receiver.MediaTracker.unregister(this)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        super.onDestroy()
     }
 }

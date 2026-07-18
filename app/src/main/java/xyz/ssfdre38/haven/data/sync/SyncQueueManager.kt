@@ -259,10 +259,12 @@ object SyncQueueManager {
                         Log.w(TAG, "Failed to sync item ID $id. Pausing queue to preserve message ordering.")
                         break // Pause queue processing if a request fails, preserving order.
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error executing enqueued sync action for item ID $id", e)
-                    // If the payload is malformed (shouldn't happen), delete it to avoid stuck queue
+                } catch (e: org.json.JSONException) {
+                    Log.e(TAG, "Malformed payload for item ID $id. Deleting to avoid stuck queue.", e)
                     db.delete(TABLE_NAME, "$COL_ID = ?", arrayOf(id.toString()))
+                } catch (e: Exception) {
+                    Log.e(TAG, "Transient error executing enqueued sync action for item ID $id. Pausing queue.", e)
+                    break // Pause queue processing to preserve message ordering and avoid data loss
                 }
             }
         }

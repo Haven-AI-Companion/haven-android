@@ -121,9 +121,9 @@ class DefaultDataRepository(private val havenDao: HavenDao) : DataRepository {
     override suspend fun clearMemoriesForCharacter(characterId: Int) = havenDao.clearMemoriesForCharacter(characterId)
     override suspend fun addXpAndIncrementMessages(characterId: Int, xp: Int) = havenDao.addXpAndIncrementMessages(characterId, xp)
     
-    override suspend fun importTavernCard(context: Context, inputStream: InputStream, cardBytes: ByteArray): CharacterEntity? {
+    override suspend fun importTavernCard(context: Context, inputStream: InputStream, cardBytes: ByteArray): CharacterEntity? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         // Parse metadata
-        val charaData = xyz.ssfdre38.haven.data.parser.TavernCardParser.parse(inputStream) ?: return null
+        val charaData = xyz.ssfdre38.haven.data.parser.TavernCardParser.parse(inputStream) ?: return@withContext null
         
         // Save the avatar image bytes locally
         val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
@@ -139,7 +139,7 @@ class DefaultDataRepository(private val havenDao: HavenDao) : DataRepository {
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            return null
+            return@withContext null
         }
         
         // Save to DB
@@ -167,6 +167,6 @@ class DefaultDataRepository(private val havenDao: HavenDao) : DataRepository {
             )
         }
         
-        return entity.copy(id = charId)
+        entity.copy(id = charId)
     }
 }
