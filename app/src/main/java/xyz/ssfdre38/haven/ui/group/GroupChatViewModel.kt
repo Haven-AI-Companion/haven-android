@@ -1610,8 +1610,8 @@ class GroupChatViewModel(
                     val localMsg = localMsgs[commonPrefixLength]
                     val serverObj = serverMsgs[commonPrefixLength]
                     val sender = serverObj.getString("sender")
-                    val content = serverObj.getString("content").trim()
-                    val localContent = localMsg.text.trim()
+                    val content = cleanFinalText(serverObj.getString("content")).trim()
+                    val localContent = cleanFinalText(localMsg.text).trim()
                     if (localMsg.sender == sender && localContent == content) {
                         commonPrefixLength++
                     } else {
@@ -1690,10 +1690,10 @@ class GroupChatViewModel(
 
                     // Re-insert and push local offline group messages to server
                     for (localMsg in localOfflineMsgs) {
-                        val cleanLocalText = localMsg.text.trim()
+                        val cleanLocalText = cleanFinalText(localMsg.text).trim()
                         val isAlreadyOnServer = serverMsgs.any { serverObj ->
                             val sender = serverObj.getString("sender")
-                            val content = serverObj.getString("content").trim()
+                            val content = cleanFinalText(serverObj.getString("content")).trim()
                             sender == localMsg.sender && content == cleanLocalText
                         }
                         if (isAlreadyOnServer) continue // Skip duplicate server messages that were just out of order

@@ -147,7 +147,7 @@ class ChatViewModel(
                     val content = serverObj.getString("content")
                     
                     val localRole = if (localMsg.sender == "user") "user" else "assistant"
-                    val cleanLocal = localMsg.text.trim()
+                    val cleanLocal = cleanFinalText(localMsg.text).trim()
                     val cleanServer = cleanFinalText(content).trim()
                     
                     if (localRole == role && cleanLocal == cleanServer) {
@@ -254,7 +254,7 @@ class ChatViewModel(
                     
                     // Re-insert and push local offline messages to server
                     for (localMsg in localOfflineMsgs) {
-                        val cleanLocalText = localMsg.text.trim()
+                        val cleanLocalText = cleanFinalText(localMsg.text).trim()
                         val localRole = if (localMsg.sender == "user") "user" else "assistant"
                         val isAlreadyOnServer = serverMsgs.any { serverObj ->
                             val role = serverObj.getString("role")
