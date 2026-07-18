@@ -249,6 +249,16 @@ class ChatViewModel(
                 
                 // Re-insert and push local offline messages to server
                 for (localMsg in localOfflineMsgs) {
+                    val cleanLocalText = localMsg.text.trim()
+                    val localRole = if (localMsg.sender == "user") "user" else "assistant"
+                    val isAlreadyOnServer = serverMsgs.any { serverObj ->
+                        val role = serverObj.getString("role")
+                        val content = serverObj.getString("content")
+                        val cleanServer = cleanFinalText(content).trim()
+                        role == localRole && cleanServer == cleanLocalText
+                    }
+                    if (isAlreadyOnServer) continue // Skip duplicate server messages that were just out of order
+
                     if (hasNewServerMsgs) {
                         repository.insertMessage(
                             MessageEntity(
