@@ -354,6 +354,11 @@ fun GalleryScreen(
                     LightboxViewer(
                         item = item,
                         repository = repository,
+                        onDeleteSuccess = {
+                            failedDeletes.add(item.file.absolutePath)
+                            galleryItems = galleryItems.filter { it.file.absolutePath != item.file.absolutePath }
+                            activeItem = null
+                        },
                         onDismiss = { activeItem = null }
                     )
                 }
@@ -405,6 +410,7 @@ fun GridImageCard(
 fun LightboxViewer(
     item: GalleryItem,
     repository: DataRepository,
+    onDeleteSuccess: () -> Unit,
     onDismiss: () -> Unit
 ) {
     var showPrompt by remember { mutableStateOf(false) }
@@ -544,7 +550,7 @@ fun LightboxViewer(
                                         }
                                     }
                                     Toast.makeText(context, "Image deleted successfully", Toast.LENGTH_SHORT).show()
-                                    onDismiss()
+                                    onDeleteSuccess()
                                 } else {
                                     Toast.makeText(context, "Failed to delete file", Toast.LENGTH_SHORT).show()
                                 }
