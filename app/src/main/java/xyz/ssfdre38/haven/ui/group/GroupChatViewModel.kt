@@ -11,6 +11,8 @@ import xyz.ssfdre38.haven.data.network.HavenHttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.delay
 import java.io.File
 import xyz.ssfdre38.haven.ui.chat.parseMessageText
@@ -19,6 +21,8 @@ class GroupChatViewModel(
     private val groupId: Int,
     private val repository: DataRepository
 ) : ViewModel() {
+
+    private val syncMutex = Mutex()
 
     private val _group = MutableStateFlow<GroupChatEntity?>(null)
     val group: StateFlow<GroupChatEntity?> = _group.asStateFlow()
@@ -549,8 +553,10 @@ class GroupChatViewModel(
         val userName = sharedPrefs.getString("user_name", "User") ?: "User"
 
         viewModelScope.launch(Dispatchers.IO) {
-            _isGenerating.value = true
-            _typingCompanionName.value = targetChar.name
+            syncMutex.withLock {
+                _isGenerating.value = true
+                _typingCompanionName.value = targetChar.name
+                val streamCompleted = kotlinx.coroutines.CompletableDeferred<Unit>()
 
             // 1. Insert user message
             repository.insertGroupMessage(
@@ -938,6 +944,7 @@ class GroupChatViewModel(
                             }
                         }
                     }
+                    streamCompleted.complete(Unit)
                 },
                 onFailure = { error ->
                     _isGenerating.value = false
@@ -953,8 +960,15 @@ class GroupChatViewModel(
                             )
                         )
                     }
+                    streamCompleted.complete(Unit)
                 }
             )
+            try {
+                streamCompleted.await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+          }
         }
     }
 
@@ -1058,10 +1072,12 @@ class GroupChatViewModel(
         val userName = sharedPrefs.getString("user_name", "User") ?: "User"
 
         viewModelScope.launch(Dispatchers.IO) {
-            _isGenerating.value = true
-            _typingCompanionName.value = targetChar.name
+            syncMutex.withLock {
+                _isGenerating.value = true
+                _typingCompanionName.value = targetChar.name
+                val streamCompleted = kotlinx.coroutines.CompletableDeferred<Unit>()
 
-            val placeholderId = repository.insertGroupMessage(
+                val placeholderId = repository.insertGroupMessage(
                 GroupMessageEntity(
                     groupId = groupId,
                     sender = "character",
@@ -1348,6 +1364,7 @@ class GroupChatViewModel(
                             }
                         }
                     }
+                    streamCompleted.complete(Unit)
                 },
                 onFailure = { error ->
                     _isGenerating.value = false
@@ -1363,8 +1380,15 @@ class GroupChatViewModel(
                             )
                         )
                     }
+                    streamCompleted.complete(Unit)
                 }
             )
+            try {
+                streamCompleted.await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+          }
         }
     }
 
@@ -1558,53 +1582,143 @@ class GroupChatViewModel(
 
     fun syncGroupMessages(context: Context, serverUrl: String, token: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            var grp = repository.getGroupChatById(groupId) ?: return@launch
+            syncMutex.withLock {
+                var grp = repository.getGroupChatById(groupId) ?: return@withLock
 
-            // Ensure group has a UUID — generate and persist if missing
-            var groupUuid = grp.uuid
-            if (groupUuid.isNullOrBlank()) {
-                groupUuid = java.util.UUID.randomUUID().toString()
-                grp = grp.copy(uuid = groupUuid)
-                repository.insertGroupChat(grp)
-                _group.value = grp
-            }
-
-            // Always ensure the group is registered on the server
-            val characterNames = _participants.value.map { it.name }.joinToString(",")
-            HavenHttpClient.saveGroup(serverUrl, token, groupUuid, grp.name, characterNames, grp.scenario, grp.systemPrompt)
-            val serverMsgs = HavenHttpClient.getGroupMessages(serverUrl, token, groupUuid)
-            val localMsgs = repository.getGroupMessages(groupId).first()
-            val participants = _participants.value
-            
-            // 1. Find common prefix of messages that match exactly
-            var commonPrefixLength = 0
-            while (commonPrefixLength < localMsgs.size && commonPrefixLength < serverMsgs.size) {
-                val localMsg = localMsgs[commonPrefixLength]
-                val serverObj = serverMsgs[commonPrefixLength]
-                val sender = serverObj.getString("sender")
-                val content = serverObj.getString("content").trim()
-                val localContent = localMsg.text.trim()
-                if (localMsg.sender == sender && localContent == content) {
-                    commonPrefixLength++
-                } else {
-                    break
+                // Ensure group has a UUID — generate and persist if missing
+                var groupUuid = grp.uuid
+                if (groupUuid.isNullOrBlank()) {
+                    groupUuid = java.util.UUID.randomUUID().toString()
+                    grp = grp.copy(uuid = groupUuid)
+                    repository.insertGroupChat(grp)
+                    _group.value = grp
                 }
-            }
 
-            if (commonPrefixLength == localMsgs.size && commonPrefixLength == serverMsgs.size) {
-                return@launch // Fully synchronized
-            }
+                // Always ensure the group is registered on the server
+                val characterNames = _participants.value.map { it.name }.joinToString(",")
+                HavenHttpClient.saveGroup(serverUrl, token, groupUuid, grp.name, characterNames, grp.scenario, grp.systemPrompt)
+                val serverMsgs = HavenHttpClient.getGroupMessages(serverUrl, token, groupUuid)
+                val localMsgs = repository.getGroupMessages(groupId).first()
+                val participants = _participants.value
+                
+                // 1. Find common prefix of messages that match exactly
+                var commonPrefixLength = 0
+                while (commonPrefixLength < localMsgs.size && commonPrefixLength < serverMsgs.size) {
+                    val localMsg = localMsgs[commonPrefixLength]
+                    val serverObj = serverMsgs[commonPrefixLength]
+                    val sender = serverObj.getString("sender")
+                    val content = serverObj.getString("content").trim()
+                    val localContent = localMsg.text.trim()
+                    if (localMsg.sender == sender && localContent == content) {
+                        commonPrefixLength++
+                    } else {
+                        break
+                    }
+                }
 
-            if (localMsgs.size > commonPrefixLength) {
-                // Client has offline or mismatching group messages!
-                val localOfflineMsgs = localMsgs.subList(commonPrefixLength, localMsgs.size)
-                val hasNewServerMsgs = serverMsgs.size > commonPrefixLength
+                if (commonPrefixLength == localMsgs.size && commonPrefixLength == serverMsgs.size) {
+                    return@withLock // Fully synchronized
+                }
 
-                if (hasNewServerMsgs) {
-                    // Clear local messages and re-pull all server messages
-                    repository.clearGroupMessages(groupId)
-                    
-                    for (i in 0 until serverMsgs.size) {
+                if (localMsgs.size > commonPrefixLength) {
+                    // Client has offline or mismatching group messages!
+                    val localOfflineMsgs = localMsgs.subList(commonPrefixLength, localMsgs.size)
+                    val hasNewServerMsgs = serverMsgs.size > commonPrefixLength
+
+                    if (hasNewServerMsgs) {
+                        // Clear local messages and re-pull all server messages
+                        repository.clearGroupMessages(groupId)
+                        
+                        for (i in 0 until serverMsgs.size) {
+                            val obj = serverMsgs[i]
+                            val sender = obj.getString("sender")
+                            val characterName = when {
+                                obj.has("character_name") && !obj.isNull("character_name") -> obj.getString("character_name")
+                                obj.has("characterName") && !obj.isNull("characterName") -> obj.getString("characterName")
+                                else -> null
+                            }
+                            val content = obj.getString("content")
+                            
+                            var characterId: Int? = null
+                            if (sender == "character" && characterName != null) {
+                                characterId = repository.getCharacterByName(characterName)?.id
+                            }
+                            
+                            val msgId = repository.insertGroupMessage(
+                                GroupMessageEntity(
+                                    groupId = groupId,
+                                    sender = sender,
+                                    characterId = characterId,
+                                    text = content
+                                )
+                            ).toInt()
+
+                            // Parse clean text for inline image URLs to download and save locally
+                            val urlRegex = "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.-]+)|(/uploads/[%a-zA-Z_0-9.-]+)".toRegex(RegexOption.IGNORE_CASE)
+                            val urlMatch = urlRegex.find(content)
+                            if (urlMatch != null) {
+                                val rawUrl = urlMatch.value
+                                val resolvedUrl = if (rawUrl.startsWith("/")) {
+                                    val host = serverUrl.trimEnd('/')
+                                    if (host.startsWith("http")) "$host$rawUrl" else "http://$host$rawUrl"
+                                } else {
+                                    rawUrl
+                                }
+                                try {
+                                    val localPath = HavenHttpClient.downloadGroupImage(context, resolvedUrl, groupId)
+                                    if (localPath != null) {
+                                        repository.insertGroupMessage(
+                                            GroupMessageEntity(
+                                                id = msgId,
+                                                groupId = groupId,
+                                                sender = sender,
+                                                characterId = characterId,
+                                                text = content,
+                                                imagePath = localPath
+                                            )
+                                        )
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                        }
+                    }
+
+                    // Re-insert and push local offline group messages to server
+                    for (localMsg in localOfflineMsgs) {
+                        val cleanLocalText = localMsg.text.trim()
+                        val isAlreadyOnServer = serverMsgs.any { serverObj ->
+                            val sender = serverObj.getString("sender")
+                            val content = serverObj.getString("content").trim()
+                            sender == localMsg.sender && content == cleanLocalText
+                        }
+                        if (isAlreadyOnServer) continue // Skip duplicate server messages that were just out of order
+
+                        if (hasNewServerMsgs) {
+                            repository.insertGroupMessage(
+                                GroupMessageEntity(
+                                    groupId = groupId,
+                                    sender = localMsg.sender,
+                                    characterId = localMsg.characterId,
+                                    text = localMsg.text,
+                                    imagePath = localMsg.imagePath,
+                                    audioPath = localMsg.audioPath,
+                                    timestamp = localMsg.timestamp
+                                )
+                            )
+                        }
+                        val charName = when (localMsg.sender) {
+                            "character" -> participants.firstOrNull { it.id == localMsg.characterId }?.name
+                            else -> null  // user and system messages don't have a character name
+                        }
+                        // Skip blank placeholder messages (streaming artifacts)
+                        if (localMsg.text.isBlank()) continue
+                        HavenHttpClient.saveGroupMessage(serverUrl, token, groupUuid, localMsg.sender, charName, localMsg.text)
+                    }
+                } else {
+                    // Server has new group messages only! Append them locally
+                    for (i in commonPrefixLength until serverMsgs.size) {
                         val obj = serverMsgs[i]
                         val sender = obj.getString("sender")
                         val characterName = when {
@@ -1656,94 +1770,6 @@ class GroupChatViewModel(
                             } catch (e: Exception) {
                                 e.printStackTrace()
                             }
-                        }
-                    }
-                }
-
-                // Re-insert and push local offline group messages to server
-                for (localMsg in localOfflineMsgs) {
-                    val cleanLocalText = localMsg.text.trim()
-                    val isAlreadyOnServer = serverMsgs.any { serverObj ->
-                        val sender = serverObj.getString("sender")
-                        val content = serverObj.getString("content").trim()
-                        sender == localMsg.sender && content == cleanLocalText
-                    }
-                    if (isAlreadyOnServer) continue // Skip duplicate server messages that were just out of order
-
-                    if (hasNewServerMsgs) {
-                        repository.insertGroupMessage(
-                            GroupMessageEntity(
-                                groupId = groupId,
-                                sender = localMsg.sender,
-                                characterId = localMsg.characterId,
-                                text = localMsg.text,
-                                imagePath = localMsg.imagePath,
-                                audioPath = localMsg.audioPath,
-                                timestamp = localMsg.timestamp
-                            )
-                        )
-                    }
-                    val charName = when (localMsg.sender) {
-                        "character" -> participants.firstOrNull { it.id == localMsg.characterId }?.name
-                        else -> null  // user and system messages don't have a character name
-                    }
-                    // Skip blank placeholder messages (streaming artifacts)
-                    if (localMsg.text.isBlank()) continue
-                    HavenHttpClient.saveGroupMessage(serverUrl, token, groupUuid, localMsg.sender, charName, localMsg.text)
-                }
-            } else {
-                // Server has new group messages only! Append them locally
-                for (i in commonPrefixLength until serverMsgs.size) {
-                    val obj = serverMsgs[i]
-                    val sender = obj.getString("sender")
-                    val characterName = when {
-                        obj.has("character_name") && !obj.isNull("character_name") -> obj.getString("character_name")
-                        obj.has("characterName") && !obj.isNull("characterName") -> obj.getString("characterName")
-                        else -> null
-                    }
-                    val content = obj.getString("content")
-                    
-                    var characterId: Int? = null
-                    if (sender == "character" && characterName != null) {
-                        characterId = repository.getCharacterByName(characterName)?.id
-                    }
-                    
-                    val msgId = repository.insertGroupMessage(
-                        GroupMessageEntity(
-                            groupId = groupId,
-                            sender = sender,
-                            characterId = characterId,
-                            text = content
-                        )
-                    ).toInt()
-
-                    // Parse clean text for inline image URLs to download and save locally
-                    val urlRegex = "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.-]+)|(/uploads/[%a-zA-Z_0-9.-]+)".toRegex(RegexOption.IGNORE_CASE)
-                    val urlMatch = urlRegex.find(content)
-                    if (urlMatch != null) {
-                        val rawUrl = urlMatch.value
-                        val resolvedUrl = if (rawUrl.startsWith("/")) {
-                            val host = serverUrl.trimEnd('/')
-                            if (host.startsWith("http")) "$host$rawUrl" else "http://$host$rawUrl"
-                        } else {
-                            rawUrl
-                        }
-                        try {
-                            val localPath = HavenHttpClient.downloadGroupImage(context, resolvedUrl, groupId)
-                            if (localPath != null) {
-                                repository.insertGroupMessage(
-                                    GroupMessageEntity(
-                                        id = msgId,
-                                        groupId = groupId,
-                                        sender = sender,
-                                        characterId = characterId,
-                                        text = content,
-                                        imagePath = localPath
-                                    )
-                                )
-                            }
-                        } catch (e: Exception) {
-                            e.printStackTrace()
                         }
                     }
                 }
