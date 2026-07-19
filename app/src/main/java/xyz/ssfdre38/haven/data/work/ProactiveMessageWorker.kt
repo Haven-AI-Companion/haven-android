@@ -181,6 +181,12 @@ class ProactiveMessageWorker(
     override suspend fun doWork(): Result {
         val context = applicationContext
         val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+        
+        val enableProactive = sharedPrefs.getBoolean("enable_proactive", true)
+        if (!enableProactive) {
+            return Result.success()
+        }
+
         val ashHost = sharedPrefs.getString("ash_host", null) ?: return Result.success()
         val ashPort = sharedPrefs.getString("ash_port", "18799")
         val token = sharedPrefs.getString("auth_token", null) ?: return Result.success()

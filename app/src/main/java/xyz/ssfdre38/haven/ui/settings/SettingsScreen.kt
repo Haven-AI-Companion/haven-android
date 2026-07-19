@@ -99,6 +99,7 @@ fun SettingsScreen(
     var userGender by remember { mutableStateFlowOf(sharedPrefs.getString("user_gender", "Unspecified") ?: "Unspecified") }
     var userAvatarPath by remember { mutableStateFlowOf(sharedPrefs.getString("user_avatar_path", "") ?: "") }
     var autoSpeak by remember { mutableStateFlowOf(sharedPrefs.getBoolean("auto_speak", true)) }
+    var enableProactive by remember { mutableStateOf(sharedPrefs.getBoolean("enable_proactive", true)) }
     var quietTimeEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("quiet_time_enabled", false)) }
     var quietTimeStart by remember { mutableStateOf(sharedPrefs.getString("quiet_time_start", "22:00") ?: "22:00") }
     var quietTimeEnd by remember { mutableStateOf(sharedPrefs.getString("quiet_time_end", "07:00") ?: "07:00") }
@@ -848,6 +849,30 @@ fun SettingsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Allow Companions to Auto-Talk",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "Allow companions to proactively check in or text you after periods of silence.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = enableProactive,
+                    onCheckedChange = { enableProactive = it }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
                     text = "Auto-Play Companion Voice",
                     style = MaterialTheme.typography.bodyLarge
@@ -1414,6 +1439,7 @@ fun SettingsScreen(
                         putString("user_gender", userGender)
                         putString("user_avatar_path", userAvatarPath)
                         putBoolean("auto_speak", autoSpeak)
+                        putBoolean("enable_proactive", enableProactive)
                         putBoolean("quiet_time_enabled", quietTimeEnabled)
                         putString("quiet_time_start", quietTimeStart.trim())
                         putString("quiet_time_end", quietTimeEnd.trim())
