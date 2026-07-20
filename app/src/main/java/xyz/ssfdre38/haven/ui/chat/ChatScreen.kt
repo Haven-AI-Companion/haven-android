@@ -42,6 +42,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -55,6 +56,7 @@ import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Delete
@@ -148,6 +150,84 @@ fun ChatScreen(
     var inputText by remember { mutableStateOf("") }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     var activeFullscreenImage by remember { mutableStateOf<Any?>(null) }
+
+    // Ambient audio loop mappings
+    val ambientAudioMap = remember {
+        mapOf(
+            "rain" to "https://upload.wikimedia.org/wikipedia/commons/4/48/Rain_on_roof_loop.ogg",
+            "cafe" to "https://upload.wikimedia.org/wikipedia/commons/a/ab/Cafe_ambient_noise.ogg",
+            "coffee" to "https://upload.wikimedia.org/wikipedia/commons/a/ab/Cafe_ambient_noise.ogg",
+            "beach" to "https://upload.wikimedia.org/wikipedia/commons/1/1d/Waves_on_the_beach_loop.ogg",
+            "ocean" to "https://upload.wikimedia.org/wikipedia/commons/1/1d/Waves_on_the_beach_loop.ogg",
+            "sea" to "https://upload.wikimedia.org/wikipedia/commons/1/1d/Waves_on_the_beach_loop.ogg",
+            "fireplace" to "https://upload.wikimedia.org/wikipedia/commons/7/7b/Fireplace_sound_1_minute_loop.ogg",
+            "room" to "https://upload.wikimedia.org/wikipedia/commons/7/7b/Fireplace_sound_1_minute_loop.ogg",
+            "bedroom" to "https://upload.wikimedia.org/wikipedia/commons/7/7b/Fireplace_sound_1_minute_loop.ogg",
+            "nature" to "https://upload.wikimedia.org/wikipedia/commons/0/0f/Forest_birds_ambience.ogg",
+            "forest" to "https://upload.wikimedia.org/wikipedia/commons/0/0f/Forest_birds_ambience.ogg",
+            "gym" to "https://upload.wikimedia.org/wikipedia/commons/b/b3/Quiet_room_ambience.ogg",
+            "library" to "https://upload.wikimedia.org/wikipedia/commons/b/b3/Quiet_room_ambience.ogg"
+        )
+    }
+
+    val ambientPlayer = remember { mutableStateOf<android.media.MediaPlayer?>(null) }
+    var ambientMuted by remember {
+        mutableStateOf(context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE).getBoolean("ambient_muted", false))
+    }
+
+    // Effect to play/stop soundscape based on location and mute preference
+    LaunchedEffect(character?.currentLocation, ambientMuted) {
+        val location = character?.currentLocation?.lowercase() ?: ""
+        val matchedUrl = ambientAudioMap.entries.firstOrNull { (key, _) -> 
+            location.contains(key) 
+        }?.value
+
+        // Stop and release previous player
+        ambientPlayer.value?.let { player ->
+            try {
+                if (player.isPlaying) {
+                    player.stop()
+                }
+                player.release()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            ambientPlayer.value = null
+        }
+
+        if (!matchedUrl.isNullOrBlank() && !ambientMuted) {
+            try {
+                val player = android.media.MediaPlayer().apply {
+                    setDataSource(matchedUrl)
+                    setVolume(0.06f, 0.06f) // soft ambient background
+                    isLooping = true
+                    prepareAsync()
+                    setOnPreparedListener { mp ->
+                        mp.start()
+                    }
+                }
+                ambientPlayer.value = player
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            ambientPlayer.value?.let { player ->
+                try {
+                    if (player.isPlaying) {
+                        player.stop()
+                    }
+                    player.release()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            ambientPlayer.value = null
+        }
+    }
 
     var showWallpaperPickerDialog by remember { mutableStateOf(false) }
     var galleryWallpaperFiles by remember { mutableStateOf<List<File>>(emptyList()) }
@@ -612,6 +692,21 @@ fun ChatScreen(
                                     }
                                 )
                             }
+                            DropdownMenuItem(
+                                text = { Text(if (ambientMuted) "Unmute Ambient Sound" else "Mute Ambient Sound") },
+                                onClick = {
+                                    expanded = false
+                                    ambientMuted = !ambientMuted
+                                    context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+                                        .edit().putBoolean("ambient_muted", ambientMuted).apply()
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (ambientMuted) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
+                                        contentDescription = "Mute Ambient"
+                                    )
+                                }
+                            )
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
                             
                             DropdownMenuItem(
