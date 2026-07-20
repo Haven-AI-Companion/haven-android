@@ -3,6 +3,7 @@ package xyz.ssfdre38.haven.ui.main
 import android.content.Context
 import android.net.Uri
 import android.widget.Toast
+import kotlinx.coroutines.launch
 import androidx.compose.ui.text.style.TextAlign
 import xyz.ssfdre38.haven.MemoryVault
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -810,7 +811,29 @@ fun MainScreen(
 
                 var sdPrompt by remember { mutableStateOf("") }
                 var generatedAvatarPath by remember { mutableStateOf<String?>(null) }
-                var isGeneratingAvatar by remember { mutableStateOf(false) }
+                 var isGeneratingAvatar by remember { mutableStateOf(false) }
+
+                 val coroutineScope = rememberCoroutineScope()
+                 val selectCompanionAvatarLauncher = rememberLauncherForActivityResult(
+                     contract = ActivityResultContracts.GetContent()
+                 ) { uri: Uri? ->
+                     if (uri != null) {
+                         coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                             try {
+                                 context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                                     val bytes = inputStream.readBytes()
+                                     val mimeType = context.contentResolver.getType(uri) ?: "image/png"
+                                     val extension = if (mimeType.contains("png")) ".png" else if (mimeType.contains("webp")) ".webp" else ".jpg"
+                                     val cacheFile = java.io.File(context.cacheDir, "picked_avatar_${java.util.UUID.randomUUID()}$extension")
+                                     cacheFile.writeBytes(bytes)
+                                     generatedAvatarPath = cacheFile.absolutePath
+                                 }
+                             } catch (e: java.lang.Exception) {
+                                 e.printStackTrace()
+                             }
+                         }
+                     }
+                 }
 
                 var aiIdeaPrompt by remember { mutableStateOf("") }
                 val isGeneratingProfile = viewModel.isGeneratingProfile.value
@@ -1016,88 +1039,127 @@ fun MainScreen(
                             )
                             Spacer(modifier = Modifier.height(6.dp))
 
-                            if (generatedAvatarPath != null) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 8.dp)
-                                ) {
-                                    AsyncImage(
-                                        model = File(generatedAvatarPath!!),
-                                        contentDescription = "Generated Avatar Preview",
-                                        modifier = Modifier
-                                            .size(72.dp)
-                                            .clip(CircleShape)
-                                            .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Column {
-                                        Text("Avatar Generated!", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                                        TextButton(
-                                            onClick = { generatedAvatarPath = null },
-                                            contentPadding = PaddingValues(0.dp)
-                                        ) {
-                                            Text("Regenerate", color = MaterialTheme.colorScheme.error)
-                                        }
-                                    }
-                                }
-                            } else {
-                                OutlinedTextField(
-                                    value = sdPrompt,
-                                    onValueChange = { sdPrompt = it },
-                                    label = { Text("Avatar Generation Prompt") },
-                                    placeholder = { Text("Leave blank for automatic prompt...") },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Button(
-                                    onClick = {
-                                        val sdHost = sharedPrefs.getString("sd_host", "") ?: ""
-                                        if (sdHost.isBlank()) {
-                                            Toast.makeText(context, "Configure SD server in Settings first", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            isGeneratingAvatar = true
-                                            val finalPrompt = sdPrompt.ifBlank {
-                                                val descPrompt = if (description.isNotBlank()) ", $description" else ""
-                                                "portrait of $name, high quality anime style$descPrompt"
-                                            }
-                                            xyz.ssfdre38.haven.data.network.HavenHttpClient.generateImage(
-                                                context = context,
-                                                sdServerUrl = sdHost,
-                                                prompt = finalPrompt,
-                                                onResult = { result ->
-                                                    isGeneratingAvatar = false
-                                                    result.fold(
-                                                        onSuccess = { path ->
-                                                            generatedAvatarPath = path
-                                                        },
-                                                        onFailure = { err ->
-                                                            (context as? android.app.Activity)?.runOnUiThread {
-                                                                Toast.makeText(context, "Generation failed: ${err.message}", Toast.LENGTH_LONG).show()
-                                                            }
-                                                        }
-                                                    )
-                                                }
-                                            )
-                                        }
-                                    },
-                                    enabled = !isGeneratingAvatar && name.isNotBlank(),
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    if (isGeneratingAvatar) {
-                                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("Generating Avatar...")
-                                    } else {
-                                        Icon(imageVector = Icons.Default.Cloud, contentDescription = null)
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("Generate Avatar with SD AI")
-                                    }
-                                }
-                            }
+                             if (generatedAvatarPath != null) {
+                                 Row(
+                                     verticalAlignment = Alignment.CenterVertically,
+                                     modifier = Modifier
+                                         .fillMaxWidth()
+                                         .padding(vertical = 8.dp)
+                                 ) {
+                                     AsyncImage(
+                                         model = File(generatedAvatarPath!!),
+                                         contentDescription = "Avatar Preview",
+                                         modifier = Modifier
+                                             .size(72.dp)
+                                             .clip(CircleShape)
+                                             .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape),
+                                         contentScale = ContentScale.Crop
+                                     )
+                                     Spacer(modifier = Modifier.width(12.dp))
+                                     Column {
+                                         val isLocalPicked = remember(generatedAvatarPath) {
+                                             generatedAvatarPath?.contains("picked_avatar_") == true
+                                         }
+                                         Text(
+                                             text = if (isLocalPicked) "Avatar Selected!" else "Avatar Generated!",
+                                             fontWeight = FontWeight.Bold,
+                                             style = MaterialTheme.typography.bodyMedium
+                                         )
+                                         TextButton(
+                                             onClick = { generatedAvatarPath = null },
+                                             contentPadding = PaddingValues(0.dp)
+                                         ) {
+                                             Text(
+                                                 text = if (isLocalPicked) "Clear / Choose another" else "Regenerate",
+                                                 color = MaterialTheme.colorScheme.error
+                                             )
+                                         }
+                                     }
+                                 }
+                             } else {
+                                 Button(
+                                     onClick = { selectCompanionAvatarLauncher.launch("image/*") },
+                                     modifier = Modifier.fillMaxWidth(),
+                                     shape = RoundedCornerShape(12.dp),
+                                     colors = ButtonDefaults.buttonColors(
+                                         containerColor = MaterialTheme.colorScheme.secondary
+                                     )
+                                 ) {
+                                     Icon(imageVector = Icons.Default.Add, contentDescription = null)
+                                     Spacer(modifier = Modifier.width(8.dp))
+                                     Text("Pick Static Avatar from Gallery")
+                                 }
+                                 
+                                 Spacer(modifier = Modifier.height(12.dp))
+                                 Row(
+                                     verticalAlignment = Alignment.CenterVertically,
+                                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                 ) {
+                                     HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f))
+                                     Text(
+                                         text = "OR GENERATE WITH AI",
+                                         style = MaterialTheme.typography.labelSmall,
+                                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                                         modifier = Modifier.padding(horizontal = 8.dp)
+                                     )
+                                     HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f))
+                                 }
+                                 Spacer(modifier = Modifier.height(12.dp))
+
+                                 OutlinedTextField(
+                                     value = sdPrompt,
+                                     onValueChange = { sdPrompt = it },
+                                     label = { Text("Avatar Generation Prompt") },
+                                     placeholder = { Text("Leave blank for automatic prompt...") },
+                                     modifier = Modifier.fillMaxWidth()
+                                 )
+                                 Spacer(modifier = Modifier.height(8.dp))
+                                 Button(
+                                     onClick = {
+                                         val sdHost = sharedPrefs.getString("sd_host", "") ?: ""
+                                         if (sdHost.isBlank()) {
+                                             Toast.makeText(context, "Configure SD server in Settings first", Toast.LENGTH_SHORT).show()
+                                         } else {
+                                             isGeneratingAvatar = true
+                                             val finalPrompt = sdPrompt.ifBlank {
+                                                 val descPrompt = if (description.isNotBlank()) ", $description" else ""
+                                                 "portrait of $name, high quality anime style$descPrompt"
+                                             }
+                                             xyz.ssfdre38.haven.data.network.HavenHttpClient.generateImage(
+                                                 context = context,
+                                                 sdServerUrl = sdHost,
+                                                 prompt = finalPrompt,
+                                                 onResult = { result ->
+                                                     isGeneratingAvatar = false
+                                                     result.fold(
+                                                         onSuccess = { path ->
+                                                             generatedAvatarPath = path
+                                                         },
+                                                         onFailure = { err ->
+                                                             (context as? android.app.Activity)?.runOnUiThread {
+                                                                 Toast.makeText(context, "Generation failed: ${err.message}", Toast.LENGTH_LONG).show()
+                                                             }
+                                                         }
+                                                     )
+                                                 }
+                                             )
+                                         }
+                                     },
+                                     enabled = !isGeneratingAvatar && name.isNotBlank(),
+                                     modifier = Modifier.fillMaxWidth(),
+                                     shape = RoundedCornerShape(12.dp)
+                                 ) {
+                                     if (isGeneratingAvatar) {
+                                         CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                                         Spacer(modifier = Modifier.width(8.dp))
+                                         Text("Generating Avatar...")
+                                     } else {
+                                         Icon(imageVector = Icons.Default.Cloud, contentDescription = null)
+                                         Spacer(modifier = Modifier.width(8.dp))
+                                         Text("Generate Avatar with SD AI")
+                                     }
+                                 }
+                             }
                         }
                     },
                     confirmButton = {
