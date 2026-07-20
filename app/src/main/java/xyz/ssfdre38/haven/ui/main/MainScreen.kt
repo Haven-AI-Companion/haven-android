@@ -87,6 +87,7 @@ fun MainScreen(
     var characterToDelete by remember { mutableStateOf<CharacterEntity?>(null) }
     var activeCharacterActions by remember { mutableStateOf<CharacterEntity?>(null) }
     var showVoicePickerDialogFor by remember { mutableStateOf<CharacterEntity?>(null) }
+    var showLevelDialogFor by remember { mutableStateOf<CharacterEntity?>(null) }
 
     val vrmPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -484,6 +485,15 @@ fun MainScreen(
                             }
                             TextButton(
                                 onClick = {
+                                    showLevelDialogFor = character
+                                    activeCharacterActions = null
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Set Relationship Level", textAlign = TextAlign.Start, modifier = Modifier.fillMaxWidth())
+                            }
+                            TextButton(
+                                onClick = {
                                     showVoicePickerDialogFor = character
                                     activeCharacterActions = null
                                 },
@@ -584,6 +594,78 @@ fun MainScreen(
                     dismissButton = {
                         TextButton(onClick = { showVoicePickerDialogFor = null }) {
                             Text("Close")
+                        }
+                    }
+                )
+            }
+
+            // Relationship Level Picker Dialog
+            showLevelDialogFor?.let { character ->
+                var currentLevel by remember(character.id) { mutableFloatStateOf(((character.relationshipXp / 100) + 1).coerceIn(1, 30).toFloat()) }
+                val calculatedLevel = currentLevel.toInt()
+                val calculatedStatus = when {
+                    calculatedLevel >= 20 -> "Partner"
+                    calculatedLevel >= 10 -> "Close Friend"
+                    calculatedLevel >= 5  -> "Friend"
+                    else        -> "Acquaintance"
+                }
+
+                AlertDialog(
+                    onDismissRequest = { showLevelDialogFor = null },
+                    title = { Text("Set Relationship Level") },
+                    text = {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Set the relationship level for ${character.name}. This affects how they address and react to you in chat.")
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Level $calculatedLevel",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = calculatedStatus,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = when {
+                                        calculatedLevel >= 20 -> Color(0xFFFFD700)
+                                        calculatedLevel >= 10 -> Color(0xFF9C27B0)
+                                        calculatedLevel >= 5  -> Color(0xFF2196F3)
+                                        else        -> Color(0xFF4CAF50)
+                                    },
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            
+                            Slider(
+                                value = currentLevel,
+                                onValueChange = { currentLevel = it },
+                                valueRange = 1f..30f,
+                                steps = 28
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                val newXp = (calculatedLevel - 1) * 100
+                                viewModel.updateCharacterRelationshipXp(context, character, newXp)
+                                Toast.makeText(context, "Relationship level updated to Level $calculatedLevel ($calculatedStatus)!", Toast.LENGTH_SHORT).show()
+                                showLevelDialogFor = null
+                            }
+                        ) {
+                            Text("Apply")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showLevelDialogFor = null }) {
+                            Text("Cancel")
                         }
                     }
                 )

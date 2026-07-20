@@ -665,6 +665,35 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
         }
     }
 
+    fun updateCharacterRelationshipXp(context: Context, character: CharacterEntity, xp: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val updated = character.copy(relationshipXp = xp)
+                dataRepository.updateCharacter(updated)
+                
+                val payload = org.json.JSONObject().apply {
+                    put("name", updated.name)
+                    put("voiceId", updated.voiceId.ifBlank { "en_US-amy-medium" })
+                    put("description", updated.description)
+                    put("personality", updated.personality)
+                    put("scenario", updated.scenario)
+                    put("firstMessage", updated.firstMessage)
+                    put("systemPrompt", updated.systemPrompt)
+                    put("avatarPath", updated.avatarPath ?: org.json.JSONObject.NULL)
+                    put("relationshipXp", updated.relationshipXp)
+                    put("messageCount", updated.messageCount)
+                }
+                xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                    context,
+                    xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_SAVE_COMPANION,
+                    payload
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     var isGeneratingProfile = mutableStateOf(false)
         private set
 
