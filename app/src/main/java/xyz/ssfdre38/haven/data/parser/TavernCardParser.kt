@@ -114,10 +114,9 @@ object TavernCardParser {
 
                 if (nullIndex != -1) {
                     val keyword = String(data, 0, nullIndex, Charsets.UTF_8)
-                    if (keyword == "chara") {
-                        val base64Text = String(data, nullIndex + 1, length - (nullIndex + 1), Charsets.UTF_8)
-                        val decodedBytes = Base64.decode(base64Text, Base64.DEFAULT)
-                        return String(decodedBytes, Charsets.UTF_8)
+                    if (keyword == "chara" || keyword == "ccv3") {
+                        val text = String(data, nullIndex + 1, length - (nullIndex + 1), Charsets.UTF_8).trim()
+                        return tryDecodeBase64OrReturnRaw(text)
                     }
                 }
                 bis.skip(4) // Skip CRC
@@ -180,9 +179,8 @@ object TavernCardParser {
                                         data.copyOfRange(textStart, length)
                                     }
                                     
-                                    val textString = String(textBytes, Charsets.UTF_8)
-                                    val decodedBytes = Base64.decode(textString, Base64.DEFAULT)
-                                    return String(decodedBytes, Charsets.UTF_8)
+                                    val textString = String(textBytes, Charsets.UTF_8).trim()
+                                    return tryDecodeBase64OrReturnRaw(textString)
                                 }
                             }
                         }
@@ -196,6 +194,15 @@ object TavernCardParser {
             }
         }
         return null
+    }
+
+    private fun tryDecodeBase64OrReturnRaw(text: String): String {
+        return try {
+            val decodedBytes = Base64.decode(text, Base64.DEFAULT)
+            String(decodedBytes, Charsets.UTF_8)
+        } catch (e: Exception) {
+            text
+        }
     }
 
     fun parseRawJson(inputStream: java.io.InputStream): String? {
