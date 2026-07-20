@@ -406,17 +406,26 @@ class ChatViewModel(
                 }
                 val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
                 val userName = sharedPrefs.getString("user_name", "User") ?: "User"
+                val userGender = sharedPrefs.getString("user_gender", "Unspecified") ?: "Unspecified"
 
                 val systemContext = buildString {
                     // 1. Static Prefix (Identical every turn -> optimized for llama-server KV caching)
                     if (char != null) {
+                        val companionGender = char.bodyType
+                        val cleanPersonality = swapUserPronouns(char.personality, companionGender, userGender)
+                        val cleanScenario = swapUserPronouns(char.scenario, companionGender, userGender)
+                        val cleanSystemPrompt = swapUserPronouns(char.systemPrompt, companionGender, userGender)
+
                         appendLine("You are ${char.name}.")
-                        if (char.personality.isNotBlank()) appendLine("Personality: ${char.personality}")
-                        if (char.scenario.isNotBlank()) appendLine("Scenario: ${char.scenario}")
-                        if (char.systemPrompt.isNotBlank()) appendLine(char.systemPrompt)
+                        if (cleanPersonality.isNotBlank()) appendLine("Personality: $cleanPersonality")
+                        if (cleanScenario.isNotBlank()) appendLine("Scenario: $cleanScenario")
+                        if (cleanSystemPrompt.isNotBlank()) appendLine(cleanSystemPrompt)
                     }
                     
                     appendLine("The user's name is $userName. You must address the user as $userName instead of any other name.")
+                    if (userGender != "Unspecified") {
+                        appendLine("The user's gender is $userGender. You MUST refer to the user using the correct pronouns matching this gender.")
+                    }
                     
                     appendLine()
                     appendLine("[System Rule: Before responding, you MUST write down your inner thoughts, plans, or reasoning inside <thought>...</thought> tags, followed by your actual response to $userName. Do not omit the tags.]")
@@ -1304,13 +1313,21 @@ class ChatViewModel(
                 }
                 val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
                 val userName = sharedPrefs.getString("user_name", "User") ?: "User"
+                val userGender = sharedPrefs.getString("user_gender", "Unspecified") ?: "Unspecified"
 
                 val photoPrompt = buildString {
                     if (char != null) {
+                        val companionGender = char.bodyType
+                        val cleanPersonality = swapUserPronouns(char.personality, companionGender, userGender)
+                        val cleanSystemPrompt = swapUserPronouns(char.systemPrompt, companionGender, userGender)
+
                         appendLine("You are ${char.name}.")
-                        if (char.personality.isNotBlank()) appendLine("Personality: ${char.personality}")
-                        if (char.systemPrompt.isNotBlank()) appendLine(char.systemPrompt)
+                        if (cleanPersonality.isNotBlank()) appendLine("Personality: $cleanPersonality")
+                        if (cleanSystemPrompt.isNotBlank()) appendLine(cleanSystemPrompt)
                         appendLine("The user's name is $userName. You must address the user as $userName.")
+                        if (userGender != "Unspecified") {
+                            appendLine("The user's gender is $userGender. You MUST refer to the user using the correct pronouns matching this gender.")
+                        }
                         appendLine("Relationship Status with $userName: $relationshipTitle (Level $level)")
                     }
                     appendLine()
@@ -1790,5 +1807,49 @@ class ChatViewModel(
                 }
             }
         }
+    }
+
+    private fun swapUserPronouns(text: String, companionGender: String, userGender: String): String {
+        if (text.isBlank()) return text
+        val cleanComp = companionGender.trim().lowercase()
+        val cleanUser = userGender.trim().lowercase()
+
+        val replacements = if (cleanUser == "female" && (cleanComp == "female" || cleanComp.isBlank())) {
+            listOf(
+                "\\bhe\\b" to "she",
+                "\\bhim\\b" to "her",
+                "\\bhis\\b" to "her",
+                "\\bhimself\\b" to "herself"
+            )
+        } else if (cleanUser == "male" && cleanComp == "male") {
+            listOf(
+                "\\bshe\\b" to "he",
+                "\\bherself\\b" to "himself",
+                "\\bhers\\b" to "his",
+                "\\bher\\b" to "his"
+            )
+        } else {
+            return text
+        }
+
+        var result = text
+        for ((pattern, replacement) in replacements) {
+            val regex = pattern.toRegex(RegexOption.IGNORE_CASE)
+            result = regex.replace(result) { matchResult ->
+                val value = matchResult.value
+                val firstCharUpper = value.firstOrNull()?.isUpperCase() ?: false
+                if (firstCharUpper) {
+                    val allUpper = value.all { it.isUpperCase() }
+                    if (allUpper) {
+                        replacement.uppercase()
+                    } else {
+                        replacement.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.ROOT) else it.toString() }
+                    }
+                } else {
+                    replacement
+                }
+            }
+        }
+        return result
     }
 }
