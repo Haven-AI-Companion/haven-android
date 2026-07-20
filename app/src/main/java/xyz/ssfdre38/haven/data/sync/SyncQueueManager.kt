@@ -240,7 +240,16 @@ object SyncQueueManager {
                                 scenario = payload.getString("scenario"),
                                 firstMessage = payload.getString("firstMessage"),
                                 systemPrompt = payload.getString("systemPrompt"),
-                                avatarPath = if (payload.has("avatarPath") && !payload.isNull("avatarPath")) payload.getString("avatarPath") else null
+                                avatarPath = if (payload.has("avatarPath") && !payload.isNull("avatarPath")) payload.getString("avatarPath") else null,
+                                currentOutfit = if (payload.has("currentOutfit")) payload.getString("currentOutfit") else "",
+                                currentLocation = if (payload.has("currentLocation")) payload.getString("currentLocation") else "",
+                                currentMood = if (payload.has("currentMood")) payload.getString("currentMood") else "",
+                                bodyType = if (payload.has("bodyType")) payload.getString("bodyType") else "",
+                                bodyShape = if (payload.has("bodyShape")) payload.getString("bodyShape") else "",
+                                clothingState = if (payload.has("clothingState")) payload.getString("clothingState") else "",
+                                relationshipXp = if (payload.has("relationshipXp")) payload.getInt("relationshipXp") else 0,
+                                messageCount = if (payload.has("messageCount")) payload.getInt("messageCount") else 0,
+                                vrmModelPath = if (payload.has("vrmModelPath") && !payload.isNull("vrmModelPath")) payload.getString("vrmModelPath") else null
                             )
                             HavenHttpClient.saveCompanion(
                                 context = context,

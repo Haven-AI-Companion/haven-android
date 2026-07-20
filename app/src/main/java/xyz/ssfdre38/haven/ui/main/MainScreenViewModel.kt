@@ -665,10 +665,9 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
         }
     }
 
-    fun updateCharacterRelationshipXp(context: Context, character: CharacterEntity, xp: Int) {
+    fun updateCharacterDetails(context: Context, updated: CharacterEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val updated = character.copy(relationshipXp = xp)
                 dataRepository.updateCharacter(updated)
                 
                 val payload = org.json.JSONObject().apply {
@@ -680,8 +679,15 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                     put("firstMessage", updated.firstMessage)
                     put("systemPrompt", updated.systemPrompt)
                     put("avatarPath", updated.avatarPath ?: org.json.JSONObject.NULL)
+                    put("currentOutfit", updated.currentOutfit)
+                    put("currentLocation", updated.currentLocation)
+                    put("currentMood", updated.currentMood)
+                    put("bodyType", updated.bodyType)
+                    put("bodyShape", updated.bodyShape)
+                    put("clothingState", updated.clothingState)
                     put("relationshipXp", updated.relationshipXp)
                     put("messageCount", updated.messageCount)
+                    put("vrmModelPath", updated.vrmModelPath ?: org.json.JSONObject.NULL)
                 }
                 xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
                     context,
@@ -692,6 +698,11 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                 e.printStackTrace()
             }
         }
+    }
+
+    fun updateCharacterRelationshipXp(context: Context, character: CharacterEntity, xp: Int) {
+        val updated = character.copy(relationshipXp = xp)
+        updateCharacterDetails(context, updated)
     }
 
     var isGeneratingProfile = mutableStateOf(false)

@@ -88,6 +88,7 @@ fun MainScreen(
     var activeCharacterActions by remember { mutableStateOf<CharacterEntity?>(null) }
     var showVoicePickerDialogFor by remember { mutableStateOf<CharacterEntity?>(null) }
     var showLevelDialogFor by remember { mutableStateOf<CharacterEntity?>(null) }
+    var showEditDialogFor by remember { mutableStateOf<CharacterEntity?>(null) }
 
     val vrmPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -494,6 +495,15 @@ fun MainScreen(
                             }
                             TextButton(
                                 onClick = {
+                                    showEditDialogFor = character
+                                    activeCharacterActions = null
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Edit Companion Details", textAlign = TextAlign.Start, modifier = Modifier.fillMaxWidth())
+                            }
+                            TextButton(
+                                onClick = {
                                     showVoicePickerDialogFor = character
                                     activeCharacterActions = null
                                 },
@@ -665,6 +675,171 @@ fun MainScreen(
                     },
                     dismissButton = {
                         TextButton(onClick = { showLevelDialogFor = null }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
+            }
+
+            // Edit Companion Details Dialog
+            showEditDialogFor?.let { character ->
+                var description by remember(character.id) { mutableStateOf(character.description) }
+                var personality by remember(character.id) { mutableStateOf(character.personality) }
+                var scenario by remember(character.id) { mutableStateOf(character.scenario) }
+                var firstMessage by remember(character.id) { mutableStateOf(character.firstMessage) }
+                var systemPrompt by remember(character.id) { mutableStateOf(character.systemPrompt) }
+                var voiceId by remember(character.id) { mutableStateOf(character.voiceId) }
+                var bodyType by remember(character.id) { mutableStateOf(character.bodyType) }
+                var bodyShape by remember(character.id) { mutableStateOf(character.bodyShape) }
+                var clothingState by remember(character.id) { mutableStateOf(character.clothingState) }
+                var currentOutfit by remember(character.id) { mutableStateOf(character.currentOutfit) }
+                var currentLocation by remember(character.id) { mutableStateOf(character.currentLocation) }
+                var currentMood by remember(character.id) { mutableStateOf(character.currentMood) }
+                var dialogTab by remember { mutableIntStateOf(0) }
+
+                AlertDialog(
+                    onDismissRequest = { showEditDialogFor = null },
+                    title = { Text("Edit ${character.name}") },
+                    text = {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp)
+                        ) {
+                            TabRow(selectedTabIndex = dialogTab) {
+                                Tab(
+                                    selected = dialogTab == 0,
+                                    onClick = { dialogTab = 0 },
+                                    text = { Text("Core") }
+                                )
+                                Tab(
+                                    selected = dialogTab == 1,
+                                    onClick = { dialogTab = 1 },
+                                    text = { Text("Physical") }
+                                )
+                                Tab(
+                                    selected = dialogTab == 2,
+                                    onClick = { dialogTab = 2 },
+                                    text = { Text("State") }
+                                )
+                            }
+                            
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                when (dialogTab) {
+                                    0 -> {
+                                        OutlinedTextField(
+                                            value = description,
+                                            onValueChange = { description = it },
+                                            label = { Text("Description") },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        OutlinedTextField(
+                                            value = personality,
+                                            onValueChange = { personality = it },
+                                            label = { Text("Personality") },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        OutlinedTextField(
+                                            value = scenario,
+                                            onValueChange = { scenario = it },
+                                            label = { Text("Scenario") },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        OutlinedTextField(
+                                            value = firstMessage,
+                                            onValueChange = { firstMessage = it },
+                                            label = { Text("First Message") },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        OutlinedTextField(
+                                            value = systemPrompt,
+                                            onValueChange = { systemPrompt = it },
+                                            label = { Text("System Prompt") },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                    1 -> {
+                                        OutlinedTextField(
+                                            value = bodyType,
+                                            onValueChange = { bodyType = it },
+                                            label = { Text("Body Type (e.g. female, male)") },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        OutlinedTextField(
+                                            value = bodyShape,
+                                            onValueChange = { bodyShape = it },
+                                            label = { Text("Body Shape (e.g. slim, curvy)") },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        OutlinedTextField(
+                                            value = clothingState,
+                                            onValueChange = { clothingState = it },
+                                            label = { Text("Clothing State (e.g. clothed, naked)") },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                    2 -> {
+                                        OutlinedTextField(
+                                            value = currentOutfit,
+                                            onValueChange = { currentOutfit = it },
+                                            label = { Text("Current Outfit") },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        OutlinedTextField(
+                                            value = currentLocation,
+                                            onValueChange = { currentLocation = it },
+                                            label = { Text("Current Location") },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        OutlinedTextField(
+                                            value = currentMood,
+                                            onValueChange = { currentMood = it },
+                                            label = { Text("Current Mood") },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        OutlinedTextField(
+                                            value = voiceId,
+                                            onValueChange = { voiceId = it },
+                                            label = { Text("TTS Voice ID") },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                val updated = character.copy(
+                                    description = description,
+                                    personality = personality,
+                                    scenario = scenario,
+                                    firstMessage = firstMessage,
+                                    systemPrompt = systemPrompt,
+                                    bodyType = bodyType,
+                                    bodyShape = bodyShape,
+                                    clothingState = clothingState,
+                                    currentOutfit = currentOutfit,
+                                    currentLocation = currentLocation,
+                                    currentMood = currentMood,
+                                    voiceId = voiceId
+                                )
+                                viewModel.updateCharacterDetails(context, updated)
+                                Toast.makeText(context, "Companion settings saved!", Toast.LENGTH_SHORT).show()
+                                showEditDialogFor = null
+                            }
+                        ) {
+                            Text("Save")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showEditDialogFor = null }) {
                             Text("Cancel")
                         }
                     }
