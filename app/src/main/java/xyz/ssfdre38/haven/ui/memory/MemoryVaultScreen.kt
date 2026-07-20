@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material3.*
 import android.content.Context
@@ -50,6 +51,11 @@ fun MemoryVaultScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var customFactText by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("general") }
+
+    // UI Dialog state for editing a memory fact
+    var showEditDialogFor by remember { mutableStateOf<MemoryEntity?>(null) }
+    var editFactText by remember { mutableStateOf("") }
+    var editCategory by remember { mutableStateOf("general") }
 
     val prefs = remember { context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE) }
     val serverUrl = remember {
@@ -220,6 +226,11 @@ fun MemoryVaultScreen(
                                     3 -> Color(0xFF26A69A)
                                     else -> MaterialTheme.colorScheme.primary
                                 },
+                                onEditClick = {
+                                    editFactText = memory.content
+                                    editCategory = memory.category
+                                    showEditDialogFor = memory
+                                },
                                 onDeleteClick = {
                                     coroutineScope.launch(Dispatchers.IO) {
                                         repository.deleteMemory(memory)
@@ -337,6 +348,109 @@ fun MemoryVaultScreen(
                 }
             )
         }
+
+        // Edit custom memory dialog
+        showEditDialogFor?.let { memory ->
+            AlertDialog(
+                onDismissRequest = { showEditDialogFor = null },
+                title = { Text("Edit Memory Fact") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = "Modify this statement about yourself for this companion.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        OutlinedTextField(
+                            value = editFactText,
+                            onValueChange = { editFactText = it },
+                            label = { Text("Memory Fact") },
+                            modifier = Modifier.fillMaxWidth(),
+                            maxLines = 3
+                        )
+                        Column {
+                            Text("Category:", style = MaterialTheme.typography.bodyMedium)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf("personal", "preference", "event").forEach { cat ->
+                                    FilterChip(
+                                        selected = editCategory == cat,
+                                        onClick = { editCategory = cat },
+                                        label = { Text(cat.replaceFirstChar { it.uppercase() }) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val newFact = editFactText.trim()
+                            if (newFact.isNotBlank()) {
+                                coroutineScope.launch(Dispatchers.IO) {
+                                    val charName = character?.name
+                                    // 1. Delete old memory locally and on server
+                                    repository.deleteMemory(memory)
+                                    if (charName != null) {
+                                        val delSuccess = if (serverUrl.isNotBlank() && token.isNotBlank()) {
+                                            HavenHttpClient.deleteMemory(serverUrl, token, charName, memory.content)
+                                        } else false
+                                        if (!delSuccess) {
+                                            val delPayload = org.json.JSONObject().apply {
+                                                put("companion_name", charName)
+                                                put("content", memory.content)
+                                            }
+                                            xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                                                context,
+                                                xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_DELETE_MEMORY,
+                                                delPayload
+                                            )
+                                        }
+                                    }
+
+                                    // 2. Insert new memory locally and on server
+                                    repository.insertMemory(
+                                        MemoryEntity(
+                                            characterId = characterId,
+                                            content = newFact,
+                                            category = editCategory
+                                        )
+                                    )
+                                    if (charName != null) {
+                                        val saveSuccess = if (serverUrl.isNotBlank() && token.isNotBlank()) {
+                                            HavenHttpClient.saveMemory(serverUrl, token, charName, newFact, editCategory)
+                                        } else false
+                                        if (!saveSuccess) {
+                                            val savePayload = org.json.JSONObject().apply {
+                                                put("companion_name", charName)
+                                                put("content", newFact)
+                                                put("category", editCategory)
+                                            }
+                                            xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                                                context,
+                                                xyz.ssfdre38.haven.data.sync.SyncQueueManager.ACTION_SAVE_MEMORY,
+                                                savePayload
+                                            )
+                                        }
+                                    }
+                                }
+                                showEditDialogFor = null
+                            }
+                        },
+                        enabled = editFactText.isNotBlank()
+                    ) {
+                        Text("Save")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showEditDialogFor = null }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
     }
 }
 
@@ -344,6 +458,7 @@ fun MemoryVaultScreen(
 fun MemoryItemCard(
     memory: MemoryEntity,
     characterColor: Color,
+    onEditClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
     var isVisible by remember { mutableStateOf(true) }
@@ -360,7 +475,7 @@ fun MemoryItemCard(
                 .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(16.dp))
                 .padding(16.dp)
         ) {
-            Column(modifier = Modifier.padding(end = 40.dp)) {
+            Column(modifier = Modifier.padding(end = 80.dp)) {
                 // Category badge
                 Box(
                     modifier = Modifier
@@ -397,21 +512,34 @@ fun MemoryItemCard(
                 )
             }
 
-            IconButton(
-                onClick = {
-                    isVisible = false
-                    // Delayed deletion to allow exit animation to complete smoothly
-                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                        onDeleteClick()
-                    }, 300)
-                },
-                modifier = Modifier.align(Alignment.CenterEnd)
+            Row(
+                modifier = Modifier.align(Alignment.CenterEnd),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete Memory",
-                    tint = Color.White.copy(alpha = 0.5f)
-                )
+                IconButton(
+                    onClick = onEditClick
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit Memory",
+                        tint = Color.White.copy(alpha = 0.5f)
+                    )
+                }
+                IconButton(
+                    onClick = {
+                        isVisible = false
+                        // Delayed deletion to allow exit animation to complete smoothly
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            onDeleteClick()
+                        }, 300)
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete Memory",
+                        tint = Color.White.copy(alpha = 0.5f)
+                    )
+                }
             }
         }
     }
