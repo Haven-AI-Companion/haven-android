@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.AccountCircle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.security.MessageDigest
@@ -353,6 +354,7 @@ fun GalleryScreen(
                 activeItem?.let { item ->
                     LightboxViewer(
                         item = item,
+                        characterId = characterId,
                         repository = repository,
                         onDeleteSuccess = {
                             failedDeletes.add(item.file.absolutePath)
@@ -409,6 +411,7 @@ fun GridImageCard(
 @Composable
 fun LightboxViewer(
     item: GalleryItem,
+    characterId: Int,
     repository: DataRepository,
     onDeleteSuccess: () -> Unit,
     onDismiss: () -> Unit
@@ -490,6 +493,68 @@ fun LightboxViewer(
                         Icon(
                             imageVector = Icons.Default.Download,
                             contentDescription = "Save to Gallery",
+                            tint = Color.White
+                        )
+                    }
+
+                    // Set as Avatar button
+                    IconButton(
+                        onClick = {
+                            coroutineScope.launch(Dispatchers.IO) {
+                                val char = repository.getCharacterById(characterId)
+                                if (char != null) {
+                                    val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+                                    val avatarsDir = File(baseDir, "avatars")
+                                    if (!avatarsDir.exists()) {
+                                        avatarsDir.mkdirs()
+                                    }
+                                    val extension = item.file.extension.lowercase()
+                                    val avatarFile = File(avatarsDir, "avatar_${char.name.replace("[^a-zA-Z0-9]".toRegex(), "_")}_${java.util.UUID.randomUUID()}.$extension")
+                                    
+                                    try {
+                                        item.file.inputStream().use { input ->
+                                            avatarFile.outputStream().use { output ->
+                                                input.copyTo(output)
+                                            }
+                                        }
+                                        
+                                        val updatedChar = char.copy(avatarPath = avatarFile.absolutePath)
+                                        repository.insertCharacter(updatedChar)
+                                        
+                                        val payload = org.json.JSONObject().apply {
+                                            put("name", char.name)
+                                            put("voiceId", char.voiceId.ifBlank { "en_US-amy-medium" })
+                                            put("description", char.description)
+                                            put("personality", char.personality)
+                                            put("scenario", "")
+                                            put("firstMessage", char.firstMessage)
+                                            put("systemPrompt", char.systemPrompt)
+                                            put("avatarPath", avatarFile.absolutePath)
+                                        }
+                                        xyz.ssfdre38.haven.data.sync.SyncQueueManager.enqueue(
+                                            context,
+                                            "SAVE_COMPANION",
+                                            payload
+                                        )
+                                        
+                                        (context as? android.app.Activity)?.runOnUiThread {
+                                            Toast.makeText(context, "Avatar updated successfully!", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                        (context as? android.app.Activity)?.runOnUiThread {
+                                            Toast.makeText(context, "Failed to set avatar: ${e.message}", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(50))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AccountCircle,
+                            contentDescription = "Set as Avatar",
                             tint = Color.White
                         )
                     }
