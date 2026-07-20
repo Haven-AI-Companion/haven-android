@@ -1477,6 +1477,11 @@ fun MessageBubble(
         if (host.startsWith("http")) "$host:$port" else "http://$host:$port"
     }
 
+    val userAvatarPath = remember {
+        val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+        prefs.getString("user_avatar_path", "") ?: ""
+    }
+
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val bubbleMaxWidth = remember(configuration.screenWidthDp) { (configuration.screenWidthDp * 0.72f).dp }
 
@@ -1693,14 +1698,28 @@ fun MessageBubble(
 
         if (isUser) {
             Spacer(modifier = Modifier.width(8.dp))
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("Me", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary)
+            if (userAvatarPath.isNotEmpty()) {
+                val model = remember(userAvatarPath) {
+                    if (userAvatarPath.startsWith("http")) userAvatarPath else java.io.File(userAvatarPath)
+                }
+                AsyncImage(
+                    model = model,
+                    contentDescription = "User avatar",
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Me", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary)
+                }
             }
         }
     }
