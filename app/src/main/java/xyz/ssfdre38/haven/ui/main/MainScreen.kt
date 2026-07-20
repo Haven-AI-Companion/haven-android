@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.widget.Toast
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
 import androidx.compose.ui.text.style.TextAlign
 import xyz.ssfdre38.haven.MemoryVault
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -70,6 +71,7 @@ fun MainScreen(
     viewModel: MainScreenViewModel = viewModel { MainScreenViewModel(repository) }
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val importState by viewModel.importState.collectAsStateWithLifecycle()
 
@@ -89,6 +91,7 @@ fun MainScreen(
     var showVoicePickerDialogFor by remember { mutableStateOf<CharacterEntity?>(null) }
     var showLevelDialogFor by remember { mutableStateOf<CharacterEntity?>(null) }
     var showEditDialogFor by remember { mutableStateOf<CharacterEntity?>(null) }
+    var showWardrobeDialogFor by remember { mutableStateOf<CharacterEntity?>(null) }
 
     val vrmPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -504,6 +507,15 @@ fun MainScreen(
                             }
                             TextButton(
                                 onClick = {
+                                    showWardrobeDialogFor = character
+                                    activeCharacterActions = null
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Wardrobe & Environment Settings", textAlign = TextAlign.Start, modifier = Modifier.fillMaxWidth())
+                            }
+                            TextButton(
+                                onClick = {
                                     showVoicePickerDialogFor = character
                                     activeCharacterActions = null
                                 },
@@ -840,6 +852,250 @@ fun MainScreen(
                     },
                     dismissButton = {
                         TextButton(onClick = { showEditDialogFor = null }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
+            }
+
+            // Wardrobe & Travel Dashboard Dialog
+            showWardrobeDialogFor?.let { character ->
+                // Prefill state values
+                var selectedOutfit by remember { mutableStateOf(character.currentOutfit.ifBlank { "default" }) }
+                var selectedLocation by remember { mutableStateOf(character.currentLocation.ifBlank { "default" }) }
+                var selectedClothingState by remember { mutableStateOf(character.clothingState.ifBlank { "default" }) }
+                var selectedMood by remember { mutableStateOf(character.currentMood.ifBlank { "default" }) }
+
+                var customOutfitText by remember { mutableStateOf("") }
+                var customLocationText by remember { mutableStateOf("") }
+
+                var isGeneratingVisual by remember { mutableStateOf(false) }
+
+                AlertDialog(
+                    onDismissRequest = { 
+                        if (!isGeneratingVisual) showWardrobeDialogFor = null 
+                    },
+                    title = { Text("Wardrobe & Travel: ${character.name}") },
+                    text = {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            // Section 1: Environmental Travel
+                            Text("Travel Location:", style = MaterialTheme.typography.titleSmall)
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf("default", "cozy room", "sunny beach", "rainy cafe", "old library", "modern gym").forEach { loc ->
+                                    FilterChip(
+                                        selected = selectedLocation == loc,
+                                        onClick = { selectedLocation = loc },
+                                        label = { Text(loc.replaceFirstChar { it.uppercase() }) }
+                                    )
+                                }
+                            }
+                            OutlinedTextField(
+                                value = customLocationText,
+                                onValueChange = { 
+                                    customLocationText = it
+                                    selectedLocation = it 
+                                },
+                                label = { Text("Custom Location") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
+                            // Section 2: Wardrobe Outfit
+                            Text("Active Outfit:", style = MaterialTheme.typography.titleSmall)
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf("default", "casual sweater", "formal dress", "swimwear", "summer dress", "pyjamas").forEach { outfit ->
+                                    FilterChip(
+                                        selected = selectedOutfit == outfit,
+                                        onClick = { selectedOutfit = outfit },
+                                        label = { Text(outfit.replaceFirstChar { it.uppercase() }) }
+                                    )
+                                }
+                            }
+                            OutlinedTextField(
+                                value = customOutfitText,
+                                onValueChange = { 
+                                    customOutfitText = it
+                                    selectedOutfit = it 
+                                },
+                                label = { Text("Custom Outfit") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
+                            // Section 3: Clothing State
+                            Text("Clothing State:", style = MaterialTheme.typography.titleSmall)
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf("default", "dressed", "semi-dressed", "naked").forEach { stateVal ->
+                                    FilterChip(
+                                        selected = selectedClothingState == stateVal,
+                                        onClick = { selectedClothingState = stateVal },
+                                        label = { Text(stateVal.replaceFirstChar { it.uppercase() }) }
+                                    )
+                                }
+                            }
+
+                            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
+                            // Section 4: Expression & Mood
+                            Text("Mood & Facial Expression:", style = MaterialTheme.typography.titleSmall)
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf("default", "smiling", "blushing", "pouting", "teasing", "neutral").forEach { moodVal ->
+                                    FilterChip(
+                                        selected = selectedMood == moodVal,
+                                        onClick = { selectedMood = moodVal },
+                                        label = { Text(moodVal.replaceFirstChar { it.uppercase() }) }
+                                    )
+                                }
+                            }
+
+                            if (isGeneratingVisual) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text("Generating visual update...", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                isGeneratingVisual = true
+                                coroutineScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                    val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+                                    val host = sharedPrefs.getString("ash_host", "") ?: ""
+                                    val port = sharedPrefs.getString("ash_port", "") ?: ""
+                                    val token = sharedPrefs.getString("auth_token", "") ?: ""
+                                    
+                                    val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+                                    val serverUrl = "$formattedHost:${port.trim()}"
+
+                                    // 1. Update the database settings
+                                    val updatedChar = character.copy(
+                                        currentOutfit = selectedOutfit,
+                                        currentLocation = selectedLocation,
+                                        clothingState = selectedClothingState,
+                                        currentMood = selectedMood
+                                    )
+                                    viewModel.updateCharacterDetails(context, updatedChar)
+
+                                    // 2. Call select-asset or generate-asset on server
+                                    if (serverUrl.isNotBlank() && token.isNotBlank()) {
+                                        try {
+                                            // Trigger SD generation for outfit/location/mood
+                                            var activeAvatarUrl = character.avatarPath ?: ""
+                                            if (selectedOutfit != "default" && selectedOutfit != character.currentOutfit) {
+                                                val success = xyz.ssfdre38.haven.data.network.HavenHttpClient.generateCompanionAsset(
+                                                    serverUrl = serverUrl,
+                                                    token = token,
+                                                    companionName = character.name,
+                                                    assetType = "outfit",
+                                                    value = selectedOutfit
+                                                )
+                                                if (success) {
+                                                    val selectSuccess = xyz.ssfdre38.haven.data.network.HavenHttpClient.selectCompanionAsset(
+                                                        serverUrl = serverUrl,
+                                                        token = token,
+                                                        companionName = character.name,
+                                                        assetType = "outfit",
+                                                        value = selectedOutfit
+                                                    )
+                                                    if (selectSuccess != null) {
+                                                        activeAvatarUrl = selectSuccess
+                                                    }
+                                                }
+                                            }
+                                            if (selectedLocation != "default" && selectedLocation != character.currentLocation) {
+                                                xyz.ssfdre38.haven.data.network.HavenHttpClient.generateCompanionAsset(
+                                                    serverUrl = serverUrl,
+                                                    token = token,
+                                                    companionName = character.name,
+                                                    assetType = "location",
+                                                    value = selectedLocation
+                                                )
+                                            }
+                                            if (selectedMood != "default" && selectedMood != character.currentMood) {
+                                                val success = xyz.ssfdre38.haven.data.network.HavenHttpClient.generateCompanionAsset(
+                                                    serverUrl = serverUrl,
+                                                    token = token,
+                                                    companionName = character.name,
+                                                    assetType = "mood",
+                                                    value = selectedMood
+                                                )
+                                                if (success) {
+                                                    val selectSuccess = xyz.ssfdre38.haven.data.network.HavenHttpClient.selectCompanionAsset(
+                                                        serverUrl = serverUrl,
+                                                        token = token,
+                                                        companionName = character.name,
+                                                        assetType = "mood",
+                                                        value = selectedMood
+                                                    )
+                                                    if (selectSuccess != null) {
+                                                        activeAvatarUrl = selectSuccess
+                                                    }
+                                                }
+                                            }
+
+                                            // If avatar updated, refresh local db representation
+                                            if (activeAvatarUrl != character.avatarPath) {
+                                                val finalChar = updatedChar.copy(avatarPath = activeAvatarUrl)
+                                                viewModel.updateCharacterDetails(context, finalChar)
+                                            }
+                                            
+                                            coroutineScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                                                Toast.makeText(context, "Visuals updated successfully!", Toast.LENGTH_SHORT).show()
+                                                showWardrobeDialogFor = null
+                                            }
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                            coroutineScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                                                Toast.makeText(context, "SD generation error: ${e.message}", Toast.LENGTH_LONG).show()
+                                                showWardrobeDialogFor = null
+                                            }
+                                        }
+                                    } else {
+                                        coroutineScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                                            Toast.makeText(context, "Server details not configured in Settings.", Toast.LENGTH_SHORT).show()
+                                            showWardrobeDialogFor = null
+                                        }
+                                    }
+                                    isGeneratingVisual = false
+                                }
+                            },
+                            enabled = !isGeneratingVisual
+                        ) {
+                            Text("Apply Updates")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = { showWardrobeDialogFor = null },
+                            enabled = !isGeneratingVisual
+                        ) {
                             Text("Cancel")
                         }
                     }

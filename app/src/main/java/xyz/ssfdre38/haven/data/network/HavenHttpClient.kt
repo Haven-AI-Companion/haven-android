@@ -1174,4 +1174,75 @@ object HavenHttpClient {
             }
         })
     }
+
+    fun generateCompanionAsset(
+        serverUrl: String,
+        token: String,
+        companionName: String,
+        assetType: String,
+        value: String,
+        sdPromptOverride: String? = null
+    ): Boolean {
+        return try {
+            val url = "$serverUrl/api/companions/${java.net.URLEncoder.encode(companionName, "UTF-8")}/generate-asset"
+            val json = JSONObject().apply {
+                put("assetType", assetType)
+                put("value", value)
+                if (sdPromptOverride != null) {
+                    put("sdPromptOverride", sdPromptOverride)
+                }
+            }
+            val requestBody = json.toString().toRequestBody(JSON_MEDIA_TYPE)
+            val request = Request.Builder()
+                .url(url)
+                .post(requestBody)
+                .addHeader("Authorization", "Bearer $token")
+                .build()
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    fun selectCompanionAsset(
+        serverUrl: String,
+        token: String,
+        companionName: String,
+        assetType: String,
+        value: String
+    ): String? {
+        return try {
+            val url = "$serverUrl/api/companions/${java.net.URLEncoder.encode(companionName, "UTF-8")}/select-asset"
+            val json = JSONObject().apply {
+                put("assetType", assetType)
+                put("value", value)
+            }
+            val requestBody = json.toString().toRequestBody(JSON_MEDIA_TYPE)
+            val request = Request.Builder()
+                .url(url)
+                .post(requestBody)
+                .addHeader("Authorization", "Bearer $token")
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val obj = JSONObject(body)
+                    val config = obj.optJSONObject("config")
+                    if (config != null && config.has("avatarPath")) {
+                        config.getString("avatarPath")
+                    } else {
+                        null
+                    }
+                } else {
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
 }
