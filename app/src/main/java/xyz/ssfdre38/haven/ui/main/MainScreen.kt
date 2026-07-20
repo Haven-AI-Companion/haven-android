@@ -812,6 +812,9 @@ fun MainScreen(
                 var generatedAvatarPath by remember { mutableStateOf<String?>(null) }
                 var isGeneratingAvatar by remember { mutableStateOf(false) }
 
+                var aiIdeaPrompt by remember { mutableStateOf("") }
+                val isGeneratingProfile = viewModel.isGeneratingProfile.value
+
                 AlertDialog(
                     onDismissRequest = { showManualCreateDialog = false },
                     title = { Text("Manual Companion Setup") },
@@ -821,6 +824,50 @@ fun MainScreen(
                                 .fillMaxWidth()
                                 .verticalScroll(rememberScrollState())
                         ) {
+                            Text(
+                                text = "AI Profile Generator",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = aiIdeaPrompt,
+                                onValueChange = { aiIdeaPrompt = it },
+                                label = { Text("Describe your companion concept...") },
+                                placeholder = { Text("e.g. A grumpy wizard who loves coffee") },
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !isGeneratingProfile
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Button(
+                                onClick = {
+                                    viewModel.generateCompanionProfile(context, aiIdeaPrompt) { data ->
+                                        name = data.name ?: ""
+                                        description = data.description ?: ""
+                                        personality = data.personality ?: ""
+                                        firstMessage = data.first_mes ?: ""
+                                        systemPrompt = data.system_prompt ?: ""
+                                    }
+                                },
+                                enabled = aiIdeaPrompt.isNotBlank() && !isGeneratingProfile,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                if (isGeneratingProfile) {
+                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Generating Profile...")
+                                } else {
+                                    Icon(imageVector = Icons.Default.Edit, contentDescription = null)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Generate Profile with LLM")
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                            Spacer(modifier = Modifier.height(16.dp))
+
                             OutlinedTextField(
                                 value = name,
                                 onValueChange = { name = it },

@@ -33,6 +33,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -54,6 +57,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontStyle
@@ -144,6 +148,9 @@ fun ChatScreen(
     var inputText by remember { mutableStateOf("") }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     var activeFullscreenImage by remember { mutableStateOf<Any?>(null) }
+
+    var showWallpaperPickerDialog by remember { mutableStateOf(false) }
+    var galleryWallpaperFiles by remember { mutableStateOf<List<File>>(emptyList()) }
 
     var previousLevel by remember { mutableStateOf<Int?>(null) }
     var showLevelUpDialog by remember { mutableStateOf<Int?>(null) }
@@ -268,45 +275,48 @@ fun ChatScreen(
                 )
             }
     ) {
-        // Full-screen static background image (for immersion)
+        // Full-screen static background image (for immersion / custom wallpaper)
         val localChar = character
-        if (localChar != null && localChar.avatarPath != null) {
-            val bgFile = remember(localChar.avatarPath) { File(localChar.avatarPath) }
-            var fileExists by remember(localChar.avatarPath) { mutableStateOf(false) }
-            var lastModified by remember(localChar.avatarPath) { mutableStateOf(0L) }
+        if (localChar != null) {
+            val bgPath = localChar.chatWallpaperPath ?: localChar.avatarPath
+            if (bgPath != null) {
+                val bgFile = remember(bgPath) { File(bgPath) }
+                var fileExists by remember(bgPath) { mutableStateOf(false) }
+                var lastModified by remember(bgPath) { mutableStateOf(0L) }
 
-            LaunchedEffect(localChar.avatarPath) {
-                withContext(Dispatchers.IO) {
-                    try {
-                        val exists = bgFile.exists()
-                        fileExists = exists
-                        if (exists) {
-                            lastModified = bgFile.lastModified()
+                LaunchedEffect(bgPath) {
+                    withContext(Dispatchers.IO) {
+                        try {
+                            val exists = bgFile.exists()
+                            fileExists = exists
+                            if (exists) {
+                                lastModified = bgFile.lastModified()
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
                         }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
                     }
                 }
-            }
 
-            if (fileExists) {
-                val request = remember(localChar.avatarPath, lastModified) {
-                    coil.request.ImageRequest.Builder(context)
-                        .data(bgFile)
-                        .memoryCacheKey(bgFile.absolutePath + "_" + lastModified)
-                        .diskCacheKey(bgFile.absolutePath + "_" + lastModified)
-                        .build()
+                if (fileExists) {
+                    val request = remember(bgPath, lastModified) {
+                        coil.request.ImageRequest.Builder(context)
+                            .data(bgFile)
+                            .memoryCacheKey(bgFile.absolutePath + "_" + lastModified)
+                            .diskCacheKey(bgFile.absolutePath + "_" + lastModified)
+                            .build()
+                    }
+                    androidx.compose.foundation.Image(
+                        painter = coil.compose.rememberAsyncImagePainter(model = request),
+                        contentDescription = "Background",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(if (blurBackdrop) Modifier.blur(20.dp) else Modifier),
+                        contentScale = ContentScale.Crop,
+                        alignment = Alignment.Center,
+                        alpha = if (immersiveMode) 0.8f else 0.3f
+                    )
                 }
-                androidx.compose.foundation.Image(
-                    painter = coil.compose.rememberAsyncImagePainter(model = request),
-                    contentDescription = "Background",
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .then(if (blurBackdrop) Modifier.blur(20.dp) else Modifier),
-                    contentScale = ContentScale.Crop,
-                    alignment = Alignment.Center,
-                    alpha = if (immersiveMode) 0.8f else 0.3f
-                )
             }
         }
 
@@ -550,6 +560,58 @@ fun ChatScreen(
                                     )
                                 }
                             )
+                            DropdownMenuItem(
+                                text = { Text("Set Chat Wallpaper") },
+                                onClick = {
+                                    expanded = false
+                                    character?.let { char ->
+                                        val list = getCompanionGalleryImages(context, char.name, messages)
+                                        if (list.isEmpty()) {
+                                            Toast.makeText(context, "No images in companion gallery yet. Generate some photos first!", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            galleryWallpaperFiles = list
+                                            showWallpaperPickerDialog = true
+                                        }
+                                    }
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Image,
+                                        contentDescription = "Set Chat Wallpaper"
+                                    )
+                                }
+                            )
+                            if (character?.chatWallpaperPath != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Clear Chat Wallpaper") },
+                                    onClick = {
+                                        expanded = false
+                                        chatViewModel.clearChatWallpaper()
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Clear Chat Wallpaper"
+                                        )
+                                    }
+                                )
+                            }
+                            val localChar = character
+                            if (localChar != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Export Tavern Card") },
+                                    onClick = {
+                                        expanded = false
+                                        chatViewModel.exportCompanionAsTavernCard(context, localChar)
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Download,
+                                            contentDescription = "Export Tavern Card"
+                                        )
+                                    }
+                                )
+                            }
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
                             
                             DropdownMenuItem(
@@ -951,6 +1013,41 @@ fun ChatScreen(
                                     item {
                                         TypingBubble(character = character)
                                     }
+                                } else {
+                                    val lastMsg = messages.lastOrNull()
+                                    if (lastMsg != null && lastMsg.sender == "user") {
+                                        item {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(vertical = 4.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Button(
+                                                    onClick = {
+                                                        val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+                                                        val ashHost = prefs.getString("ash_host", "") ?: ""
+                                                        val ashPort = prefs.getString("ash_port", "18799") ?: "18799"
+                                                        val token = prefs.getString("auth_token", "") ?: ""
+                                                        if (ashHost.isNotBlank()) {
+                                                            val serverUrl = "${ashHost.trimEnd('/')}:$ashPort"
+                                                            chatViewModel.resendLastMessage(context.applicationContext, serverUrl, token)
+                                                        }
+                                                    },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                                    shape = RoundedCornerShape(12.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Refresh,
+                                                        contentDescription = "Resend",
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text("Resend Failed Message", color = MaterialTheme.colorScheme.onError, style = MaterialTheme.typography.bodySmall)
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1002,6 +1099,41 @@ fun ChatScreen(
                         if (isGenerating) {
                             item {
                                 TypingBubble(character = character)
+                            }
+                        } else {
+                            val lastMsg = messages.lastOrNull()
+                            if (lastMsg != null && lastMsg.sender == "user") {
+                                item {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Button(
+                                            onClick = {
+                                                val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+                                                val ashHost = prefs.getString("ash_host", "") ?: ""
+                                                val ashPort = prefs.getString("ash_port", "18799") ?: "18799"
+                                                val token = prefs.getString("auth_token", "") ?: ""
+                                                if (ashHost.isNotBlank()) {
+                                                    val serverUrl = "${ashHost.trimEnd('/')}:$ashPort"
+                                                    chatViewModel.resendLastMessage(context.applicationContext, serverUrl, token)
+                                                }
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                            shape = RoundedCornerShape(12.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Refresh,
+                                                contentDescription = "Resend",
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Resend Failed Message", color = MaterialTheme.colorScheme.onError, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1118,6 +1250,17 @@ fun ChatScreen(
         FullscreenImageViewer(
             imageModel = imgModel,
             onDismiss = { activeFullscreenImage = null }
+        )
+    }
+
+    if (showWallpaperPickerDialog) {
+        GalleryWallpaperPickerDialog(
+            images = galleryWallpaperFiles,
+            onImageSelected = { file ->
+                showWallpaperPickerDialog = false
+                chatViewModel.setChatWallpaper(context, Uri.fromFile(file))
+            },
+            onDismiss = { showWallpaperPickerDialog = false }
         )
     }
     }
@@ -1890,4 +2033,97 @@ fun TypingBubble(
             }
         }
     }
+}
+
+@Composable
+fun GalleryWallpaperPickerDialog(
+    images: List<File>,
+    onImageSelected: (File) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Select Chat Wallpaper",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            if (images.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No images in companion gallery yet.\nGenerate or receive some photos first!",
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp)
+                ) {
+                    items(images) { file ->
+                        AsyncImage(
+                            model = file,
+                            contentDescription = "Gallery Wallpaper Image",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .aspectRatio(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onImageSelected(file) }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
+fun getCompanionGalleryImages(context: Context, characterName: String, messages: List<MessageEntity>): List<File> {
+    val files = mutableSetOf<File>()
+
+    // 1. From database messages
+    messages.forEach { msg ->
+        msg.imagePath?.let { path ->
+            val f = File(path)
+            if (f.exists()) files.add(f)
+        }
+    }
+
+    // 2. From companion directory
+    val cleanName = characterName.replace("[^a-zA-Z0-9]".toRegex(), "_")
+    val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+    val dirsToScan = listOf(
+        File(baseDir, "companion/images/$cleanName"),
+        File(context.filesDir, "companion/images/$cleanName")
+    )
+
+    dirsToScan.forEach { dir ->
+        if (dir.exists() && dir.isDirectory) {
+            dir.listFiles()?.forEach { file ->
+                if (file.isFile && (file.extension.lowercase() in listOf("jpg", "jpeg", "png", "webp"))) {
+                    files.add(file)
+                }
+            }
+        }
+    }
+
+    return files.toList().sortedByDescending { it.lastModified() }
 }

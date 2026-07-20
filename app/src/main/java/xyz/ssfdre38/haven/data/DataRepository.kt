@@ -122,10 +122,9 @@ class DefaultDataRepository(private val havenDao: HavenDao) : DataRepository {
     override suspend fun addXpAndIncrementMessages(characterId: Int, xp: Int) = havenDao.addXpAndIncrementMessages(characterId, xp)
     
     override suspend fun importTavernCard(context: Context, inputStream: InputStream, cardBytes: ByteArray): CharacterEntity? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        // Parse metadata
-        val charaData = xyz.ssfdre38.haven.data.parser.TavernCardParser.parse(inputStream) ?: return@withContext null
+        val rawJson = xyz.ssfdre38.haven.data.parser.TavernCardParser.parseRawJson(java.io.ByteArrayInputStream(cardBytes)) ?: return@withContext null
+        val charaData = xyz.ssfdre38.haven.data.parser.TavernCardParser.parse(java.io.ByteArrayInputStream(cardBytes)) ?: return@withContext null
         
-        // Save the avatar image bytes locally
         val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
         val avatarDir = File(baseDir, "avatars")
         if (!avatarDir.exists()) avatarDir.mkdirs()
@@ -142,7 +141,36 @@ class DefaultDataRepository(private val havenDao: HavenDao) : DataRepository {
             return@withContext null
         }
         
-        // Save to DB
+        var relationshipXp = 0
+        var messageCount = 0
+        var currentOutfit = ""
+        var currentLocation = ""
+        var currentMood = ""
+        var clothingState = ""
+        var bodyType = ""
+        var bodyShape = ""
+        var memoriesJson: org.json.JSONArray? = null
+        var diariesJson: org.json.JSONArray? = null
+
+        try {
+            val rootObj = org.json.JSONObject(rawJson)
+            if (rootObj.has("haven_metadata")) {
+                val meta = rootObj.getJSONObject("haven_metadata")
+                relationshipXp = meta.optInt("relationshipXp", 0)
+                messageCount = meta.optInt("messageCount", 0)
+                currentOutfit = meta.optString("currentOutfit", "")
+                currentLocation = meta.optString("currentLocation", "")
+                currentMood = meta.optString("currentMood", "")
+                clothingState = meta.optString("clothingState", "")
+                bodyType = meta.optString("bodyType", "")
+                bodyShape = meta.optString("bodyShape", "")
+                memoriesJson = meta.optJSONArray("memories")
+                diariesJson = meta.optJSONArray("diaries")
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
         val entity = CharacterEntity(
             name = charaData.name ?: "Unknown Character",
             avatarPath = avatarFile.absolutePath,
@@ -151,13 +179,55 @@ class DefaultDataRepository(private val havenDao: HavenDao) : DataRepository {
             scenario = charaData.scenario ?: "",
             firstMessage = charaData.first_mes ?: "",
             messageExample = charaData.mes_example ?: "",
-            systemPrompt = charaData.system_prompt ?: ""
+            systemPrompt = charaData.system_prompt ?: "",
+            relationshipXp = relationshipXp,
+            messageCount = messageCount,
+            currentOutfit = currentOutfit,
+            currentLocation = currentLocation,
+            currentMood = currentMood,
+            clothingState = clothingState,
+            bodyType = bodyType,
+            bodyShape = bodyShape
         )
         
         val charId = havenDao.insertCharacter(entity).toInt()
         
-        // If character has a first message, insert it as the starter message
-        if (!charaData.first_mes.isNullOrBlank()) {
+        memoriesJson?.let { array ->
+            for (i in 0 until array.length()) {
+                try {
+                    val obj = array.getJSONObject(i)
+                    havenDao.insertMemory(
+                        MemoryEntity(
+                            characterId = charId,
+                            content = obj.getString("content"),
+                            category = obj.getString("category"),
+                            createdAt = obj.optLong("createdAt", System.currentTimeMillis()) + i
+                        )
+                    )
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+
+        diariesJson?.let { array ->
+            for (i in 0 until array.length()) {
+                try {
+                    val obj = array.getJSONObject(i)
+                    havenDao.insertDiaryEntry(
+                        DiaryEntryEntity(
+                            characterId = charId,
+                            dateString = obj.getString("dateString"),
+                            content = obj.getString("content")
+                        )
+                    )
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+
+        if (!charaData.first_mes.isNullOrBlank() && (messageCount == 0)) {
             havenDao.insertMessage(
                 MessageEntity(
                     characterId = charId,

@@ -25,5 +25,6 @@ data class CharacterEntity(
     val vrmModelPath: String? = null,
     val bodyType: String = "",
     val bodyShape: String = "",
-    val clothingState: String = ""
+    val clothingState: String = "",
+    val chatWallpaperPath: String? = null
 )

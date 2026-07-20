@@ -197,4 +197,30 @@ object TavernCardParser {
         }
         return null
     }
+
+    fun parseRawJson(inputStream: java.io.InputStream): String? {
+        val bis = java.io.BufferedInputStream(inputStream)
+        bis.mark(1024 * 1024 * 10) // Mark up to 10MB
+        val signature = ByteArray(8)
+        val readLen = bis.read(signature)
+        val isPng = readLen == 8 &&
+                signature[0] == 0x89.toByte() &&
+                signature[1] == 0x50.toByte() &&
+                signature[2] == 0x4E.toByte() &&
+                signature[3] == 0x47.toByte() &&
+                signature[4] == 0x0D.toByte() &&
+                signature[5] == 0x0A.toByte() &&
+                signature[6] == 0x1A.toByte() &&
+                signature[7] == 0x0A.toByte()
+        return if (isPng) {
+            extractPngMetadata(bis)
+        } else {
+            try {
+                bis.reset()
+                bis.reader(Charsets.UTF_8).readText()
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
 }

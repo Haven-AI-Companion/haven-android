@@ -624,6 +624,35 @@ object HavenHttpClient {
         }
     }
 
+    fun generateCompanionProfile(
+        serverUrl: String,
+        token: String,
+        prompt: String
+    ): JSONObject? {
+        val url = "${serverUrl.trimEnd('/')}/api/companions/generate-profile"
+        val json = JSONObject().apply {
+            put("prompt", prompt)
+        }.toString()
+        val request = Request.Builder()
+            .url(url)
+            .post(json.toRequestBody(JSON_MEDIA_TYPE))
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return null
+                val body = response.body?.string() ?: return null
+                val resObj = JSONObject(body)
+                if (resObj.optBoolean("ok", false)) {
+                    return resObj.optJSONObject("profile")
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return null
+    }
+
     /**
      * Pushes a memory to the server
      */

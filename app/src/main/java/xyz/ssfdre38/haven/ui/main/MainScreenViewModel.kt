@@ -2,6 +2,8 @@ package xyz.ssfdre38.haven.ui.main
 
 import android.content.Context
 import android.net.Uri
+import android.widget.Toast
+import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import xyz.ssfdre38.haven.data.DataRepository
@@ -660,6 +662,61 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                 character.copy(vrmModelPath = null)
             )
             xyz.ssfdre38.haven.ui.widget.HavenAppWidgetProvider.triggerUpdate(context)
+        }
+    }
+
+    var isGeneratingProfile = mutableStateOf(false)
+        private set
+
+    fun generateCompanionProfile(context: Context, prompt: String, onSuccess: (xyz.ssfdre38.haven.data.model.TavernCharacterData) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            isGeneratingProfile.value = true
+            try {
+                val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+                val host = sharedPrefs.getString("ash_host", "") ?: ""
+                val port = sharedPrefs.getString("ash_port", "") ?: ""
+                val token = sharedPrefs.getString("auth_token", "") ?: ""
+                if (host.isNotBlank() && port.isNotBlank()) {
+                    val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+                    val serverUrl = "$formattedHost:${port.trim()}"
+                    val json = xyz.ssfdre38.haven.data.network.HavenHttpClient.generateCompanionProfile(serverUrl, token, prompt)
+                    if (json != null) {
+                        val name = json.optString("name", "")
+                        val description = json.optString("description", "")
+                        val personality = json.optString("personality", "")
+                        val scenario = json.optString("scenario", "")
+                        val firstMessage = json.optString("firstMessage", json.optString("first_message", ""))
+                        val systemPrompt = json.optString("systemPrompt", json.optString("system_prompt", ""))
+                        
+                        val charData = xyz.ssfdre38.haven.data.model.TavernCharacterData(
+                            name = name,
+                            description = description,
+                            personality = personality,
+                            scenario = scenario,
+                            first_mes = firstMessage,
+                            system_prompt = systemPrompt
+                        )
+                        viewModelScope.launch(Dispatchers.Main) {
+                            onSuccess(charData)
+                        }
+                    } else {
+                        viewModelScope.launch(Dispatchers.Main) {
+                            Toast.makeText(context, "Failed to generate profile: Server returned empty response", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                } else {
+                    viewModelScope.launch(Dispatchers.Main) {
+                        Toast.makeText(context, "Server configuration is missing in Settings", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                viewModelScope.launch(Dispatchers.Main) {
+                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                isGeneratingProfile.value = false
+            }
         }
     }
 }

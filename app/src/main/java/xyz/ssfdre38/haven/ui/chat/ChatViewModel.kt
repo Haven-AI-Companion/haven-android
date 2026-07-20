@@ -1,6 +1,9 @@
 package xyz.ssfdre38.haven.ui.chat
 
 import android.content.Context
+import android.net.Uri
+import android.widget.Toast
+import java.io.File
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import xyz.ssfdre38.haven.data.DataRepository
@@ -1589,6 +1592,201 @@ class ChatViewModel(
                 val lastUserMsg = repository.getLastMessage(characterId)
                 if (lastUserMsg != null && lastUserMsg.sender == "user") {
                     sendMessage(context, serverUrl, token, lastUserMsg.text)
+                }
+            }
+        }
+    }
+
+    fun setChatWallpaper(context: Context, uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri) ?: return@launch
+                val wallpaperDir = File(context.filesDir, "wallpapers")
+                if (!wallpaperDir.exists()) wallpaperDir.mkdirs()
+
+                val wallpaperFile = File(wallpaperDir, "wallpaper_$characterId.jpg")
+                wallpaperFile.outputStream().use { outputStream ->
+                    inputStream.use { it.copyTo(outputStream) }
+                }
+
+                character.value?.let { char ->
+                    val updatedChar = char.copy(chatWallpaperPath = wallpaperFile.absolutePath)
+                    repository.updateCharacter(updatedChar)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _errorMessage.value = "Failed to save wallpaper: ${e.message}"
+            }
+        }
+    }
+
+    fun clearChatWallpaper() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                character.value?.let { char ->
+                    char.chatWallpaperPath?.let { path ->
+                        val file = File(path)
+                        if (file.exists()) file.delete()
+                    }
+                    val updatedChar = char.copy(chatWallpaperPath = null)
+                    repository.updateCharacter(updatedChar)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun resendLastMessage(context: Context, serverUrl: String, token: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val lastMsg = repository.getLastMessage(characterId)
+            if (lastMsg != null && lastMsg.sender == "user") {
+                repository.deleteMessage(lastMsg)
+                viewModelScope.launch(Dispatchers.Main) {
+                    sendMessage(context, serverUrl, token, lastMsg.text)
+                }
+            }
+        }
+    }
+
+    fun exportCompanionAsTavernCard(context: Context, char: CharacterEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val avatarFile = char.avatarPath?.let { File(it) }
+                if (avatarFile == null || !avatarFile.exists()) {
+                    viewModelScope.launch(Dispatchers.Main) {
+                        Toast.makeText(context, "Cannot export: Avatar image file not found.", Toast.LENGTH_LONG).show()
+                    }
+                    return@launch
+                }
+                val pngBytes = avatarFile.readBytes()
+
+                if (pngBytes.size < 8 ||
+                    pngBytes[0] != 0x89.toByte() || pngBytes[1] != 0x50.toByte() ||
+                    pngBytes[2] != 0x4E.toByte() || pngBytes[3] != 0x47.toByte()
+                ) {
+                    viewModelScope.launch(Dispatchers.Main) {
+                        Toast.makeText(context, "Cannot export: Avatar must be a PNG image.", Toast.LENGTH_LONG).show()
+                    }
+                    return@launch
+                }
+
+                val recentMemories = repository.getRecentMemories(char.id, 50)
+                val memoriesJson = org.json.JSONArray().apply {
+                    recentMemories.forEach { mem ->
+                        put(org.json.JSONObject().apply {
+                            put("content", mem.content)
+                            put("category", mem.category)
+                            put("createdAt", mem.createdAt)
+                        })
+                    }
+                }
+
+                val diaryEntries = repository.getDiaryEntries(char.id).first()
+                val diariesJson = org.json.JSONArray().apply {
+                    diaryEntries.forEach { diary ->
+                        put(org.json.JSONObject().apply {
+                            put("dateString", diary.dateString)
+                            put("content", diary.content)
+                        })
+                    }
+                }
+
+                val havenMetadata = org.json.JSONObject().apply {
+                    put("relationshipXp", char.relationshipXp)
+                    put("messageCount", char.messageCount)
+                    put("currentOutfit", char.currentOutfit ?: "")
+                    put("currentLocation", char.currentLocation ?: "")
+                    put("currentMood", char.currentMood ?: "")
+                    put("clothingState", char.clothingState ?: "")
+                    put("bodyType", char.bodyType ?: "")
+                    put("bodyShape", char.bodyShape ?: "")
+                    put("memories", memoriesJson)
+                    put("diaries", diariesJson)
+                }
+
+                val dataJson = org.json.JSONObject().apply {
+                    put("name", char.name)
+                    put("description", char.description)
+                    put("personality", char.personality)
+                    put("scenario", char.scenario)
+                    put("first_mes", char.firstMessage)
+                    put("mes_example", char.messageExample)
+                    put("system_prompt", char.systemPrompt)
+                }
+                val rootJson = org.json.JSONObject().apply {
+                    put("data", dataJson)
+                    put("haven_metadata", havenMetadata)
+                }
+                val jsonString = rootJson.toString()
+                val base64Text = android.util.Base64.encodeToString(
+                    jsonString.toByteArray(Charsets.UTF_8),
+                    android.util.Base64.NO_WRAP
+                )
+
+                val keywordBytes = "chara".toByteArray(Charsets.US_ASCII)
+                val textBytes = base64Text.toByteArray(Charsets.UTF_8)
+                val chunkData = ByteArray(keywordBytes.size + 1 + textBytes.size)
+                System.arraycopy(keywordBytes, 0, chunkData, 0, keywordBytes.size)
+                chunkData[keywordBytes.size] = 0
+                System.arraycopy(textBytes, 0, chunkData, keywordBytes.size + 1, textBytes.size)
+
+                val typeBytes = "tEXt".toByteArray(Charsets.US_ASCII)
+                val typeAndData = ByteArray(typeBytes.size + chunkData.size)
+                System.arraycopy(typeBytes, 0, typeAndData, 0, typeBytes.size)
+                System.arraycopy(chunkData, 0, typeAndData, typeBytes.size, chunkData.size)
+
+                val crcVal = java.util.zip.CRC32().apply { update(typeAndData) }.value.toInt()
+
+                val writeInt32 = { valVal: Int ->
+                    byteArrayOf(
+                        ((valVal ushr 24) and 0xFF).toByte(),
+                        ((valVal ushr 16) and 0xFF).toByte(),
+                        ((valVal ushr 8) and 0xFF).toByte(),
+                        (valVal and 0xFF).toByte()
+                    )
+                }
+
+                val chunkLengthBytes = writeInt32(chunkData.size)
+                val crcBytes = writeInt32(crcVal)
+
+                val insertIndex = 33
+                val newPngBytes = ByteArray(pngBytes.size + 4 + 4 + chunkData.size + 4)
+
+                System.arraycopy(pngBytes, 0, newPngBytes, 0, insertIndex)
+                System.arraycopy(chunkLengthBytes, 0, newPngBytes, insertIndex, 4)
+                System.arraycopy(typeBytes, 0, newPngBytes, insertIndex + 4, 4)
+                System.arraycopy(chunkData, 0, newPngBytes, insertIndex + 8, chunkData.size)
+                System.arraycopy(crcBytes, 0, newPngBytes, insertIndex + 8 + chunkData.size, 4)
+                System.arraycopy(pngBytes, insertIndex, newPngBytes, insertIndex + 12 + chunkData.size, pngBytes.size - insertIndex)
+
+                val cleanName = char.name.replace("\\s+".toRegex(), "_")
+                val contentValues = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "${cleanName}_tavern_card.png")
+                    put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/png")
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                        put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_PICTURES + "/HavenCards")
+                    }
+                }
+                
+                val resolver = context.contentResolver
+                val imageUri = resolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+                if (imageUri != null) {
+                    resolver.openOutputStream(imageUri)?.use { os ->
+                        os.write(newPngBytes)
+                    }
+                    viewModelScope.launch(Dispatchers.Main) {
+                        Toast.makeText(context, "Card saved to Pictures/HavenCards folder!", Toast.LENGTH_LONG).show()
+                    }
+                } else {
+                    viewModelScope.launch(Dispatchers.Main) {
+                        Toast.makeText(context, "Export failed: Failed to create MediaStore entry.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                viewModelScope.launch(Dispatchers.Main) {
+                    Toast.makeText(context, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }
