@@ -519,7 +519,7 @@ fun LightboxViewer(
                                         }
                                         
                                         val updatedChar = char.copy(avatarPath = avatarFile.absolutePath)
-                                        repository.insertCharacter(updatedChar)
+                                        repository.updateCharacter(updatedChar)
                                         
                                         val payload = org.json.JSONObject().apply {
                                             put("name", char.name)

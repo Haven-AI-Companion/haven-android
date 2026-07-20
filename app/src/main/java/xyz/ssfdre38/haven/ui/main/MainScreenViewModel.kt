@@ -532,7 +532,7 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                                 messageCount = Math.max(messageCount, existing.messageCount),
                                 vrmModelPath = if (!vrmModelPath.isNullOrBlank() && (existing.vrmModelPath.isNullOrBlank() || !File(existing.vrmModelPath).exists() || existing.vrmModelPath.startsWith("/uploads/") || existing.vrmModelPath.startsWith("http"))) finalVrmPath else existing.vrmModelPath
                             )
-                            dataRepository.insertCharacter(updated)
+                            dataRepository.updateCharacter(updated)
                         } else {
                             // Automatically insert/import missing companion from server, unless deleted by user
                             val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
@@ -635,7 +635,7 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                 }
                 
                 if (targetFile.exists()) {
-                    dataRepository.insertCharacter(
+                    dataRepository.updateCharacter(
                         character.copy(vrmModelPath = targetFile.absolutePath)
                     )
                     xyz.ssfdre38.haven.ui.widget.HavenAppWidgetProvider.triggerUpdate(context)
@@ -649,7 +649,7 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
     fun updateCharacterVoice(character: CharacterEntity, voiceId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                dataRepository.insertCharacter(character.copy(voiceId = voiceId))
+                dataRepository.updateCharacter(character.copy(voiceId = voiceId))
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -658,7 +658,7 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
 
     fun removeCharacterVrm(context: Context, character: CharacterEntity) {
         viewModelScope.launch(Dispatchers.IO) {
-            dataRepository.insertCharacter(
+            dataRepository.updateCharacter(
                 character.copy(vrmModelPath = null)
             )
             xyz.ssfdre38.haven.ui.widget.HavenAppWidgetProvider.triggerUpdate(context)
