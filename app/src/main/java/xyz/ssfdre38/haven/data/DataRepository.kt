@@ -64,9 +64,25 @@ class DefaultDataRepository(private val havenDao: HavenDao) : DataRepository {
     
     override fun getCharacterFlow(id: Int): Flow<CharacterEntity?> = havenDao.getCharacterFlow(id)
     
-    override suspend fun insertCharacter(character: CharacterEntity): Long = havenDao.insertCharacter(character)
+    override suspend fun insertCharacter(character: CharacterEntity): Long {
+        val existing = if (character.id != 0) havenDao.getCharacterById(character.id) else havenDao.getCharacterByName(character.name)
+        val processedChar = if (existing != null) {
+            applyPronounSwapIfNeeded(existing, character)
+        } else {
+            character
+        }
+        return havenDao.insertCharacter(processedChar)
+    }
     
-    override suspend fun updateCharacter(character: CharacterEntity) = havenDao.updateCharacter(character)
+    override suspend fun updateCharacter(character: CharacterEntity) {
+        val existing = havenDao.getCharacterById(character.id)
+        val processedChar = if (existing != null) {
+            applyPronounSwapIfNeeded(existing, character)
+        } else {
+            character
+        }
+        havenDao.updateCharacter(processedChar)
+    }
     
     override suspend fun deleteCharacter(character: CharacterEntity) = havenDao.deleteCharacter(character)
     
@@ -238,5 +254,87 @@ class DefaultDataRepository(private val havenDao: HavenDao) : DataRepository {
         }
         
         entity.copy(id = charId)
+    }
+
+    private suspend fun applyPronounSwapIfNeeded(existing: CharacterEntity, newChar: CharacterEntity): CharacterEntity {
+        val oldGender = existing.bodyType.trim().lowercase()
+        val newGender = newChar.bodyType.trim().lowercase()
+        if (oldGender != newGender && (oldGender == "male" || oldGender == "female") && (newGender == "male" || newGender == "female")) {
+            return newChar.copy(
+                description = swapGenderPronouns(newChar.description, oldGender, newGender),
+                personality = swapGenderPronouns(newChar.personality, oldGender, newGender),
+                systemPrompt = swapGenderPronouns(newChar.systemPrompt, oldGender, newGender),
+                firstMessage = swapGenderPronouns(newChar.firstMessage, oldGender, newGender)
+            )
+        }
+        return newChar
+    }
+
+    private fun swapGenderPronouns(text: String, fromGender: String, toGender: String): String {
+        if (text.isBlank()) return text
+        
+        val replacements = if (fromGender == "male" && toGender == "female") {
+            listOf(
+                "\\bhe\\b" to "she",
+                "\\bhim\\b" to "her",
+                "\\bhis\\b" to "her",
+                "\\bhimself\\b" to "herself",
+                "\\bmale\\b" to "female",
+                "\\bman\\b" to "woman",
+                "\\bmen\\b" to "women",
+                "\\bboy\\b" to "girl",
+                "\\bboys\\b" to "girls",
+                "\\bhusband\\b" to "wife",
+                "\\bboyfriend\\b" to "girlfriend",
+                "\\bson\\b" to "daughter",
+                "\\bbrother\\b" to "sister",
+                "\\bfather\\b" to "mother",
+                "\\bgentleman\\b" to "lady",
+                "\\bking\\b" to "queen",
+                "\\bprince\\b" to "princess"
+            )
+        } else if (fromGender == "female" && toGender == "male") {
+            listOf(
+                "\\bshe\\b" to "he",
+                "\\bherself\\b" to "himself",
+                "\\bhers\\b" to "his",
+                "\\bher\\b" to "his",
+                "\\bfemale\\b" to "male",
+                "\\bwoman\\b" to "man",
+                "\\bwomen\\b" to "men",
+                "\\bgirl\\b" to "boy",
+                "\\bgirls\\b" to "boys",
+                "\\bwife\\b" to "husband",
+                "\\bgirlfriend\\b" to "boyfriend",
+                "\\bdaughter\\b" to "son",
+                "\\bsister\\b" to "brother",
+                "\\bmother\\b" to "father",
+                "\\blady\\b" to "gentleman",
+                "\\bqueen\\b" to "king",
+                "\\bprincess\\b" to "prince"
+            )
+        } else {
+            return text
+        }
+
+        var result = text
+        for ((pattern, replacement) in replacements) {
+            val regex = pattern.toRegex(RegexOption.IGNORE_CASE)
+            result = regex.replace(result) { matchResult ->
+                val value = matchResult.value
+                val firstCharUpper = value.firstOrNull()?.isUpperCase() ?: false
+                if (firstCharUpper) {
+                    val allUpper = value.all { it.isUpperCase() }
+                    if (allUpper) {
+                        replacement.uppercase()
+                    } else {
+                        replacement.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.ROOT) else it.toString() }
+                    }
+                } else {
+                    replacement
+                }
+            }
+        }
+        return result
     }
 }
