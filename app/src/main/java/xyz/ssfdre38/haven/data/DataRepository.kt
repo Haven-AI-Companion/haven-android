@@ -69,7 +69,12 @@ class DefaultDataRepository(private val havenDao: HavenDao) : DataRepository {
         val processedChar = if (existing != null) {
             applyPronounSwapIfNeeded(existing, character)
         } else {
-            character
+            if (character.relationshipXp == 0) {
+                val inferredXp = inferInitialXp(character.description, character.personality, character.scenario)
+                character.copy(relationshipXp = inferredXp)
+            } else {
+                character
+            }
         }
         return havenDao.insertCharacter(processedChar)
     }
@@ -336,5 +341,40 @@ class DefaultDataRepository(private val havenDao: HavenDao) : DataRepository {
             }
         }
         return result
+    }
+
+    private fun inferInitialXp(description: String, personality: String, scenario: String): Int {
+        val fullText = "$description $personality $scenario".lowercase()
+        return when {
+            // Married / Spouse -> Level 20 (XP = 1900)
+            fullText.contains("husband") || 
+            fullText.contains("wife") || 
+            fullText.contains("married") || 
+            fullText.contains("spouse") || 
+            fullText.contains("fiance") || 
+            fullText.contains("fiancé") -> 1900
+            
+            // Dating / Romantic Partner -> Level 15 (XP = 1400)
+            fullText.contains("girlfriend") || 
+            fullText.contains("boyfriend") || 
+            fullText.contains("dating") || 
+            fullText.contains("couple") || 
+            fullText.contains("lover") || 
+            fullText.contains("sweetheart") -> 1400
+            
+            // Best / Close Friend -> Level 10 (XP = 900)
+            fullText.contains("best friend") || 
+            fullText.contains("childhood friend") || 
+            fullText.contains("close friend") ||
+            fullText.contains("bestfriend") -> 900
+            
+            // Friend / Classmate / Roommate -> Level 5 (XP = 400)
+            fullText.contains("friend") || 
+            fullText.contains("classmate") || 
+            fullText.contains("roommate") || 
+            fullText.contains("colleague") -> 400
+            
+            else -> 0
+        }
     }
 }
