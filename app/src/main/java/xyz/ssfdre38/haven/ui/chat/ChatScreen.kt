@@ -1918,21 +1918,37 @@ fun cleanMessageTextSpacing(input: String): String {
 data class MessageContent(val cleanText: String, val imageUrl: String?)
 
 fun parseImageUrls(text: String, serverUrl: String): MessageContent {
-    val regex = "(https?://[^\\s/]+/uploads/[%a-zA-Z_0-9.-]+)|(/uploads/[%a-zA-Z_0-9.-]+)".toRegex(RegexOption.IGNORE_CASE)
-    val match = regex.find(text)
-    return if (match != null) {
-        val rawUrl = match.value
+    // 1. Check for Markdown image format: ![Alt](url)
+    val markdownRegex = """!\[([^\]]*)\]\(((?:https?://[^\s/]+)?/uploads/[%a-zA-Z_0-9.-]+)\)""".toRegex(RegexOption.IGNORE_CASE)
+    val mdMatch = markdownRegex.find(text)
+    if (mdMatch != null) {
+        val rawUrl = mdMatch.groupValues[2]
         val resolvedUrl = if (rawUrl.startsWith("/")) {
             val host = serverUrl.trimEnd('/')
             if (host.startsWith("http")) "$host$rawUrl" else "http://$host$rawUrl"
         } else {
             rawUrl
         }
-        val cleanText = text.replace(regex, "").trim()
-        MessageContent(cleanText, resolvedUrl)
-    } else {
-        MessageContent(text, null)
+        val cleanText = text.replace(markdownRegex, "").trim()
+        return MessageContent(cleanText, resolvedUrl)
     }
+
+    // 2. Fallback to raw URL matching
+    val rawRegex = """(https?://[^\s/]+/uploads/[%a-zA-Z_0-9.-]+)|(/uploads/[%a-zA-Z_0-9.-]+)""".toRegex(RegexOption.IGNORE_CASE)
+    val rawMatch = rawRegex.find(text)
+    if (rawMatch != null) {
+        val rawUrl = rawMatch.value
+        val resolvedUrl = if (rawUrl.startsWith("/")) {
+            val host = serverUrl.trimEnd('/')
+            if (host.startsWith("http")) "$host$rawUrl" else "http://$host$rawUrl"
+        } else {
+            rawUrl
+        }
+        val cleanText = text.replace(rawRegex, "").trim()
+        return MessageContent(cleanText, resolvedUrl)
+    }
+
+    return MessageContent(text, null)
 }
 
 fun formatMessageText(text: String, isUser: Boolean): androidx.compose.ui.text.AnnotatedString {
