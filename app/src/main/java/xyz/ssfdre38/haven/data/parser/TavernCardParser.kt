@@ -119,7 +119,7 @@ object TavernCardParser {
                         return tryDecodeBase64OrReturnRaw(text)
                     }
                 }
-                bis.skip(4) // Skip CRC
+                skipFully(bis, 4) // Skip CRC
             } else if (type == "iTXt") {
                 val data = ByteArray(length)
                 var bytesRead = 0
@@ -186,22 +186,42 @@ object TavernCardParser {
                         }
                     }
                 }
-                bis.skip(4) // Skip CRC
+                skipFully(bis, 4) // Skip CRC
             } else if (type == "IEND") {
                 break
             } else {
-                bis.skip(length.toLong() + 4L) // Skip data + CRC
+                skipFully(bis, length.toLong() + 4L) // Skip data + CRC
             }
         }
         return null
     }
 
     private fun tryDecodeBase64OrReturnRaw(text: String): String {
+        try {
+            val decodedBytes = java.util.Base64.getDecoder().decode(text)
+            return String(decodedBytes, Charsets.UTF_8)
+        } catch (e: LinkageError) {
+            // Fallback for older Android APIs or ClassLoader link failures
+        } catch (e: Exception) {
+            // Ignore format exceptions and try Android's base64 next
+        }
+
         return try {
             val decodedBytes = Base64.decode(text, Base64.DEFAULT)
             String(decodedBytes, Charsets.UTF_8)
         } catch (e: Exception) {
             text
+        }
+    }
+
+    private fun skipFully(inputStream: InputStream, n: Long) {
+        var remaining = n
+        val buffer = ByteArray(4096)
+        while (remaining > 0) {
+            val toRead = minOf(remaining, buffer.size.toLong()).toInt()
+            val read = inputStream.read(buffer, 0, toRead)
+            if (read == -1) break
+            remaining -= read
         }
     }
 
