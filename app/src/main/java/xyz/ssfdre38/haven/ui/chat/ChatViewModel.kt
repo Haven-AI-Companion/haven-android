@@ -55,7 +55,86 @@ class ChatViewModel(
     var scrollIndex: Int = -1
     var scrollOffset: Int = 0
 
-    fun playAudio(audioUrl: String) {
+    val spokenSentences = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    val audioPlayQueue = java.util.Collections.synchronizedList(mutableListOf<String>())
+    var isPlayingFromQueue = false
+
+    fun clearSpeechQueue() {
+        synchronized(audioPlayQueue) {
+            audioPlayQueue.clear()
+            isPlayingFromQueue = false
+        }
+        activePlayer?.let { player ->
+            activePlayer = null
+            try {
+                player.release()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        _isSpeaking.value = false
+    }
+
+    private fun triggerStreamingTtsForSentence(context: Context, serverUrl: String, token: String, text: String) {
+        val currentVoice = character.value?.voiceId ?: "en_US-amy-medium"
+        val companionName = character.value?.name ?: "Companion"
+        
+        viewModelScope.launch(Dispatchers.IO) {
+            HavenHttpClient.generateTts(
+                serverUrl = serverUrl,
+                token = token,
+                text = text,
+                voice = currentVoice,
+                companion = companionName
+            ) { result ->
+                result.onSuccess { relativeUrl ->
+                    val resolvedUrl = if (relativeUrl.startsWith("/")) {
+                        val host = serverUrl.trimEnd('/')
+                        if (host.startsWith("http")) "$host$relativeUrl" else "http://$host$relativeUrl"
+                    } else {
+                        relativeUrl
+                    }
+                    
+                    val sharedPrefs = context.getSharedPreferences("haven_prefs", android.content.Context.MODE_PRIVATE)
+                    val autoSpeak = sharedPrefs.getBoolean("auto_speak", true)
+                    if (autoSpeak) {
+                        enqueueAudioPlayback(resolvedUrl)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun enqueueAudioPlayback(url: String) {
+        synchronized(audioPlayQueue) {
+            audioPlayQueue.add(url)
+            if (!isPlayingFromQueue) {
+                isPlayingFromQueue = true
+                playNextInQueue()
+            }
+        }
+    }
+
+    private fun playNextInQueue() {
+        val nextUrl = synchronized(audioPlayQueue) {
+            if (audioPlayQueue.isNotEmpty()) {
+                audioPlayQueue.removeAt(0)
+            } else {
+                isPlayingFromQueue = false
+                null
+            }
+        }
+
+        if (nextUrl != null) {
+            viewModelScope.launch(Dispatchers.Main) {
+                playAudio(nextUrl) {
+                    playNextInQueue()
+                }
+            }
+        }
+    }
+
+    fun playAudio(audioUrl: String, onComplete: (() -> Unit)? = null) {
         viewModelScope.launch(Dispatchers.Main) {
             activePlayer?.let { player ->
                 activePlayer = null
@@ -81,6 +160,7 @@ class ChatViewModel(
                         if (activePlayer == this) {
                             activePlayer = null
                         }
+                        onComplete?.invoke()
                     }
                     setOnErrorListener { _, _, _ ->
                         _isSpeaking.value = false
@@ -88,6 +168,7 @@ class ChatViewModel(
                         if (activePlayer == this) {
                             activePlayer = null
                         }
+                        onComplete?.invoke()
                         true
                     }
                 }
@@ -96,6 +177,7 @@ class ChatViewModel(
                 e.printStackTrace()
                 tempPlayer?.release()
                 _isSpeaking.value = false
+                onComplete?.invoke()
             }
         }
     }
@@ -390,6 +472,8 @@ class ChatViewModel(
     fun sendMessage(context: Context, serverUrl: String, token: String, text: String) {
         viewModelScope.launch(Dispatchers.IO) {
             syncMutex.withLock {
+                clearSpeechQueue()
+                spokenSentences.clear()
                 _isGenerating.value = true
 
                 // Build the full system+context prompt for this character
@@ -629,9 +713,9 @@ class ChatViewModel(
                             activeStreamUuids.add(messageUuid)
                         }
                     },
-                    onToken = { token ->
+                    onToken = { tokenPart ->
                         if (isAborted) return@streamChat
-                        streamBuffer.append(token)
+                        streamBuffer.append(tokenPart)
                         val snapshot = streamBuffer.toString()
                         dbWriteJob?.cancel()
                         dbWriteJob = viewModelScope.launch(Dispatchers.IO) {
@@ -644,6 +728,20 @@ class ChatViewModel(
                                     messageUuid = receivedUuid
                                 )
                             )
+                        }
+                        
+                        // Parse streaming sentences for real-time speech synthesis
+                        val cleanTextSoFar = cleanStreamingText(snapshot)
+                        val sentences = cleanTextSoFar.split(Regex("(?<=[.!?])\\s+"))
+                        if (sentences.size > 1) {
+                            val completedSentences = sentences.dropLast(1)
+                            for (sentence in completedSentences) {
+                                val trimmed = sentence.trim()
+                                if (trimmed.isNotBlank() && !spokenSentences.contains(trimmed)) {
+                                    spokenSentences.add(trimmed)
+                                    triggerStreamingTtsForSentence(context, serverUrl, token, trimmed)
+                                }
+                            }
                         }
                     },
                     onComplete = {
@@ -1167,6 +1265,16 @@ class ChatViewModel(
                                 onFailure = { /* silently ignore memory failures */ }
                             )
                         }
+                                                // Speech completion: speak any remaining final sentence that was not spoken during the stream
+                        val sentences = cleanText.split(Regex("(?<=[.!?])\\s+"))
+                        for (sentence in sentences) {
+                            val trimmed = sentence.trim()
+                            if (trimmed.isNotBlank() && !spokenSentences.contains(trimmed)) {
+                                spokenSentences.add(trimmed)
+                                triggerStreamingTtsForSentence(context, serverUrl, token, trimmed)
+                            }
+                        }
+
                         val currentVoice = character.value?.voiceId ?: "en_US-amy-medium"
                         if (cleanText.isNotBlank()) {
                             HavenHttpClient.generateTts(
@@ -1182,12 +1290,6 @@ class ChatViewModel(
                                         if (host.startsWith("http")) "$host$relativeUrl" else "http://$host$relativeUrl"
                                     } else {
                                         relativeUrl
-                                    }
-
-                                    // Auto-play audio response
-                                    val autoSpeak = sharedPrefs.getBoolean("auto_speak", true)
-                                    if (autoSpeak) {
-                                        playAudio(resolvedUrl)
                                     }
 
                                     viewModelScope.launch(Dispatchers.IO) {
