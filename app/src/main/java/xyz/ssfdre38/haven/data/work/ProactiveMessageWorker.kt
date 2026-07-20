@@ -281,6 +281,9 @@ class ProactiveMessageWorker(
             // Select a random silent character to avoid spamming the user
             val chosenChar = inactiveCharacters.random()
 
+            // Retrieve last 5 messages for conversation context
+            val history = dao.getMessagesForCharacter(chosenChar.id).first().takeLast(5)
+
             // Build system directive prompt
             val proactivePrompt = buildString {
                 appendLine("You are ${chosenChar.name}.")
@@ -288,7 +291,15 @@ class ProactiveMessageWorker(
                 if (chosenChar.scenario.isNotBlank()) appendLine("Scenario: ${chosenChar.scenario}")
                 if (chosenChar.systemPrompt.isNotBlank()) appendLine(chosenChar.systemPrompt)
                 appendLine()
-                appendLine("[System Instruction: You are proactively texting the user after a long period of silence. Write a short, warm, in-character message checking in on them. Do not include any explanations, inner thoughts, or meta-text. Keep it under 2 sentences.]")
+                if (history.isNotEmpty()) {
+                    appendLine("Recent Conversation History:")
+                    for (msg in history) {
+                        val senderName = if (msg.sender == "user") "User" else chosenChar.name
+                        appendLine("$senderName: ${msg.text}")
+                    }
+                    appendLine()
+                }
+                appendLine("[System Instruction: You are proactively texting the user after a long period of silence. Write a short, warm, in-character message checking in on them based on the context of your last conversation. Do not include any explanations, inner thoughts, or meta-text. Keep it under 2 sentences.]")
             }
 
             val deferred = CompletableDeferred<String>()
