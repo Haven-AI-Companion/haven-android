@@ -28,6 +28,10 @@ import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.mutableStateListOf
@@ -107,6 +111,8 @@ fun MainScreen(
     }
 
     var selectedTab by remember { mutableIntStateOf(0) }
+    var searchQuery by remember { mutableStateOf("") }
+    var sortOrder by remember { mutableStateOf("recency") } // "name", "level", "recency"
     var showCreateGroupDialog by remember { mutableStateOf(false) }
     var showAddCompanionChooser by remember { mutableStateOf(false) }
     var showManualCreateDialog by remember { mutableStateOf(false) }
@@ -342,11 +348,144 @@ fun MainScreen(
                                         onImportClick = { filePickerLauncher.launch("image/png") }
                                     )
                                 } else {
-                                    CharacterList(
-                                        characters = characters,
-                                        onCharacterClick = { charId -> onNavigate(Chat(charId)) },
-                                        onCharacterLongClick = { activeCharacterActions = it }
-                                    )
+                                    var sortMenuExpanded by remember { mutableStateOf(false) }
+
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        OutlinedTextField(
+                                            value = searchQuery,
+                                            onValueChange = { searchQuery = it },
+                                            placeholder = { Text("Search companions...", color = Color.White.copy(alpha = 0.5f)) },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = Icons.Default.Search,
+                                                    contentDescription = "Search",
+                                                    tint = Color.White.copy(alpha = 0.5f)
+                                                )
+                                            },
+                                            trailingIcon = {
+                                                if (searchQuery.isNotEmpty()) {
+                                                    IconButton(onClick = { searchQuery = "" }) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Clear,
+                                                            contentDescription = "Clear",
+                                                            tint = Color.White.copy(alpha = 0.6f)
+                                                        )
+                                                    }
+                                                }
+                                            },
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedTextColor = Color.White,
+                                                unfocusedTextColor = Color.White,
+                                                focusedContainerColor = Color.White.copy(alpha = 0.03f),
+                                                unfocusedContainerColor = Color.White.copy(alpha = 0.02f),
+                                                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                                                unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                                                cursorColor = MaterialTheme.colorScheme.primary
+                                            ),
+                                            shape = RoundedCornerShape(16.dp),
+                                            singleLine = true,
+                                            modifier = Modifier.weight(1f)
+                                        )
+
+                                        Box {
+                                            IconButton(
+                                                onClick = { sortMenuExpanded = true },
+                                                modifier = Modifier
+                                                    .background(Color.White.copy(alpha = 0.04f), RoundedCornerShape(12.dp))
+                                                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Filled.Sort,
+                                                    contentDescription = "Sort Order",
+                                                    tint = Color.White.copy(alpha = 0.8f)
+                                                )
+                                            }
+
+                                            DropdownMenu(
+                                                expanded = sortMenuExpanded,
+                                                onDismissRequest = { sortMenuExpanded = false },
+                                                modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                                            ) {
+                                                DropdownMenuItem(
+                                                    text = { Text("Sort by Name") },
+                                                    onClick = {
+                                                        sortOrder = "name"
+                                                        sortMenuExpanded = false
+                                                    },
+                                                    leadingIcon = {
+                                                        if (sortOrder == "name") {
+                                                            Icon(imageVector = Icons.Default.Check, contentDescription = null)
+                                                        }
+                                                    }
+                                                )
+                                                DropdownMenuItem(
+                                                    text = { Text("Sort by Level") },
+                                                    onClick = {
+                                                        sortOrder = "level"
+                                                        sortMenuExpanded = false
+                                                    },
+                                                    leadingIcon = {
+                                                        if (sortOrder == "level") {
+                                                            Icon(imageVector = Icons.Default.Check, contentDescription = null)
+                                                        }
+                                                    }
+                                                )
+                                                DropdownMenuItem(
+                                                    text = { Text("Sort by Recency") },
+                                                    onClick = {
+                                                        sortOrder = "recency"
+                                                        sortMenuExpanded = false
+                                                    },
+                                                    leadingIcon = {
+                                                        if (sortOrder == "recency") {
+                                                            Icon(imageVector = Icons.Default.Check, contentDescription = null)
+                                                        }
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    val filteredAndSorted = remember(characters, searchQuery, sortOrder) {
+                                        val filtered = if (searchQuery.isBlank()) {
+                                            characters
+                                        } else {
+                                            characters.filter {
+                                                it.name.contains(searchQuery, ignoreCase = true) ||
+                                                it.description.contains(searchQuery, ignoreCase = true)
+                                            }
+                                        }
+                                        when (sortOrder) {
+                                            "name" -> filtered.sortedBy { it.name.lowercase() }
+                                            "level" -> filtered.sortedByDescending { it.relationshipXp }
+                                            else -> filtered.sortedByDescending { it.id }
+                                        }
+                                    }
+
+                                    if (filteredAndSorted.isEmpty()) {
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth().padding(32.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "No companions match your search.",
+                                                color = Color.White.copy(alpha = 0.5f),
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                        }
+                                    } else {
+                                        CharacterList(
+                                            characters = filteredAndSorted,
+                                            onCharacterClick = { charId -> onNavigate(Chat(charId)) },
+                                            onCharacterLongClick = { activeCharacterActions = it }
+                                        )
+                                    }
                                 }
                             } else if (selectedTab == 1) {
                                 if (groupChats.isEmpty()) {
