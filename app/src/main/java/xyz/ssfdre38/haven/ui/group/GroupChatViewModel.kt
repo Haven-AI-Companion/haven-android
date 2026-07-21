@@ -518,7 +518,18 @@ class GroupChatViewModel(
             if (grp != null) {
                 val ids = grp.characterIdsString.split(",")
                     .mapNotNull { it.trim().toIntOrNull() }
-                val chars = ids.mapNotNull { repository.getCharacterById(it) }
+                var chars = ids.mapNotNull { repository.getCharacterById(it) }
+                if (chars.isEmpty() && grp.name.isNotBlank()) {
+                    val allChars = repository.getAllCharacters().first()
+                    val matchedChars = allChars.filter { c -> grp.name.contains(c.name, ignoreCase = true) || c.name.contains(grp.name, ignoreCase = true) }
+                    if (matchedChars.isNotEmpty()) {
+                        chars = matchedChars
+                        val newIdsStr = matchedChars.joinToString(",") { it.id.toString() }
+                        val updatedGrp = grp.copy(characterIdsString = newIdsStr)
+                        repository.insertGroupChat(updatedGrp)
+                        _group.value = updatedGrp
+                    }
+                }
                 _participants.value = chars
                 if (chars.isNotEmpty()) {
                     _selectedSpeakerId.value = -1

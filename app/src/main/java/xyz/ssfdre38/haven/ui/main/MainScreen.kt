@@ -2319,21 +2319,24 @@ fun CharacterAvatar(
     character: CharacterEntity,
     modifier: Modifier = Modifier
 ) {
-    val fileExists = remember(character.avatarPath) {
-        character.avatarPath?.let { File(it).exists() } == true
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val sharedPrefs = remember { context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE) }
+    val host = sharedPrefs.getString("ash_host", "") ?: ""
+    val port = sharedPrefs.getString("ash_port", "") ?: ""
+    val serverUrl = remember(host, port) {
+        if (host.isNotBlank()) {
+            val cleanHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+            if (port.isNotBlank() && !cleanHost.contains(":$port")) "$cleanHost:${port.trim()}" else cleanHost
+        } else null
     }
-    if (fileExists && character.avatarPath != null) {
-        val context = androidx.compose.ui.platform.LocalContext.current
-        val imgFile = remember(character.avatarPath) { File(character.avatarPath) }
-        val request = remember(imgFile.absolutePath, imgFile.lastModified()) {
-            coil.request.ImageRequest.Builder(context)
-                .data(imgFile)
-                .memoryCacheKey(imgFile.absolutePath + "_" + imgFile.lastModified())
-                .diskCacheKey(imgFile.absolutePath + "_" + imgFile.lastModified())
-                .build()
-        }
+
+    val avatarModel = remember(character.avatarPath, serverUrl) {
+        xyz.ssfdre38.haven.utils.AvatarUtils.resolveAvatarModel(character.avatarPath, serverUrl)
+    }
+
+    if (avatarModel != null) {
         AsyncImage(
-            model = request,
+            model = avatarModel,
             contentDescription = character.name,
             modifier = modifier
                 .clip(CircleShape)
@@ -2376,6 +2379,17 @@ fun GroupList(
     onGroupLongClick: (xyz.ssfdre38.haven.data.database.GroupChatEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val sharedPrefs = remember { context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE) }
+    val host = sharedPrefs.getString("ash_host", "") ?: ""
+    val port = sharedPrefs.getString("ash_port", "") ?: ""
+    val serverUrl = remember(host, port) {
+        if (host.isNotBlank()) {
+            val cleanHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+            if (port.isNotBlank() && !cleanHost.contains(":$port")) "$cleanHost:${port.trim()}" else cleanHost
+        } else null
+    }
+
     val configuration = LocalConfiguration.current
     val isTablet = configuration.screenWidthDp >= 600
 
@@ -2453,9 +2467,10 @@ fun GroupList(
                                                 .background(Color.DarkGray)
                                                 .border(1.dp, Color.Black, CircleShape)
                                         ) {
-                                            if (p.avatarPath != null && File(p.avatarPath).exists()) {
+                                            val pAvatarModel = xyz.ssfdre38.haven.utils.AvatarUtils.resolveAvatarModel(p.avatarPath, serverUrl)
+                                            if (pAvatarModel != null) {
                                                 AsyncImage(
-                                                    model = File(p.avatarPath),
+                                                    model = pAvatarModel,
                                                     contentDescription = p.name,
                                                     modifier = Modifier.fillMaxSize(),
                                                     contentScale = ContentScale.Crop
@@ -2570,9 +2585,10 @@ fun GroupList(
                                                 .background(Color.DarkGray)
                                                 .border(1.dp, Color.Black, CircleShape)
                                         ) {
-                                            if (p.avatarPath != null && File(p.avatarPath).exists()) {
+                                            val pAvatarModel = xyz.ssfdre38.haven.utils.AvatarUtils.resolveAvatarModel(p.avatarPath, serverUrl)
+                                            if (pAvatarModel != null) {
                                                 AsyncImage(
-                                                    model = File(p.avatarPath),
+                                                    model = pAvatarModel,
                                                     contentDescription = p.name,
                                                     modifier = Modifier.fillMaxSize(),
                                                     contentScale = ContentScale.Crop

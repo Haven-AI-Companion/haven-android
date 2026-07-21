@@ -404,45 +404,28 @@ fun ChatScreen(
         val localChar = character
         if (localChar != null) {
             val bgPath = localChar.chatWallpaperPath ?: localChar.avatarPath
-            if (bgPath != null) {
-                val bgFile = remember(bgPath) { File(bgPath) }
-                var fileExists by remember(bgPath) { mutableStateOf(false) }
-                var lastModified by remember(bgPath) { mutableStateOf(0L) }
-
-                LaunchedEffect(bgPath) {
-                    withContext(Dispatchers.IO) {
-                        try {
-                            val exists = bgFile.exists()
-                            fileExists = exists
-                            if (exists) {
-                                lastModified = bgFile.lastModified()
-                            }
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
-                    }
-                }
-
-                if (fileExists) {
-                    val request = remember(bgPath, lastModified) {
-                        coil.request.ImageRequest.Builder(context)
-                            .data(bgFile)
-                            .memoryCacheKey(bgFile.absolutePath + "_" + lastModified)
-                            .diskCacheKey(bgFile.absolutePath + "_" + lastModified)
-                            .build()
-                    }
-                    androidx.compose.foundation.Image(
-                        painter = coil.compose.rememberAsyncImagePainter(model = request),
-                        contentDescription = "Background",
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .then(if (blurBackdrop) Modifier.blur(20.dp) else Modifier),
-                        contentScale = ContentScale.Crop,
-                        alignment = Alignment.Center,
-                        alpha = if (immersiveMode) 0.8f else 0.3f
-                    )
-                }
+            val sharedPrefs = remember { context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE) }
+            val host = sharedPrefs.getString("ash_host", "") ?: ""
+            val port = sharedPrefs.getString("ash_port", "") ?: ""
+            val serverUrl = remember(host, port) {
+                if (host.isNotBlank()) {
+                    val cleanHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+                    if (port.isNotBlank() && !cleanHost.contains(":$port")) "$cleanHost:${port.trim()}" else cleanHost
+                } else null
             }
+            val bgModel = remember(bgPath, serverUrl) {
+                xyz.ssfdre38.haven.utils.AvatarUtils.resolveAvatarModel(bgPath, serverUrl)
+            }
+            if (bgModel != null) {
+                AsyncImage(
+                    model = bgModel,
+                    contentDescription = "Background",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    alpha = 0.22f
+                )
+            }
+        }
         }
 
         Scaffold(
@@ -1505,7 +1488,6 @@ fun ChatScreen(
                 }
             }
         )
-    }
     }
 }
 

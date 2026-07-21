@@ -418,9 +418,12 @@ fun GroupChatScreen(
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                if (char.avatarPath != null) {
+                                val charAvatarModel = remember(char.avatarPath, serverUrl) {
+                                    xyz.ssfdre38.haven.utils.AvatarUtils.resolveAvatarModel(char.avatarPath, serverUrl)
+                                }
+                                if (charAvatarModel != null) {
                                     AsyncImage(
-                                        model = File(char.avatarPath),
+                                        model = charAvatarModel,
                                         contentDescription = char.name,
                                         modifier = Modifier
                                             .size(20.dp)
@@ -1031,9 +1034,12 @@ fun GroupMessageBubble(
         verticalAlignment = Alignment.Bottom
     ) {
         if (!isUser && speaker != null) {
-            if (speaker.avatarPath != null) {
+            val speakerAvatarModel = remember(speaker.avatarPath, serverUrl) {
+                xyz.ssfdre38.haven.utils.AvatarUtils.resolveAvatarModel(speaker.avatarPath, serverUrl)
+            }
+            if (speakerAvatarModel != null) {
                 AsyncImage(
-                    model = File(speaker.avatarPath),
+                    model = speakerAvatarModel,
                     contentDescription = speaker.name,
                     modifier = Modifier
                         .size(32.dp)
