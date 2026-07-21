@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
             val proactiveRequest = PeriodicWorkRequestBuilder<ProactiveMessageWorker>(15, TimeUnit.MINUTES).build()
             WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork(
                 "proactive_check_in",
-                ExistingPeriodicWorkPolicy.REPLACE,
+                ExistingPeriodicWorkPolicy.KEEP,
                 proactiveRequest
             )
         } catch (e: Exception) {
