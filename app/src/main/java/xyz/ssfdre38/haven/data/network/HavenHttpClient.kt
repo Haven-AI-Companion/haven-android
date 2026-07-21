@@ -90,6 +90,7 @@ object HavenHttpClient {
         conversationId: String? = null,
         displayName: String? = null,
         messageUuid: String? = null,
+        companionName: String? = null,
         onStart: (String?) -> Unit = {},
         onToken: (String) -> Unit,
         onComplete: () -> Unit,
@@ -106,6 +107,9 @@ object HavenHttpClient {
             }
             if (displayName != null) {
                 put("display_name", displayName)
+            }
+            if (companionName != null) {
+                put("companion_name", companionName)
             }
         }.toString()
 
@@ -1243,6 +1247,135 @@ object HavenHttpClient {
         } catch (e: Exception) {
             e.printStackTrace()
             null
+        }
+    }
+
+    fun setServerProactive(serverUrl: String, token: String, enabled: Boolean): Boolean {
+        val url = "${serverUrl.trimEnd('/')}/api/admin/proactive"
+        val requestBody = JSONObject().apply {
+            put("enabled", enabled)
+        }.toString().toRequestBody(JSON_MEDIA_TYPE)
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    fun importTavernCardFromUrl(serverUrl: String, token: String, cardUrl: String): Boolean {
+        val url = "${serverUrl.trimEnd('/')}/api/companions/import-url"
+        val requestBody = JSONObject().apply {
+            put("url", cardUrl)
+        }.toString().toRequestBody(JSON_MEDIA_TYPE)
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    fun importTavernCardFile(serverUrl: String, token: String, fileBytes: ByteArray, fileName: String): Boolean {
+        val url = "${serverUrl.trimEnd('/')}/api/companions/import-card"
+        val requestBody = okhttp3.MultipartBody.Builder()
+            .setType(okhttp3.MultipartBody.FORM)
+            .addFormDataPart(
+                "file",
+                fileName,
+                fileBytes.toRequestBody("image/png".toMediaTypeOrNull())
+            )
+            .build()
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    fun exportChatHistory(serverUrl: String, token: String, conversationId: String): String? {
+        val url = "${serverUrl.trimEnd('/')}/api/conversations/$conversationId/export?format=json"
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) response.body?.string() else null
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    fun importChatHistory(serverUrl: String, token: String, conversationId: String, fileBytes: ByteArray): Boolean {
+        val url = "${serverUrl.trimEnd('/')}/api/conversations/$conversationId/import"
+        val requestBody = okhttp3.MultipartBody.Builder()
+            .setType(okhttp3.MultipartBody.FORM)
+            .addFormDataPart(
+                "file",
+                "chat.json",
+                fileBytes.toRequestBody("application/json".toMediaTypeOrNull())
+            )
+            .build()
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    fun importChatHistoryText(serverUrl: String, token: String, conversationId: String, text: String, companionName: String, userName: String): Boolean {
+        val url = "${serverUrl.trimEnd('/')}/api/conversations/$conversationId/import-text"
+        val requestBody = JSONObject().apply {
+            put("text", text)
+            put("companion_name", companionName)
+            put("user_name", userName)
+        }.toString().toRequestBody(JSON_MEDIA_TYPE)
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .addHeader("Authorization", "Bearer $token")
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
         }
     }
 }

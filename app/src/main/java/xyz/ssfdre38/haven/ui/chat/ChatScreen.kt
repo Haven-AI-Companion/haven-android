@@ -251,6 +251,51 @@ fun ChatScreen(
         selectedImageUri = uri
     }
 
+    var exportJsonString by remember { mutableStateOf<String?>(null) }
+    var showPasteImportDialog by remember { mutableStateOf(false) }
+
+    val chatExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        if (uri != null && exportJsonString != null) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    context.contentResolver.openOutputStream(uri)?.use { os ->
+                        os.write(exportJsonString!!.toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+                    }
+                    scope.launch(Dispatchers.Main) {
+                        Toast.makeText(context, "Chat history exported successfully!", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
+    val chatImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val bytes = context.contentResolver.openInputStream(uri)?.readBytes()
+                    if (bytes != null) {
+                        chatViewModel.importChatHistory(context, bytes) { success ->
+                            if (success) {
+                                Toast.makeText(context, "Chat history imported successfully!", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Failed to import chat history. Make sure it is a valid JSON file.", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
     val requestPortrait = {
         val prefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
         val sdHost = prefs.getString("sd_host", null)
@@ -688,6 +733,52 @@ fun ChatScreen(
                                         Icon(
                                             imageVector = Icons.Default.Download,
                                             contentDescription = "Export Tavern Card"
+                                        )
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Export Chat History") },
+                                    onClick = {
+                                        expanded = false
+                                        chatViewModel.exportChatHistory(context) { json ->
+                                            if (json != null) {
+                                                exportJsonString = json
+                                                chatExportLauncher.launch("chat_${character?.name?.lowercase() ?: "companion"}.json")
+                                            } else {
+                                                Toast.makeText(context, "Failed to export chat from server.", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Download,
+                                            contentDescription = "Export Chat History"
+                                        )
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Import Chat History") },
+                                    onClick = {
+                                        expanded = false
+                                        chatImportLauncher.launch("application/json")
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Cloud,
+                                            contentDescription = "Import Chat History"
+                                        )
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Import Chat from Paste") },
+                                    onClick = {
+                                        expanded = false
+                                        showPasteImportDialog = true
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentCopy,
+                                            contentDescription = "Import Chat from Paste"
                                         )
                                     }
                                 )
@@ -1356,6 +1447,63 @@ fun ChatScreen(
                 chatViewModel.setChatWallpaper(context, Uri.fromFile(file))
             },
             onDismiss = { showWallpaperPickerDialog = false }
+        )
+    }
+
+    if (showPasteImportDialog) {
+        var pasteText by remember { mutableStateOf("") }
+        var isImportingText by remember { mutableStateOf(false) }
+
+        AlertDialog(
+            onDismissRequest = { if (!isImportingText) showPasteImportDialog = false },
+            title = { Text("Paste Chat Transcript") },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Paste your raw copy-pasted conversation transcript below. We will use a smart heuristic parser to reconstruct the chat history.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    OutlinedTextField(
+                        value = pasteText,
+                        onValueChange = { pasteText = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp),
+                        placeholder = { Text("You: Hello!\nCompanion: Hi!") },
+                        maxLines = 100
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (pasteText.isNotBlank()) {
+                            isImportingText = true
+                            chatViewModel.importChatHistoryText(context, pasteText.trim()) { success ->
+                                isImportingText = false
+                                if (success) {
+                                    Toast.makeText(context, "Chat history imported successfully!", Toast.LENGTH_SHORT).show()
+                                    showPasteImportDialog = false
+                                } else {
+                                    Toast.makeText(context, "Failed to parse or import conversation.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    },
+                    enabled = pasteText.isNotBlank() && !isImportingText
+                ) {
+                    Text("Import")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showPasteImportDialog = false },
+                    enabled = !isImportingText
+                ) {
+                    Text("Cancel")
+                }
+            }
         )
     }
     }

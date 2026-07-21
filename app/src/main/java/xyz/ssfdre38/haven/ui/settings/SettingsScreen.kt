@@ -100,6 +100,7 @@ fun SettingsScreen(
     var userAvatarPath by remember { mutableStateFlowOf(sharedPrefs.getString("user_avatar_path", "") ?: "") }
     var autoSpeak by remember { mutableStateFlowOf(sharedPrefs.getBoolean("auto_speak", true)) }
     var enableProactive by remember { mutableStateOf(sharedPrefs.getBoolean("enable_proactive", true)) }
+    var enableHostProactive by remember { mutableStateOf(sharedPrefs.getBoolean("enable_host_proactive", true)) }
     var quietTimeEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("quiet_time_enabled", false)) }
     var quietTimeStart by remember { mutableStateOf(sharedPrefs.getString("quiet_time_start", "22:00") ?: "22:00") }
     var quietTimeEnd by remember { mutableStateOf(sharedPrefs.getString("quiet_time_end", "07:00") ?: "07:00") }
@@ -873,6 +874,30 @@ fun SettingsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Host Proactive Check-ins",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "Allow PC host daemon to proactively trigger conversation check-ins based on active windows and idle time.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = enableHostProactive,
+                    onCheckedChange = { enableHostProactive = it }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
                     text = "Auto-Play Companion Voice",
                     style = MaterialTheme.typography.bodyLarge
@@ -1440,6 +1465,7 @@ fun SettingsScreen(
                         putString("user_avatar_path", userAvatarPath)
                         putBoolean("auto_speak", autoSpeak)
                         putBoolean("enable_proactive", enableProactive)
+                        putBoolean("enable_host_proactive", enableHostProactive)
                         putBoolean("quiet_time_enabled", quietTimeEnabled)
                         putString("quiet_time_start", quietTimeStart.trim())
                         putString("quiet_time_end", quietTimeEnd.trim())
@@ -1480,6 +1506,11 @@ fun SettingsScreen(
                                     displayName = userName.trim(),
                                     gender = userGender,
                                     onResult = { /* fire-and-forget sync */ }
+                                )
+                                xyz.ssfdre38.haven.data.network.HavenHttpClient.setServerProactive(
+                                    serverUrl = serverUrl,
+                                    token = tokenStr,
+                                    enabled = enableHostProactive
                                 )
                             } catch (e: Exception) {
                                 e.printStackTrace()

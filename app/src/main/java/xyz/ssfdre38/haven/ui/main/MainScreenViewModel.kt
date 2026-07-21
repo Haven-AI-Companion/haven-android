@@ -511,6 +511,16 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                             }
                         }
 
+                        if (obj.has("outfits") && !obj.isNull("outfits")) {
+                            try {
+                                val outfitsObj = obj.getJSONObject("outfits")
+                                val outfitsFile = java.io.File(context.filesDir, "outfits_${name.lowercase().trim()}.json")
+                                outfitsFile.writeText(outfitsObj.toString())
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+
                         // Auto-sync: if character already exists locally, update their profile fields with the server configuration
                         val existing = dataRepository.getCharacterByName(name)
                         if (existing != null) {
@@ -756,6 +766,99 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                 }
             } finally {
                 isGeneratingProfile.value = false
+            }
+        }
+    }
+
+    fun getCustomOutfits(context: Context, characterName: String): Map<String, String> {
+        val file = java.io.File(context.filesDir, "outfits_${characterName.lowercase().trim()}.json")
+        if (!file.exists()) return emptyMap()
+        return try {
+            val json = org.json.JSONObject(file.readText())
+            val map = mutableMapOf<String, String>()
+            json.keys().forEach { key ->
+                map[key] = json.getString(key)
+            }
+            map
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
+
+    fun saveCustomOutfit(context: Context, character: CharacterEntity, outfitName: String, outfitPrompt: String) {
+        val file = java.io.File(context.filesDir, "outfits_${character.name.lowercase().trim()}.json")
+        val current = getCustomOutfits(context, character.name).toMutableMap()
+        current[outfitName] = outfitPrompt
+        try {
+            val json = org.json.JSONObject()
+            current.forEach { (k, v) -> json.put(k, v) }
+            file.writeText(json.toString())
+            
+            updateCharacterDetails(context, character)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun deleteCustomOutfit(context: Context, character: CharacterEntity, outfitName: String) {
+        val file = java.io.File(context.filesDir, "outfits_${character.name.lowercase().trim()}.json")
+        val current = getCustomOutfits(context, character.name).toMutableMap()
+        current.remove(outfitName)
+        try {
+            val json = org.json.JSONObject()
+            current.forEach { (k, v) -> json.put(k, v) }
+            file.writeText(json.toString())
+            
+            updateCharacterDetails(context, character)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun importTavernCardFromUrl(context: Context, cardUrl: String, onComplete: (Boolean) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+            val host = sharedPrefs.getString("ash_host", "") ?: ""
+            val port = sharedPrefs.getString("ash_port", "") ?: ""
+            val token = sharedPrefs.getString("auth_token", "") ?: ""
+            if (host.isNotBlank() && port.isNotBlank()) {
+                val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+                val serverUrl = "$formattedHost:${port.trim()}"
+                val success = xyz.ssfdre38.haven.data.network.HavenHttpClient.importTavernCardFromUrl(serverUrl, token, cardUrl)
+                if (success) {
+                    loadServerCompanions(context).join()
+                }
+                viewModelScope.launch(Dispatchers.Main) {
+                    onComplete(success)
+                }
+            } else {
+                viewModelScope.launch(Dispatchers.Main) {
+                    onComplete(false)
+                }
+            }
+        }
+    }
+
+    fun importTavernCardFile(context: Context, fileBytes: ByteArray, fileName: String, onComplete: (Boolean) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+            val host = sharedPrefs.getString("ash_host", "") ?: ""
+            val port = sharedPrefs.getString("ash_port", "") ?: ""
+            val token = sharedPrefs.getString("auth_token", "") ?: ""
+            if (host.isNotBlank() && port.isNotBlank()) {
+                val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+                val serverUrl = "$formattedHost:${port.trim()}"
+                val success = xyz.ssfdre38.haven.data.network.HavenHttpClient.importTavernCardFile(serverUrl, token, fileBytes, fileName)
+                if (success) {
+                    loadServerCompanions(context).join()
+                }
+                viewModelScope.launch(Dispatchers.Main) {
+                    onComplete(success)
+                }
+            } else {
+                viewModelScope.launch(Dispatchers.Main) {
+                    onComplete(false)
+                }
             }
         }
     }

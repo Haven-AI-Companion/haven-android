@@ -117,6 +117,7 @@ fun MainScreen(
     var showAddCompanionChooser by remember { mutableStateOf(false) }
     var showManualCreateDialog by remember { mutableStateOf(false) }
     var showServerImportDialog by remember { mutableStateOf(false) }
+    var showCardImportDialog by remember { mutableStateOf(false) }
     var groupToDelete by remember { mutableStateOf<xyz.ssfdre38.haven.data.database.GroupChatEntity?>(null) }
 
     val sharedPrefs = remember { context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE) }
@@ -847,6 +848,8 @@ fun MainScreen(
                 var currentLocation by remember(character.id) { mutableStateOf(character.currentLocation) }
                 var currentMood by remember(character.id) { mutableStateOf(character.currentMood) }
                 var dialogTab by remember { mutableIntStateOf(0) }
+                var newOutfitName by remember(character.id) { mutableStateOf("") }
+                var newOutfitPrompt by remember(character.id) { mutableStateOf("") }
 
                 AlertDialog(
                     onDismissRequest = { showEditDialogFor = null },
@@ -871,6 +874,11 @@ fun MainScreen(
                                     selected = dialogTab == 2,
                                     onClick = { dialogTab = 2 },
                                     text = { Text("State") }
+                                )
+                                Tab(
+                                    selected = dialogTab == 3,
+                                    onClick = { dialogTab = 3 },
+                                    text = { Text("Wardrobe") }
                                 )
                             }
                             
@@ -959,6 +967,92 @@ fun MainScreen(
                                             label = { Text("TTS Voice ID") },
                                             modifier = Modifier.fillMaxWidth()
                                         )
+                                    }
+                                    3 -> {
+                                        Text(
+                                            text = "Add Custom Outfit",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        OutlinedTextField(
+                                            value = newOutfitName,
+                                            onValueChange = { newOutfitName = it },
+                                            label = { Text("Outfit Name (e.g. Cyberpunk Coat)") },
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        OutlinedTextField(
+                                            value = newOutfitPrompt,
+                                            onValueChange = { newOutfitPrompt = it },
+                                            label = { Text("SD Prompt (e.g. wearing a glowing neon coat)") },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                        Button(
+                                            onClick = {
+                                                if (newOutfitName.isNotBlank() && newOutfitPrompt.isNotBlank()) {
+                                                    viewModel.saveCustomOutfit(context, character, newOutfitName, newOutfitPrompt)
+                                                    Toast.makeText(context, "Outfit '$newOutfitName' added successfully!", Toast.LENGTH_SHORT).show()
+                                                    newOutfitName = ""
+                                                    newOutfitPrompt = ""
+                                                }
+                                            },
+                                            enabled = newOutfitName.isNotBlank() && newOutfitPrompt.isNotBlank(),
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(12.dp)
+                                        ) {
+                                            Text("Add Outfit")
+                                        }
+                                        
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        
+                                        Text(
+                                            text = "Current Wardrobe",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        
+                                        val outfitsMap = viewModel.getCustomOutfits(context, character.name)
+                                        if (outfitsMap.isEmpty()) {
+                                            Text(
+                                                text = "No custom outfits defined yet.",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = Color.White.copy(alpha = 0.5f)
+                                            )
+                                        } else {
+                                            outfitsMap.forEach { (name, promptVal) ->
+                                                Card(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.03f)),
+                                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.padding(12.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.SpaceBetween
+                                                    ) {
+                                                        Column(modifier = Modifier.weight(1f)) {
+                                                            Text(text = name, fontWeight = FontWeight.Bold, color = Color.White)
+                                                            Text(text = promptVal, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.6f))
+                                                        }
+                                                        IconButton(
+                                                            onClick = {
+                                                                viewModel.deleteCustomOutfit(context, character, name)
+                                                                Toast.makeText(context, "Deleted outfit '$name'", Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Delete,
+                                                                contentDescription = "Delete Outfit",
+                                                                tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1050,11 +1144,16 @@ fun MainScreen(
 
                             // Section 2: Wardrobe Outfit
                             Text("Active Outfit:", style = MaterialTheme.typography.titleSmall)
+                            val customOutfits = remember(character.name) { viewModel.getCustomOutfits(context, character.name) }
+                            val outfitsList = remember(customOutfits) { 
+                                val defaults = listOf("default", "casual sweater", "formal dress", "swimwear", "summer dress", "pyjamas")
+                                (defaults + customOutfits.keys.toList()).distinct()
+                            }
                             FlowRow(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                listOf("default", "casual sweater", "formal dress", "swimwear", "summer dress", "pyjamas").forEach { outfit ->
+                                outfitsList.forEach { outfit ->
                                     FilterChip(
                                         selected = selectedOutfit == outfit,
                                         onClick = { selectedOutfit = outfit },
@@ -1370,6 +1469,19 @@ fun MainScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Create Manually")
                             }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    showAddCompanionChooser = false
+                                    showCardImportDialog = true
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Add, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Import Tavern Card (PNG/URL)")
+                            }
                         }
                     },
                     confirmButton = {},
@@ -1447,6 +1559,123 @@ fun MainScreen(
                     confirmButton = {
                         Button(onClick = { showServerImportDialog = false }) {
                             Text("Done")
+                        }
+                    }
+                )
+            }
+
+            // Tavern Card Import Dialog
+            if (showCardImportDialog) {
+                var importUrl by remember { mutableStateOf("") }
+                var isUploading by remember { mutableStateOf(false) }
+                var activeTab by remember { mutableIntStateOf(0) } // 0 = URL, 1 = File
+
+                val launcher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.GetContent()
+                ) { uri: Uri? ->
+                    if (uri != null) {
+                        isUploading = true
+                        coroutineScope.launch(Dispatchers.IO) {
+                            try {
+                                val bytes = context.contentResolver.openInputStream(uri)?.readBytes()
+                                if (bytes != null) {
+                                    val fileName = uri.lastPathSegment ?: "card.png"
+                                    viewModel.importTavernCardFile(context, bytes, fileName) { success ->
+                                        isUploading = false
+                                        if (success) {
+                                            Toast.makeText(context, "Companion card imported successfully!", Toast.LENGTH_SHORT).show()
+                                            showCardImportDialog = false
+                                        } else {
+                                            Toast.makeText(context, "Failed to import card. Make sure it is a valid PNG Tavern card.", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                } else {
+                                    isUploading = false
+                                    Toast.makeText(context, "Failed to read file.", Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                isUploading = false
+                                e.printStackTrace()
+                                coroutineScope.launch(Dispatchers.Main) {
+                                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                AlertDialog(
+                    onDismissRequest = { if (!isUploading) showCardImportDialog = false },
+                    title = { Text("Import Tavern Character Card") },
+                    text = {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            TabRow(selectedTabIndex = activeTab) {
+                                Tab(selected = activeTab == 0, onClick = { activeTab = 0 }) {
+                                    Text("From URL", modifier = Modifier.padding(8.dp))
+                                }
+                                Tab(selected = activeTab == 1, onClick = { activeTab = 1 }) {
+                                    Text("From File", modifier = Modifier.padding(8.dp))
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            if (isUploading) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(100.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator()
+                                }
+                            } else if (activeTab == 0) {
+                                OutlinedTextField(
+                                    value = importUrl,
+                                    onValueChange = { importUrl = it },
+                                    label = { Text("PNG Card URL") },
+                                    placeholder = { Text("https://example.com/character.png") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                                )
+                            } else {
+                                Button(
+                                    onClick = { launcher.launch("image/png") },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Browse Local PNG Card")
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        if (!isUploading && activeTab == 0) {
+                            TextButton(
+                                onClick = {
+                                    if (importUrl.isNotBlank()) {
+                                        isUploading = true
+                                        viewModel.importTavernCardFromUrl(context, importUrl.trim()) { success ->
+                                            isUploading = false
+                                            if (success) {
+                                                Toast.makeText(context, "Companion card imported successfully!", Toast.LENGTH_SHORT).show()
+                                                showCardImportDialog = false
+                                            } else {
+                                                Toast.makeText(context, "Failed to import card. Make sure the URL points to a valid PNG card.", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    }
+                                },
+                                enabled = importUrl.isNotBlank()
+                            ) {
+                                Text("Import")
+                            }
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = { showCardImportDialog = false },
+                            enabled = !isUploading
+                        ) {
+                            Text("Cancel")
                         }
                     }
                 )

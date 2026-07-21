@@ -507,8 +507,15 @@ class ChatViewModel(
                     }
                     
                     appendLine("The user's name is $userName. You must address the user as $userName instead of any other name.")
-                    if (userGender != "Unspecified") {
-                        appendLine("The user's gender is $userGender. You MUST refer to the user using the correct pronouns matching this gender.")
+                    if (userGender.isNotBlank() && userGender != "Unspecified") {
+                        val uLower = userGender.trim().lowercase()
+                        if (uLower.contains("female") || uLower.contains("woman") || uLower.contains("she")) {
+                            appendLine("[USER PRONOUN DIRECTIVE]\nIMPORTANT: $userName is FEMALE. You MUST ALWAYS address and refer to $userName using female pronouns (she/her/hers) when referring to $userName in third-person, in dialogue, or in action descriptions. NEVER use male pronouns (he/him/his) for $userName.")
+                        } else if (uLower.contains("male") || uLower.contains("man") || uLower.contains("he")) {
+                            appendLine("[USER PRONOUN DIRECTIVE]\nIMPORTANT: $userName is MALE. You MUST ALWAYS address and refer to $userName using male pronouns (he/him/his) when referring to $userName in third-person, in dialogue, or in action descriptions. NEVER use female pronouns (she/her/hers) for $userName.")
+                        } else {
+                            appendLine("[USER PRONOUN DIRECTIVE]\nIMPORTANT: $userName's specified gender/pronouns are: $userGender. Always align your references to these pronouns for $userName.")
+                        }
                     }
                     
                     appendLine()
@@ -665,6 +672,7 @@ class ChatViewModel(
                     conversationId = conversationId,
                     displayName = userName,
                     messageUuid = messageUuid,
+                    companionName = char?.name,
                     onStart = { uuid ->
                         if (uuid != null) {
                             receivedUuid = uuid
@@ -1463,6 +1471,7 @@ class ChatViewModel(
                     token = token,
                     conversationId = conversationId,
                     displayName = userName,
+                    companionName = character.value?.name,
                     onToken = { tokenPart ->
                         streamBuffer.append(tokenPart)
                         viewModelScope.launch(Dispatchers.IO) {
@@ -1913,17 +1922,16 @@ class ChatViewModel(
 
     private fun swapUserPronouns(text: String, companionGender: String, userGender: String): String {
         if (text.isBlank()) return text
-        val cleanComp = companionGender.trim().lowercase()
         val cleanUser = userGender.trim().lowercase()
 
-        val replacements = if (cleanUser == "female" && (cleanComp == "female" || cleanComp.isBlank())) {
+        val replacements = if (cleanUser.contains("female") || cleanUser.contains("woman") || cleanUser.contains("she")) {
             listOf(
                 "\\bhe\\b" to "she",
                 "\\bhim\\b" to "her",
                 "\\bhis\\b" to "her",
                 "\\bhimself\\b" to "herself"
             )
-        } else if (cleanUser == "male" && cleanComp == "male") {
+        } else if (cleanUser.contains("male") || cleanUser.contains("man") || cleanUser.contains("he")) {
             listOf(
                 "\\bshe\\b" to "he",
                 "\\bherself\\b" to "himself",
@@ -1953,5 +1961,84 @@ class ChatViewModel(
             }
         }
         return result
+    }
+
+    fun exportChatHistory(context: Context, onComplete: (String?) -> Unit) {
+        val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+        val host = sharedPrefs.getString("ash_host", "") ?: ""
+        val port = sharedPrefs.getString("ash_port", "") ?: ""
+        val token = sharedPrefs.getString("auth_token", "") ?: ""
+        viewModelScope.launch(Dispatchers.IO) {
+            val char = repository.getCharacterById(characterId)
+            val conversationId = char?.conversationId
+            if (host.isNotBlank() && port.isNotBlank() && !conversationId.isNullOrBlank()) {
+                val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+                val serverUrl = "$formattedHost:${port.trim()}"
+                val json = HavenHttpClient.exportChatHistory(serverUrl, token, conversationId)
+                viewModelScope.launch(Dispatchers.Main) {
+                    onComplete(json)
+                }
+            } else {
+                viewModelScope.launch(Dispatchers.Main) {
+                    onComplete(null)
+                }
+            }
+        }
+    }
+
+    fun importChatHistory(context: Context, fileBytes: ByteArray, onComplete: (Boolean) -> Unit) {
+        val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+        val host = sharedPrefs.getString("ash_host", "") ?: ""
+        val port = sharedPrefs.getString("ash_port", "") ?: ""
+        val token = sharedPrefs.getString("auth_token", "") ?: ""
+        viewModelScope.launch(Dispatchers.IO) {
+            val char = repository.getCharacterById(characterId)
+            val conversationId = char?.conversationId
+            if (host.isNotBlank() && port.isNotBlank() && !conversationId.isNullOrBlank()) {
+                val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+                val serverUrl = "$formattedHost:${port.trim()}"
+                val success = HavenHttpClient.importChatHistory(serverUrl, token, conversationId, fileBytes)
+                if (success) {
+                    repository.clearMessagesForCharacter(characterId)
+                    syncMessages(context, serverUrl, token)
+                }
+                viewModelScope.launch(Dispatchers.Main) {
+                    onComplete(success)
+                }
+            } else {
+                viewModelScope.launch(Dispatchers.Main) {
+                    onComplete(false)
+                }
+            }
+        }
+    }
+
+    fun importChatHistoryText(context: Context, text: String, onComplete: (Boolean) -> Unit) {
+        val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+        val host = sharedPrefs.getString("ash_host", "") ?: ""
+        val port = sharedPrefs.getString("ash_port", "") ?: ""
+        val token = sharedPrefs.getString("auth_token", "") ?: ""
+        val userName = sharedPrefs.getString("user_name", "User") ?: "User"
+        viewModelScope.launch(Dispatchers.IO) {
+            val char = repository.getCharacterById(characterId)
+            val conversationId = char?.conversationId
+            val companionName = char?.name ?: "Companion"
+            if (host.isNotBlank() && port.isNotBlank() && !conversationId.isNullOrBlank()) {
+                val formattedHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+                val serverUrl = "$formattedHost:${port.trim()}"
+                val success = HavenHttpClient.importChatHistoryText(serverUrl, token, conversationId, text, companionName, userName)
+                if (success) {
+                    repository.clearMessagesForCharacter(characterId)
+                    syncMessages(context, serverUrl, token)
+                }
+                viewModelScope.launch(Dispatchers.Main) {
+                    onComplete(success)
+                }
+            } else {
+                viewModelScope.launch(Dispatchers.Main) {
+                    onComplete(false)
+                }
+            }
+        }
     }
 }

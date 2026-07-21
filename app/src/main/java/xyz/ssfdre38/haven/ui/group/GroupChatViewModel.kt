@@ -625,7 +625,8 @@ class GroupChatViewModel(
             }
 
             // 3. Compile prompt
-            val prompt = compilePrompt(context, text, targetChar, chars, userName)
+            val weatherInfo = fetchWeather(context)
+            val prompt = compilePrompt(context, text, targetChar, chars, userName, weatherInfo)
 
             // 4. Stream response
             HavenHttpClient.streamChat(
@@ -744,8 +745,9 @@ class GroupChatViewModel(
                             }
                         }
 
-                    val hasToolTag = toolCallRegex.containsMatchIn(fullText)
-                    val hasImplicitTrigger = !hasToolTag && shouldAutoTriggerPortrait(cleanedText)
+                    val hasInlineImage = fullText.contains("/uploads/") || fullText.contains("![Selfie]")
+                    val hasToolTag = toolCallRegex.containsMatchIn(fullText) && !hasInlineImage
+                    val hasImplicitTrigger = !hasToolTag && shouldAutoTriggerPortrait(cleanedText) && !hasInlineImage
 
                     if (hasToolTag || hasImplicitTrigger) {
                         val parsed = parseMessageText(fullText)
@@ -979,7 +981,8 @@ class GroupChatViewModel(
         currentInput: String,
         targetChar: CharacterEntity,
         allChars: List<CharacterEntity>,
-        userName: String
+        userName: String,
+        weatherInfo: String? = null
     ): String {
         val grp = _group.value
         val roomScenario = grp?.scenario ?: ""
@@ -1018,6 +1021,25 @@ class GroupChatViewModel(
             appendLine("[System Instruction: You can dynamically update your location, outfit, or expression/mood if the context changes by including '[Location: name]', '[Outfit: description]', or '[Mood: expression]' inside your <thought>...</thought> block. Example: '<thought>[Outfit: nightgown] [Location: bedroom] [Mood: sleepy]</thought> Goodnight!' Only change these when it makes sense for the chat flow.]")
             appendLine("[System Instruction: Format roleplay actions, physical gestures, and immediate/direct thoughts using asterisks (e.g. *smiles and waves*, *thinking to myself: this is interesting*). Do not use square brackets [like this] for roleplay actions or thoughts. Understand that $userName will also use asterisks for their actions and thoughts.]")
             appendLine("[System Instruction: You have access to the 'generate_portrait' tool. You should invoke it whenever $userName asks for a picture, photo, selfie, or visual update, or when you decide on your own to show $userName what you are doing. To call the tool, you MUST output the tag <call>generate_portrait</call> immediately after your </thought> tag (before your conversational dialogue). Do not output any arguments. The app will automatically generate the image and display it to the user.]")
+
+            val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+            val shareTime = sharedPrefs.getBoolean("share_local_time", true)
+            if (shareTime) {
+                val agentCtx = xyz.ssfdre38.agent.AgentContext.current(context)
+                appendLine("Current Time of Day: ${agentCtx.localTime}")
+            }
+            val shareCity = sharedPrefs.getBoolean("share_city_location", false)
+            if (shareCity) {
+                if (weatherInfo != null) {
+                    appendLine("User Local Weather & Location: $weatherInfo")
+                } else {
+                    val tzId = java.util.TimeZone.getDefault().id
+                    val city = tzId.substringAfterLast('/').replace('_', ' ')
+                    if (city.isNotBlank() && city != tzId) {
+                        appendLine("User Location: Near $city")
+                    }
+                }
+            }
 
             // Inject recent room situation events
             val lastEvent = lastRoomEvent.value
@@ -1117,7 +1139,8 @@ class GroupChatViewModel(
                 }
             }
 
-            val prompt = compileBanterPrompt(context, targetChar, chars, userName)
+            val weatherInfo = fetchWeather(context)
+            val prompt = compileBanterPrompt(context, targetChar, chars, userName, weatherInfo)
 
             HavenHttpClient.streamChat(
                 serverUrl = serverUrl,
@@ -1180,8 +1203,9 @@ class GroupChatViewModel(
                     val toolCallRegex = "(?:\\[\\s*(?:Tool\\s*(?:Call\\s*)?:\\s*)?generate_portr?ait\\s*\\])|(?:<\\s*call\\s*>\\s*generate_portr?ait\\s*<\\s*/\\s*call\\s*>)|(?:<\\s*call\\s*:\\s*generate_portr?ait\\s*>)".toRegex(RegexOption.IGNORE_CASE)
                     val targetId = streamingMessageId
                     val cleanText = cleanFinalText(fullText)
-                    val hasToolTag = toolCallRegex.containsMatchIn(fullText)
-                    val hasImplicitTrigger = !hasToolTag && shouldAutoTriggerPortrait(cleanedText)
+                    val hasInlineImage = fullText.contains("/uploads/") || fullText.contains("![Selfie]")
+                    val hasToolTag = toolCallRegex.containsMatchIn(fullText) && !hasInlineImage
+                    val hasImplicitTrigger = !hasToolTag && shouldAutoTriggerPortrait(cleanedText) && !hasInlineImage
 
                     if (hasToolTag || hasImplicitTrigger) {
                         val parsed = parseMessageText(fullText)
@@ -1399,7 +1423,8 @@ class GroupChatViewModel(
         context: Context,
         targetChar: CharacterEntity,
         allChars: List<CharacterEntity>,
-        userName: String
+        userName: String,
+        weatherInfo: String? = null
     ): String {
         // Same "You are " prefix as compilePrompt so the server's override detection
         // applies the companion's local JSON persona rather than the global soul.json.
@@ -1420,6 +1445,25 @@ class GroupChatViewModel(
             appendLine("[System Instructions: You are currently writing the response for ${targetChar.name} ONLY. Do not write dialogues or thoughts for other characters. Respond to the other participants naturally, having a back-and-forth dialogue.]")
             appendLine("[System Rule: Before responding, you MUST write down your inner thoughts, plans, or reasoning inside <thought>...</thought> tags, followed by your actual response to $userName. Do not omit the tags.]")
             appendLine("[System Instruction: Format roleplay actions, physical gestures, and immediate/direct thoughts using asterisks (e.g. *smiles and waves*, *thinking to myself: this is interesting*). Do not use square brackets [like this] for roleplay actions or thoughts. Understand that $userName will also use asterisks for their actions and thoughts.]")
+
+            val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+            val shareTime = sharedPrefs.getBoolean("share_local_time", true)
+            if (shareTime) {
+                val agentCtx = xyz.ssfdre38.agent.AgentContext.current(context)
+                appendLine("Current Time of Day: ${agentCtx.localTime}")
+            }
+            val shareCity = sharedPrefs.getBoolean("share_city_location", false)
+            if (shareCity) {
+                if (weatherInfo != null) {
+                    appendLine("User Local Weather & Location: $weatherInfo")
+                } else {
+                    val tzId = java.util.TimeZone.getDefault().id
+                    val city = tzId.substringAfterLast('/').replace('_', ' ')
+                    if (city.isNotBlank() && city != tzId) {
+                        appendLine("User Location: Near $city")
+                    }
+                }
+            }
 
             // Inject recent room situation events
             val lastEvent = lastRoomEvent.value
@@ -1812,5 +1856,35 @@ class GroupChatViewModel(
 
         // Default: random
         return otherParticipants.random()
+    }
+
+    private fun fetchWeather(context: Context): String? {
+        val sharedPrefs = context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)
+        val shareWeather = sharedPrefs.getBoolean("share_city_location", false)
+        if (!shareWeather) return null
+        return try {
+            val client = okhttp3.OkHttpClient.Builder()
+                .connectTimeout(2, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(2, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+            val req = okhttp3.Request.Builder()
+                .url("https://wttr.in/?format=j1")
+                .build()
+            client.newCall(req).execute().use { response ->
+                if (response.isSuccessful) {
+                    val bodyStr = response.body?.string() ?: ""
+                    val json = org.json.JSONObject(bodyStr)
+                    val currentCond = json.getJSONArray("current_condition").getJSONObject(0)
+                    val tempC = currentCond.getString("temp_C")
+                    val desc = currentCond.getJSONArray("weatherDesc").getJSONObject(0).getString("value")
+                    val nearestArea = json.getJSONArray("nearest_area").getJSONObject(0)
+                    val city = nearestArea.getJSONArray("areaName").getJSONObject(0).getString("value")
+                    "$desc, $tempC°C in $city"
+                } else null
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
     }
 }
