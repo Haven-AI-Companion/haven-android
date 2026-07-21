@@ -127,4 +127,11 @@ interface HavenDao {
 
     @Query("SELECT COUNT(*) FROM memories")
     suspend fun getMemoryCount(): Int
+
+    // --- Conversation Scoped State ---
+    @Query("SELECT * FROM conversation_states WHERE convId = :convId LIMIT 1")
+    suspend fun getConversationState(convId: String): ConversationStateEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertConversationState(state: ConversationStateEntity)
 }

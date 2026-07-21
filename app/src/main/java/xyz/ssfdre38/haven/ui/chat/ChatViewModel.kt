@@ -532,12 +532,13 @@ class ChatViewModel(
                         appendLine("Relationship Status with $userName: $relationshipTitle (Level $level)")
                         appendLine("Act toward $userName reflecting your relationship status ($relationshipTitle). Adapt your warmth, level of intimacy, and dialogue style accordingly.")
                         
-                        val loc = char.currentLocation.ifBlank { "Cozy Haven Room" }
-                        val outfit = char.currentOutfit.ifBlank { "Casual Attire" }
-                        val mood = char.currentMood.ifBlank { "neutral" }
-                        val bodyType = char.bodyType.ifBlank { "not specified" }
-                        val bodyShape = char.bodyShape.ifBlank { "not specified" }
-                        val clothingState = char.clothingState.ifBlank { "fully clothed" }
+                        val convState = repository.getConversationState("char_$characterId")
+                        val loc = (convState?.location ?: char.currentLocation).ifBlank { "Cozy Haven Room" }
+                        val outfit = (convState?.outfit ?: char.currentOutfit).ifBlank { "Casual Attire" }
+                        val mood = (convState?.mood ?: char.currentMood).ifBlank { "neutral" }
+                        val bodyType = (convState?.bodyType ?: char.bodyType).ifBlank { "not specified" }
+                        val bodyShape = (convState?.bodyShape ?: char.bodyShape).ifBlank { "not specified" }
+                        val clothingState = (convState?.clothingState ?: char.clothingState).ifBlank { "fully clothed" }
                         appendLine("Current Location: $loc")
                         appendLine("Current Outfit: $outfit")
                         appendLine("Current Expression/Mood: $mood")
@@ -863,6 +864,18 @@ class ChatViewModel(
                                         )
                                         repository.updateCharacter(updatedChar)
                                         saveCompanionToServer(context, updatedChar)
+
+                                        repository.insertConversationState(
+                                            xyz.ssfdre38.haven.data.database.ConversationStateEntity(
+                                                convId = "char_$characterId",
+                                                location = newLocation ?: currentChar.currentLocation,
+                                                outfit = newOutfit ?: currentChar.currentOutfit,
+                                                mood = newMood ?: currentChar.currentMood,
+                                                clothingState = newClothingState ?: currentChar.clothingState,
+                                                bodyType = newBodyType ?: currentChar.bodyType,
+                                                bodyShape = newBodyShape ?: currentChar.bodyShape
+                                            )
+                                        )
 
                                         if (appearanceChanged) {
                                             val bodyTypeVal = updatedChar.bodyType

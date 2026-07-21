@@ -1,6 +1,7 @@
 package xyz.ssfdre38.haven.data
 
 import android.content.Context
+import xyz.ssfdre38.haven.data.database.ConversationStateEntity
 import xyz.ssfdre38.haven.data.database.CharacterEntity
 import xyz.ssfdre38.haven.data.database.GroupChatEntity
 import xyz.ssfdre38.haven.data.database.GroupMessageEntity
@@ -54,6 +55,9 @@ interface DataRepository {
     suspend fun clearMemoriesForCharacter(characterId: Int)
     // XP
     suspend fun addXpAndIncrementMessages(characterId: Int, xp: Int)
+    // Conversation Scoped State
+    suspend fun getConversationState(convId: String): ConversationStateEntity?
+    suspend fun insertConversationState(state: ConversationStateEntity)
 }
 
 class DefaultDataRepository(private val havenDao: HavenDao) : DataRepository {
@@ -141,6 +145,8 @@ class DefaultDataRepository(private val havenDao: HavenDao) : DataRepository {
     override suspend fun deleteMemory(memory: MemoryEntity) = havenDao.deleteMemory(memory)
     override suspend fun clearMemoriesForCharacter(characterId: Int) = havenDao.clearMemoriesForCharacter(characterId)
     override suspend fun addXpAndIncrementMessages(characterId: Int, xp: Int) = havenDao.addXpAndIncrementMessages(characterId, xp)
+    override suspend fun getConversationState(convId: String): ConversationStateEntity? = havenDao.getConversationState(convId)
+    override suspend fun insertConversationState(state: ConversationStateEntity) = havenDao.insertConversationState(state)
     
     override suspend fun importTavernCard(context: Context, inputStream: InputStream, cardBytes: ByteArray): CharacterEntity? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val rawJson = xyz.ssfdre38.haven.data.parser.TavernCardParser.parseRawJson(java.io.ByteArrayInputStream(cardBytes)) ?: return@withContext null

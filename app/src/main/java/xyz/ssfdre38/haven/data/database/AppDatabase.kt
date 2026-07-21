@@ -5,7 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [CharacterEntity::class, MessageEntity::class, DiaryEntryEntity::class, GroupChatEntity::class, GroupMessageEntity::class, MemoryEntity::class], version = 14, exportSchema = false)
+@Database(entities = [CharacterEntity::class, MessageEntity::class, DiaryEntryEntity::class, GroupChatEntity::class, GroupMessageEntity::class, MemoryEntity::class, ConversationStateEntity::class], version = 15, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun havenDao(): HavenDao
@@ -41,6 +41,24 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_14_15 = object : androidx.room.migration.Migration(14, 15) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `conversation_states` (
+                        `convId` TEXT NOT NULL,
+                        `location` TEXT,
+                        `outfit` TEXT,
+                        `mood` TEXT,
+                        `clothingState` TEXT,
+                        `bodyType` TEXT,
+                        `bodyShape` TEXT,
+                        `updatedAt` INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(`convId`)
+                    )
+                """.trimIndent())
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -48,7 +66,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "haven_database"
                 )
-                .addMigrations(MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                .addMigrations(MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
                 .fallbackToDestructiveMigrationFrom(1, 2, 3, 4, 5, 6, 7, 8, 9)
                 // Removed fallbackToDestructiveMigration to prevent silent, catastrophic loss of local companion logs, XP, and diaries on schema updates.
                 // Write explicit migrations when schema changes are introduced.
