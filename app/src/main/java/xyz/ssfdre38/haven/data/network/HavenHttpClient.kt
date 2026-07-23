@@ -91,6 +91,7 @@ object HavenHttpClient {
         displayName: String? = null,
         messageUuid: String? = null,
         companionName: String? = null,
+        companionId: String? = null,
         onStart: (String?) -> Unit = {},
         onToken: (String) -> Unit,
         onComplete: () -> Unit,
@@ -110,6 +111,9 @@ object HavenHttpClient {
             }
             if (companionName != null) {
                 put("companion_name", companionName)
+            }
+            if (companionId != null) {
+                put("companion_id", companionId)
             }
         }.toString()
 

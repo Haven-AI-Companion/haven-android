@@ -674,6 +674,7 @@ class ChatViewModel(
                     displayName = userName,
                     messageUuid = messageUuid,
                     companionName = char?.name,
+                    companionId = char?.conversationId ?: "comp_$characterId",
                     onStart = { uuid ->
                         if (uuid != null) {
                             receivedUuid = uuid
