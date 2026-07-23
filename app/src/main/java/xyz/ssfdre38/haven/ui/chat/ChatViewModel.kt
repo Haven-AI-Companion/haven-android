@@ -1241,6 +1241,9 @@ class ChatViewModel(
                                 serverUrl = fullMemServerUrl,
                                 prompt = memoryPrompt,
                                 token = memToken,
+                                conversationId = conversationId,
+                                companionName = char?.name,
+                                companionId = char?.conversationId ?: "comp_$characterId",
                                 onToken = { t -> memBuffer.append(t).append(" ") },
                                 onComplete = {
                                     val extracted = memBuffer.toString().trim()
@@ -1472,20 +1475,17 @@ class ChatViewModel(
                 streamingMessageId = placeholderId
                 streamBuffer.clear()
 
-                val conversationIdKey = "conversation_id_$characterId"
-                var conversationId = sharedPrefs.getString(conversationIdKey, null)
-                if (conversationId == null) {
-                    conversationId = java.util.UUID.randomUUID().toString()
-                    sharedPrefs.edit().putString(conversationIdKey, conversationId).apply()
-                }
+                val charVal = character.value
+                val compConvId = charVal?.conversationId ?: "conv_$characterId"
 
                 HavenHttpClient.streamChat(
                     serverUrl = serverUrl,
                     prompt = photoPrompt,
                     token = token,
-                    conversationId = conversationId,
+                    conversationId = compConvId,
                     displayName = userName,
-                    companionName = character.value?.name,
+                    companionName = charVal?.name,
+                    companionId = compConvId,
                     onToken = { tokenPart ->
                         streamBuffer.append(tokenPart)
                         viewModelScope.launch(Dispatchers.IO) {
