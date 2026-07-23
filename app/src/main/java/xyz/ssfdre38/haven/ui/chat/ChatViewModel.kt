@@ -653,7 +653,7 @@ class ChatViewModel(
 
                 var conversationId = char?.conversationId
                 if (conversationId.isNullOrBlank()) {
-                    conversationId = java.util.UUID.randomUUID().toString()
+                    conversationId = "conv_" + (char?.name ?: "companion").trim().lowercase().replace("\\s+".toRegex(), "_")
                     if (char != null) {
                         val newChar = char.copy(conversationId = conversationId)
                         repository.updateCharacter(newChar)
