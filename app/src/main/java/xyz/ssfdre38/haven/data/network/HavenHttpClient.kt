@@ -318,7 +318,8 @@ object HavenHttpClient {
                     if (bytes != null) {
                         val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
                         val localDir = File(baseDir, "vrm_models").apply { mkdirs() }
-                        val file = File(localDir, "${characterName.replace("\\s+".toRegex(), "_")}_avatar_${System.currentTimeMillis()}.glb")
+                        val file = File(localDir, "${characterName.replace("\\s+".toRegex(), "_")}_avatar.glb")
+                        if (file.exists() && file.length() > 0) return file.absolutePath
                         java.io.FileOutputStream(file).use { fos ->
                             fos.write(bytes)
                         }

@@ -378,6 +378,16 @@ fun ChatScreen(
         }
     }
 
+    val sharedPrefs = remember { context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE) }
+    val host = sharedPrefs.getString("ash_host", "") ?: ""
+    val port = sharedPrefs.getString("ash_port", "") ?: ""
+    val serverUrl = remember(host, port) {
+        if (host.isNotBlank()) {
+            val cleanHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
+            if (port.isNotBlank() && !cleanHost.contains(":$port")) "$cleanHost:${port.trim()}" else cleanHost
+        } else null
+    }
+
     val themeGradients = remember(characterId) {
         when (characterId) {
             1 -> listOf(Color(0xFF1E1035), Color(0xFF0C051A)) // Nova: cosmic violet
@@ -404,15 +414,6 @@ fun ChatScreen(
         val localChar = character
         if (localChar != null) {
             val bgPath = localChar.chatWallpaperPath ?: localChar.avatarPath
-            val sharedPrefs = remember { context.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE) }
-            val host = sharedPrefs.getString("ash_host", "") ?: ""
-            val port = sharedPrefs.getString("ash_port", "") ?: ""
-            val serverUrl = remember(host, port) {
-                if (host.isNotBlank()) {
-                    val cleanHost = if (host.startsWith("http")) host.trimEnd('/') else "http://${host.trimEnd('/')}"
-                    if (port.isNotBlank() && !cleanHost.contains(":$port")) "$cleanHost:${port.trim()}" else cleanHost
-                } else null
-            }
             val bgModel = remember(bgPath, serverUrl) {
                 xyz.ssfdre38.haven.utils.AvatarUtils.resolveAvatarModel(bgPath, serverUrl)
             }
@@ -665,6 +666,19 @@ fun ChatScreen(
                                     Icon(
                                         imageVector = Icons.Filled.AutoAwesome,
                                         contentDescription = "Immersive Mode"
+                                    )
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Memory Vault") },
+                                onClick = {
+                                    expanded = false
+                                    onMemoryVaultClick()
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Psychology,
+                                        contentDescription = "Memory Vault"
                                     )
                                 }
                             )
@@ -1097,8 +1111,42 @@ fun ChatScreen(
                 )
             }
 
-            val vrmPath = character?.vrmModelPath
-            val hasVrm = remember(vrmPath) { vrmPath?.let { File(it).exists() } == true }
+            val rawVrmPath = character?.vrmModelPath
+            val resolvedVrmModel = remember(rawVrmPath, serverUrl) {
+                xyz.ssfdre38.haven.utils.AvatarUtils.resolveAvatarModel(rawVrmPath, serverUrl)
+            }
+
+            var localVrmPath by remember(rawVrmPath) {
+                mutableStateOf(if (rawVrmPath != null && File(rawVrmPath).exists()) rawVrmPath else null)
+            }
+
+            LaunchedEffect(resolvedVrmModel, character?.id) {
+                if (localVrmPath == null && resolvedVrmModel != null) {
+                    if (resolvedVrmModel is File && resolvedVrmModel.exists()) {
+                        localVrmPath = resolvedVrmModel.absolutePath
+                    } else if (resolvedVrmModel is String && (resolvedVrmModel.startsWith("http") || resolvedVrmModel.startsWith("/"))) {
+                        val fullUrl = if (resolvedVrmModel.startsWith("/")) {
+                            val cleanServer = serverUrl?.trimEnd('/') ?: ""
+                            "$cleanServer$resolvedVrmModel"
+                        } else resolvedVrmModel.toString()
+                        
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            try {
+                                val charName = character?.name ?: "companion"
+                                val downloaded = xyz.ssfdre38.haven.data.network.HavenHttpClient.downloadGlb(context, fullUrl, charName)
+                                if (downloaded != null && File(downloaded).exists()) {
+                                    localVrmPath = downloaded
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                    }
+                }
+            }
+
+            val vrmPath = localVrmPath
+            val hasVrm = remember(vrmPath) { vrmPath != null && File(vrmPath).exists() }
             val currentAnimationIndex = remember(character?.currentMood, isSpeaking) {
                 val moodClean = character?.currentMood?.lowercase() ?: "neutral"
                 when {
@@ -1116,18 +1164,27 @@ fun ChatScreen(
                         Box(
                             modifier = Modifier
                                 .weight(leftWeight)
-                                .fillMaxHeight()
+                                .fillMaxHeight(),
+                            contentAlignment = Alignment.Center
                         ) {
                             VrmAvatarView(
                                 modelPath = vrmPath,
                                 mood = character?.currentMood ?: "neutral",
                                 isSpeaking = isSpeaking,
                                 animationIndex = currentAnimationIndex,
+                                onClothingStateChanged = { newState ->
+                                    val prefs = context.getSharedPreferences("haven_prefs", android.content.Context.MODE_PRIVATE)
+                                    val host = prefs.getString("ash_host", "http://100.95.198.162") ?: "http://100.95.198.162"
+                                    val port = prefs.getString("ash_port", "18799") ?: "18799"
+                                    val authToken = prefs.getString("auth_token", "") ?: ""
+                                    val targetUrl = "${host.trimEnd('/')}:$port"
+                                    chatViewModel.sendMessage(context.applicationContext, targetUrl, authToken, "[CLOTHING: $newState]")
+                                },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
                     } else {
-                        // Fallback: 2D static large character avatar
+                        // Fallback: 2D static/dynamic large character avatar
                         Box(
                             modifier = Modifier
                                 .weight(leftWeight)
@@ -1137,7 +1194,7 @@ fun ChatScreen(
                             character?.let { char ->
                                 xyz.ssfdre38.haven.ui.main.CharacterAvatar(
                                     character = char,
-                                    modifier = Modifier.size(if (immersiveMode) 320.dp else 200.dp)
+                                    modifier = Modifier.size(if (immersiveMode) 320.dp else 240.dp)
                                 )
                             }
                         }

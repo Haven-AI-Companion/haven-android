@@ -17,8 +17,8 @@ object AvatarUtils {
             return avatarPath
         }
         
-        // 3. Relative server path
-        if (!serverUrl.isNullOrBlank()) {
+        // 3. Relative server path (only if not an absolute Android storage path)
+        if (!serverUrl.isNullOrBlank() && !avatarPath.startsWith("/data/") && !avatarPath.startsWith("/storage/")) {
             val cleanServer = serverUrl.trimEnd('/')
             val cleanPath = if (avatarPath.startsWith("/")) avatarPath else "/$avatarPath"
             return "$cleanServer$cleanPath"

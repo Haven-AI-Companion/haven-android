@@ -1,0 +1,54 @@
+{
+  "low_tier": {
+    "tier_name": "Low-End Entry (Helio G85, Snapdragon 680, Mali-G52, Adreno 610)",
+    "gpus": [
+      "Mali-G52",
+      "Mali-G57",
+      "Adreno 610",
+      "Adreno 612",
+      "PowerVR GE8320"
+    ],
+    "max_light_intensity": 25000.0,
+    "shadow_map_resolution": 0,
+    "enable_shadows": false,
+    "anti_aliasing": "NONE",
+    "double_sided_materials": true,
+    "target_fps": 30,
+    "morph_animation_steps": 2
+  },
+  "mid_tier": {
+    "tier_name": "Mid-Range Tablet (Snapdragon 695, Dimensity 7050, Adreno 619, Mali-G68)",
+    "gpus": [
+      "Adreno 619",
+      "Adreno 618",
+      "Adreno 642L",
+      "Mali-G68",
+      "Mali-G77"
+    ],
+    "max_light_intensity": 45000.0,
+    "shadow_map_resolution": 512,
+    "enable_shadows": true,
+    "anti_aliasing": "FXAA",
+    "double_sided_materials": true,
+    "target_fps": 45,
+    "morph_animation_steps": 4
+  },
+  "high_tier": {
+    "tier_name": "High-End Flagship (Snapdragon 8 Gen 2/3, Tensor G3, Adreno 740, Xclipse 940)",
+    "gpus": [
+      "Adreno 740",
+      "Adreno 750",
+      "Adreno 730",
+      "Mali-G715",
+      "Xclipse 940",
+      "Apple Metal"
+    ],
+    "max_light_intensity": 120000.0,
+    "shadow_map_resolution": 2048,
+    "enable_shadows": true,
+    "anti_aliasing": "MSAA_4X",
+    "double_sided_materials": true,
+    "target_fps": 60,
+    "morph_animation_steps": 8
+  }
+}

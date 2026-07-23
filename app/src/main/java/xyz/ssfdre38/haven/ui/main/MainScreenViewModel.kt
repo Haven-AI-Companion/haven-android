@@ -473,7 +473,9 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
 
                         val resolvedAvatarUrl = if (!avatarPath.isNullOrBlank()) {
                             if (avatarPath.startsWith("/")) {
-                                if (formattedHost.startsWith("http")) "$formattedHost:$port$avatarPath" else "http://$formattedHost:$port$avatarPath"
+                                val cleanHost = if (formattedHost.startsWith("http")) formattedHost.trimEnd('/') else "http://${formattedHost.trimEnd('/')}"
+                                val hostWithPort = if (port.isNotBlank() && !cleanHost.contains(":$port")) "$cleanHost:$port" else cleanHost
+                                "$hostWithPort$avatarPath"
                             } else {
                                 avatarPath
                             }
@@ -493,7 +495,9 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
 
                         val resolvedVrmUrl = if (!vrmModelPath.isNullOrBlank()) {
                             if (vrmModelPath.startsWith("/")) {
-                                if (formattedHost.startsWith("http")) "$formattedHost:$port$vrmModelPath" else "http://$formattedHost:$port$vrmModelPath"
+                                val cleanHost = if (formattedHost.startsWith("http")) formattedHost.trimEnd('/') else "http://${formattedHost.trimEnd('/')}"
+                                val hostWithPort = if (port.isNotBlank() && !cleanHost.contains(":$port")) "$cleanHost:$port" else cleanHost
+                                "$hostWithPort$vrmModelPath"
                             } else {
                                 vrmModelPath
                             }

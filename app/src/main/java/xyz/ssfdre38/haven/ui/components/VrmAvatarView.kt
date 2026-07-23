@@ -1,8 +1,12 @@
 package xyz.ssfdre38.haven.ui.components
 
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import io.github.sceneview.SceneView
 import io.github.sceneview.rememberEngine
 import io.github.sceneview.rememberModelLoader
@@ -24,9 +28,13 @@ fun VrmAvatarView(
     mood: String,
     isSpeaking: Boolean = false,
     animationIndex: Int = 0,
+    onClothingStateChanged: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val modelFile = remember(modelPath) { File(modelPath) }
+    val cleanDiskPath = remember(modelPath) {
+        if (modelPath.startsWith("file://", ignoreCase = true)) modelPath.substring(7) else modelPath
+    }
+    val modelFile = remember(cleanDiskPath) { File(cleanDiskPath) }
     if (!modelFile.exists()) return
 
     val engine = rememberEngine()
@@ -34,6 +42,9 @@ fun VrmAvatarView(
     val scope = rememberCoroutineScope()
 
     var modelNodeRef by remember { mutableStateOf<io.github.sceneview.node.ModelNode?>(null) }
+    var topVisible by remember { mutableStateOf(true) }
+    var bottomVisible by remember { mutableStateOf(true) }
+    var isUndressed by remember { mutableStateOf(false) }
 
     // Map companion mood string to morph target weights
     val baseWeights = remember(mood) {
@@ -64,16 +75,13 @@ fun VrmAvatarView(
     LaunchedEffect(isSpeaking) {
         if (isSpeaking) {
             while (true) {
-                // Randomize open/close duration and target open factor to look natural
                 val openTarget = 0.4f + (0..50).random() / 100f
-                // Ease open
                 val steps = 4
                 for (i in 1..steps) {
                     speakMouthOpenFactor = (openTarget / steps) * i
                     kotlinx.coroutines.delay(30)
                 }
                 kotlinx.coroutines.delay((50..120).random().toLong())
-                // Ease close
                 for (i in steps downTo 0) {
                     speakMouthOpenFactor = (openTarget / steps) * i
                     kotlinx.coroutines.delay(20)
@@ -85,17 +93,13 @@ fun VrmAvatarView(
         }
     }
 
-    // Auto-blinking animation effect running in the background
+    // Auto-blinking animation effect
     LaunchedEffect(modelNodeRef, baseWeights, speakMouthOpenFactor) {
         val node = modelNodeRef ?: return@LaunchedEffect
         while (true) {
-            // Blink interval: random time between 3 to 6 seconds
             delay((3000..6000).random().toLong())
-            
-            // If the mood is already closed-eyes, don't blink
             if (baseWeights[0] > 0.5f) continue
 
-            // Blink down: set eye-blink morph target weight (index 0) to 1.0
             val blinkWeights = baseWeights.clone()
             if (blinkWeights.size > 14) {
                 blinkWeights[10] = speakMouthOpenFactor
@@ -106,9 +110,8 @@ fun VrmAvatarView(
             blinkWeights[0] = 1.0f
             node.setMorphWeights(blinkWeights, offset = 0)
             
-            delay(120) // eyes closed duration
+            delay(120)
             
-            // Blink up: restore base mood weights
             val restoreWeights = baseWeights.clone()
             if (restoreWeights.size > 14) {
                 restoreWeights[10] = speakMouthOpenFactor
@@ -125,15 +128,20 @@ fun VrmAvatarView(
         val node = modelNodeRef ?: return@LaunchedEffect
         val currentWeights = baseWeights.clone()
         if (currentWeights.size > 14) {
-            currentWeights[10] = speakMouthOpenFactor // Viseme A
-            currentWeights[14] = speakMouthOpenFactor * 0.3f // Viseme O
+            currentWeights[10] = speakMouthOpenFactor
+            currentWeights[14] = speakMouthOpenFactor * 0.3f
         } else if (currentWeights.size > 6) {
-            currentWeights[6] = speakMouthOpenFactor // fallback viseme
+            currentWeights[6] = speakMouthOpenFactor
         }
+        node.setMorphWeights(currentWeights, offset = 0)
     }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val hardwareConfig = remember(context) { xyz.ssfdre38.haven.util.HardwareProfileManager.getDeviceProfile(context) }
+
     val mainLightNode = rememberMainLightNode(engine) {
-        intensity = 150000.0f
+        intensity = hardwareConfig.maxLightIntensity
+        color = io.github.sceneview.math.Color(1.0f, 0.98f, 0.95f)
         rotation = Rotation(x = -45f, y = 45f, z = 0f)
     }
 
@@ -142,50 +150,115 @@ fun VrmAvatarView(
             engine = engine,
             type = com.google.android.filament.LightManager.Type.DIRECTIONAL,
             apply = {
-                intensity(60000.0f)
+                intensity(hardwareConfig.maxLightIntensity * 0.55f)
+                color(0.9f, 0.95f, 1.0f)
             }
         ).apply {
             rotation = Rotation(x = -15f, y = -45f, z = 0f)
         }
     }
 
-    val cameraNode = rememberCameraNode(engine) {
-        position = Position(0f, 1.25f, 1.25f) // torso/head framing
-        rotation = Rotation(-8f, 0f, 0f)      // look slightly down
+    val backLightNode = rememberNode {
+        io.github.sceneview.node.LightNode(
+            engine = engine,
+            type = com.google.android.filament.LightManager.Type.DIRECTIONAL,
+            apply = {
+                intensity(hardwareConfig.maxLightIntensity * 0.65f)
+                color(1.0f, 1.0f, 1.0f)
+            }
+        ).apply {
+            rotation = Rotation(x = 45f, y = 180f, z = 0f)
+        }
     }
 
-    SceneView(
-        modifier = modifier.fillMaxSize(),
-        surfaceType = io.github.sceneview.SurfaceType.TextureSurface,
-        isOpaque = false,
-        engine = engine,
-        modelLoader = modelLoader,
-        cameraNode = cameraNode,
-        cameraManipulator = rememberCameraManipulator()
-    ) {
-        NodeLifecycle(mainLightNode) {}
-        NodeLifecycle(fillLightNode) {}
+    val cameraNode = rememberCameraNode(engine) {
+        position = Position(0f, 1.25f, 1.25f)
+        rotation = Rotation(-8f, 0f, 0f)
+    }
 
-        val modelInstance = rememberModelInstance(modelLoader, modelFile.absolutePath)
-        if (modelInstance != null) {
+    val modelInstance = rememberModelInstance(modelLoader, modelFile.absolutePath)
+    if (modelInstance == null) return
+
+    Box(modifier = modifier.fillMaxSize()) {
+        SceneView(
+            modifier = Modifier.fillMaxSize(),
+            engine = engine,
+            modelLoader = modelLoader,
+            cameraNode = cameraNode,
+            cameraManipulator = rememberCameraManipulator()
+        ) {
+            NodeLifecycle(mainLightNode) {}
+            NodeLifecycle(fillLightNode) {}
+            NodeLifecycle(backLightNode) {}
+
+            modelInstance.materialInstances.forEach { mat ->
+                try {
+                    mat.isDoubleSided = true
+                    try { mat.setParameter("roughnessFactor", 0.8f) } catch (_: Exception) {}
+                    try { mat.setParameter("metallicFactor", 0.0f) } catch (_: Exception) {}
+                } catch (_: Exception) {}
+            }
+
             val modelNode = rememberNode {
                 io.github.sceneview.node.ModelNode(
                     modelInstance = modelInstance
                 ).apply {
-                    position = Position(0f, 0f, 0f)
-                    scale = Scale(1.0f)
+                    position = Position(0f, -0.6f, 0f)
+                    scale = Scale(0.9f)
                 }
             }
             NodeLifecycle(modelNode) {}
             
-            // Trigger animation and update state reference
             LaunchedEffect(modelNode, animationIndex) {
                 modelNodeRef = modelNode
                 try {
+                    cameraNode.position = Position(0f, 0.85f, 1.8f)
+                    cameraNode.rotation = Rotation(-4f, 0f, 0f)
                     modelNode.playAnimation(animationIndex = animationIndex, loop = true)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
+            }
+        }
+
+        // Floating 3D Wardrobe Layer Controls Overlay
+        Surface(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(12.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
+            shape = RoundedCornerShape(16.dp),
+            tonalElevation = 6.dp
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilterChip(
+                    selected = !isUndressed,
+                    onClick = {
+                        isUndressed = !isUndressed
+                        onClothingStateChanged?.invoke(if (isUndressed) "Undressed, Naked in bed" else "Fully Dressed")
+                    },
+                    label = { Text(if (isUndressed) "✨ Dress" else "✨ Strip", style = MaterialTheme.typography.labelSmall) }
+                )
+                FilterChip(
+                    selected = topVisible && !isUndressed,
+                    onClick = {
+                        topVisible = !topVisible
+                        onClothingStateChanged?.invoke(if (topVisible) "Top On" else "Top Off")
+                    },
+                    label = { Text("👚 Top", style = MaterialTheme.typography.labelSmall) }
+                )
+                FilterChip(
+                    selected = bottomVisible && !isUndressed,
+                    onClick = {
+                        bottomVisible = !bottomVisible
+                        onClothingStateChanged?.invoke(if (bottomVisible) "Skirt On" else "Skirt Off")
+                    },
+                    label = { Text("👗 Skirt", style = MaterialTheme.typography.labelSmall) }
+                )
             }
         }
     }
