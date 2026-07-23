@@ -236,11 +236,13 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
             )
             val charId = dataRepository.insertCharacter(char).toInt()
             if (firstMessage.isNotBlank()) {
+                val userName = xyz.ssfdre38.haven.utils.MacroUtils.getUserDisplayName(context)
+                val cleanFirstMessage = xyz.ssfdre38.haven.utils.MacroUtils.parseMacros(firstMessage, userName, name)
                 dataRepository.insertMessage(
                     xyz.ssfdre38.haven.data.database.MessageEntity(
                         characterId = charId,
                         sender = "character",
-                        text = firstMessage
+                        text = cleanFirstMessage
                     )
                 )
             }
@@ -574,11 +576,13 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                                 )
                                 val newId = dataRepository.insertCharacter(newChar).toInt()
                                 if (firstMessage.isNotBlank()) {
+                                    val userName = xyz.ssfdre38.haven.utils.MacroUtils.getUserDisplayName(context)
+                                    val cleanFirstMessage = xyz.ssfdre38.haven.utils.MacroUtils.parseMacros(firstMessage, userName, name)
                                     dataRepository.insertMessage(
                                         MessageEntity(
                                             characterId = newId,
                                             sender = "character",
-                                            text = firstMessage
+                                            text = cleanFirstMessage
                                         )
                                     )
                                 }
@@ -624,11 +628,13 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
 
             val charId = dataRepository.insertCharacter(char).toInt()
             if (char.firstMessage.isNotBlank()) {
+                val userName = xyz.ssfdre38.haven.utils.MacroUtils.getUserDisplayName(context)
+                val cleanFirstMessage = xyz.ssfdre38.haven.utils.MacroUtils.parseMacros(char.firstMessage, userName, char.name)
                 dataRepository.insertMessage(
                     MessageEntity(
                         characterId = charId,
                         sender = "character",
-                        text = char.firstMessage
+                        text = cleanFirstMessage
                     )
                 )
             }

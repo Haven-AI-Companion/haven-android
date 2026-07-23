@@ -496,9 +496,9 @@ class ChatViewModel(
                     // 1. Static Prefix (Identical every turn -> optimized for llama-server KV caching)
                     if (char != null) {
                         val companionGender = char.bodyType
-                        val cleanPersonality = swapUserPronouns(char.personality, companionGender, userGender)
-                        val cleanScenario = swapUserPronouns(char.scenario, companionGender, userGender)
-                        val cleanSystemPrompt = swapUserPronouns(char.systemPrompt, companionGender, userGender)
+                        val cleanPersonality = swapUserPronouns(char.personality, companionGender, userGender, userName, char.name)
+                        val cleanScenario = swapUserPronouns(char.scenario, companionGender, userGender, userName, char.name)
+                        val cleanSystemPrompt = swapUserPronouns(char.systemPrompt, companionGender, userGender, userName, char.name)
 
                         appendLine("You are ${char.name}.")
                         if (cleanPersonality.isNotBlank()) appendLine("Personality: $cleanPersonality")
@@ -1441,8 +1441,8 @@ class ChatViewModel(
                 val photoPrompt = buildString {
                     if (char != null) {
                         val companionGender = char.bodyType
-                        val cleanPersonality = swapUserPronouns(char.personality, companionGender, userGender)
-                        val cleanSystemPrompt = swapUserPronouns(char.systemPrompt, companionGender, userGender)
+                        val cleanPersonality = swapUserPronouns(char.personality, companionGender, userGender, userName, char.name)
+                        val cleanSystemPrompt = swapUserPronouns(char.systemPrompt, companionGender, userGender, userName, char.name)
 
                         appendLine("You are ${char.name}.")
                         if (cleanPersonality.isNotBlank()) appendLine("Personality: $cleanPersonality")
@@ -1933,47 +1933,14 @@ class ChatViewModel(
         }
     }
 
-    private fun swapUserPronouns(text: String, companionGender: String, userGender: String): String {
-        if (text.isBlank()) return text
-        val cleanUser = userGender.trim().lowercase()
-
-        val replacements = if (cleanUser.contains("female") || cleanUser.contains("woman") || cleanUser.contains("she")) {
-            listOf(
-                "\\bhe\\b" to "she",
-                "\\bhim\\b" to "her",
-                "\\bhis\\b" to "her",
-                "\\bhimself\\b" to "herself"
-            )
-        } else if (cleanUser.contains("male") || cleanUser.contains("man") || cleanUser.contains("he")) {
-            listOf(
-                "\\bshe\\b" to "he",
-                "\\bherself\\b" to "himself",
-                "\\bhers\\b" to "his",
-                "\\bher\\b" to "his"
-            )
-        } else {
-            return text
-        }
-
-        var result = text
-        for ((pattern, replacement) in replacements) {
-            val regex = pattern.toRegex(RegexOption.IGNORE_CASE)
-            result = regex.replace(result) { matchResult ->
-                val value = matchResult.value
-                val firstCharUpper = value.firstOrNull()?.isUpperCase() ?: false
-                if (firstCharUpper) {
-                    val allUpper = value.all { it.isUpperCase() }
-                    if (allUpper) {
-                        replacement.uppercase()
-                    } else {
-                        replacement.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.ROOT) else it.toString() }
-                    }
-                } else {
-                    replacement
-                }
-            }
-        }
-        return result
+    private fun swapUserPronouns(
+        text: String,
+        companionGender: String,
+        userGender: String,
+        userName: String = "User",
+        charName: String = ""
+    ): String {
+        return xyz.ssfdre38.haven.utils.MacroUtils.parseMacros(text, userName, charName)
     }
 
     fun exportChatHistory(context: Context, onComplete: (String?) -> Unit) {

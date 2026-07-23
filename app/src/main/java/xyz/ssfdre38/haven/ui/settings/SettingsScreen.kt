@@ -507,17 +507,27 @@ fun SettingsScreen(
                     )
 
                     var genderDropdownExpanded by remember { mutableStateOf(false) }
-                    val genders = listOf("Male", "Female", "Non-Binary", "Unspecified")
+                    val standardGenders = listOf("Male", "Female", "Non-Binary", "Unspecified")
+                    var selectedGenderCategory by remember(userGender) {
+                        mutableStateOf(
+                            if (userGender in standardGenders) userGender else "Other / Custom"
+                        )
+                    }
+                    var customGenderText by remember(userGender) {
+                        mutableStateOf(
+                            if (userGender !in standardGenders && userGender != "Other / Custom") userGender else ""
+                        )
+                    }
 
                     ExposedDropdownMenuBox(
                         expanded = genderDropdownExpanded,
                         onExpandedChange = { genderDropdownExpanded = !genderDropdownExpanded }
                     ) {
                         OutlinedTextField(
-                            value = userGender,
+                            value = selectedGenderCategory,
                             onValueChange = {},
                             readOnly = true,
-                            label = { Text("Gender") },
+                            label = { Text("Gender / Pronouns") },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = genderDropdownExpanded) },
                             modifier = Modifier.fillMaxWidth().menuAnchor(),
                             colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
@@ -526,16 +536,35 @@ fun SettingsScreen(
                             expanded = genderDropdownExpanded,
                             onDismissRequest = { genderDropdownExpanded = false }
                         ) {
-                            genders.forEach { gender ->
+                            (standardGenders + "Other / Custom").forEach { genderOption ->
                                 DropdownMenuItem(
-                                    text = { Text(gender) },
+                                    text = { Text(genderOption) },
                                     onClick = {
-                                        userGender = gender
+                                        selectedGenderCategory = genderOption
+                                        if (genderOption != "Other / Custom") {
+                                            userGender = genderOption
+                                        } else {
+                                            userGender = customGenderText.ifBlank { "Other" }
+                                        }
                                         genderDropdownExpanded = false
                                     }
                                 )
                             }
                         }
+                    }
+
+                    androidx.compose.animation.AnimatedVisibility(visible = selectedGenderCategory == "Other / Custom") {
+                        OutlinedTextField(
+                            value = customGenderText,
+                            onValueChange = {
+                                customGenderText = it
+                                userGender = it.ifBlank { "Other" }
+                            },
+                            label = { Text("Custom Gender / Pronouns") },
+                            placeholder = { Text("e.g. she/they, ze/hir, demiboy") },
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                            singleLine = true
+                        )
                     }
                 }
             }
