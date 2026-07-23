@@ -225,6 +225,7 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
         avatarPath: String? = null
     ) {
         viewModelScope.launch(Dispatchers.IO) {
+            val cleanConvId = "conv_" + name.trim().lowercase().replace("\\s+".toRegex(), "_")
             val char = CharacterEntity(
                 name = name,
                 description = description,
@@ -232,7 +233,8 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                 firstMessage = firstMessage,
                 voiceId = voiceId.ifBlank { "en_US-amy-medium" },
                 systemPrompt = systemPrompt,
-                avatarPath = avatarPath
+                avatarPath = avatarPath,
+                conversationId = cleanConvId
             )
             val charId = dataRepository.insertCharacter(char).toInt()
             if (firstMessage.isNotBlank()) {
@@ -626,7 +628,8 @@ class MainScreenViewModel(private val dataRepository: DataRepository) : ViewMode
                 prefs.edit().putStringSet("deleted_companions", deleted).apply()
             }
 
-            val charId = dataRepository.insertCharacter(char).toInt()
+            val cleanConvId = char.conversationId?.ifBlank { null } ?: ("conv_" + char.name.trim().lowercase().replace("\\s+".toRegex(), "_"))
+            val charId = dataRepository.insertCharacter(char.copy(conversationId = cleanConvId)).toInt()
             if (char.firstMessage.isNotBlank()) {
                 val userName = xyz.ssfdre38.haven.utils.MacroUtils.getUserDisplayName(context)
                 val cleanFirstMessage = xyz.ssfdre38.haven.utils.MacroUtils.parseMacros(char.firstMessage, userName, char.name)

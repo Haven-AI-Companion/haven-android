@@ -214,7 +214,7 @@ class ChatViewModel(
                 val char = repository.getCharacterById(characterId) ?: return@withLock
                 var conversationId = char.conversationId
                 if (conversationId.isNullOrBlank()) {
-                    conversationId = java.util.UUID.randomUUID().toString()
+                    conversationId = "conv_" + char.name.trim().lowercase().replace("\\s+".toRegex(), "_")
                     repository.updateCharacter(char.copy(conversationId = conversationId))
                     saveCompanionToServer(context, serverUrl, token, char.copy(conversationId = conversationId))
                     return@withLock
