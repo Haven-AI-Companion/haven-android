@@ -627,6 +627,11 @@ class ChatViewModel(
                         append(formattedHistory)
                         append("\n")
                     }
+                    if (userGender.trim().lowercase().let { it.contains("female") || it.contains("woman") || it.contains("she") }) {
+                        append("[System Directive: $userName is FEMALE. You MUST use female pronouns (she/her/hers) when referring to $userName in actions or descriptions. NEVER use he/him/his for $userName!]\n")
+                    } else if (userGender.trim().lowercase().let { it.contains("male") || it.contains("man") || it.contains("he") }) {
+                        append("[System Directive: $userName is MALE. You MUST use male pronouns (he/him/his) when referring to $userName in actions or descriptions. NEVER use she/her/hers for $userName!]\n")
+                    }
                     append("$userName: $text\n")
                     append("${char?.name ?: "Companion"}: ")
                 }
