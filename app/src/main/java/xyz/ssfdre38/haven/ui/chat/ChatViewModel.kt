@@ -614,7 +614,8 @@ class ChatViewModel(
                 val formattedHistory = history.joinToString("\n") { m ->
                     val senderName = if (m.sender == "user") userName else (char?.name ?: "Companion")
                     val cleanText = m.text.replace("<\\s*thought\\s*>(.*?)<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL), "").trim()
-                    "$senderName: $cleanText"
+                    val sanitizedText = sanitizeUserPronouns(cleanText, userGender)
+                    "$senderName: $sanitizedText"
                 }
 
                 val fullPrompt = buildString {
@@ -1585,7 +1586,7 @@ class ChatViewModel(
         return text.trim()
     }
 
-    private fun cleanFinalText(rawText: String): String {
+    private fun cleanFinalText(rawText: String, context: Context? = null): String {
         var text = rawText
         
         // 1. Remove completed thought blocks <thought>...</thought>
@@ -1611,7 +1612,39 @@ class ChatViewModel(
         // 6. Remove any special LLM control/template tokens (e.g. <|channel>, <|im_end|>)
         text = text.replace("<\\|[^>]*>".toRegex(), "")
         
-        return text.trim()
+        val userGender = context?.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)?.getString("user_gender", "Unspecified") ?: "Unspecified"
+        return sanitizeUserPronouns(text.trim(), userGender)
+    }
+
+    private fun sanitizeUserPronouns(text: String, userGender: String): String {
+        if (text.isBlank()) return text
+        val uLower = userGender.trim().lowercase()
+        val isFemale = uLower.contains("female") || uLower.contains("woman") || uLower.contains("she")
+        if (!isFemale) return text
+
+        var cleaned = text
+
+        // 1. Possessive pronouns referring to user's body parts/belongings
+        cleaned = cleaned.replace("(?i)\\bhis\\s+(chest|shoulder|shoulders|gaze|form|body|eyes|lips|face|waist|hand|hands|back|neck|hair|arm|arms|collarbone|breath|skin|touch)\\b".toRegex()) { match ->
+            val word = match.groupValues[1]
+            val firstChar = match.value[0]
+            if (firstChar.isUpperCase()) "Her $word" else "her $word"
+        }
+
+        // 2. Object pronouns following verbs/prepositions directed at user
+        cleaned = cleaned.replace("(?i)\\b(stop|squeeze|gives|give|offers|offer|tells|tell|toward|towards|for|with|at|before|around|near|against|beside|facing|watching|touching|holding|kissing|hugging|soak in|soaks in|looks at|looking at)\\s+him\\b".toRegex()) { match ->
+            val verb = match.groupValues[1]
+            "$verb her"
+        }
+
+        // 3. Subject pronouns referring to user actions
+        cleaned = cleaned.replace("(?i)\\bhe\\s+(is|was|has|had|looks|smiles|says|laughs|walks|moves|stands|leans|sits|turns|nods|whispers|gazes|holds|takes|pulls|asks|decides)\\b".toRegex()) { match ->
+            val verb = match.groupValues[1]
+            val firstChar = match.value[0]
+            if (firstChar.isUpperCase()) "She $verb" else "she $verb"
+        }
+
+        return cleaned
     }
 
     private fun getFinalCleanedText(fullText: String, currentChar: CharacterEntity?, defaultMood: String?): String {
