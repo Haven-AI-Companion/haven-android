@@ -54,6 +54,7 @@ class ChatViewModel(
 
     var scrollIndex: Int = -1
     var scrollOffset: Int = 0
+    var cachedUserGender: String = "Female"
 
     val spokenSentences = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     val audioPlayQueue = java.util.Collections.synchronizedList(mutableListOf<String>())
@@ -1528,13 +1529,11 @@ class ChatViewModel(
                 e.printStackTrace()
             }
         }
-    }
-
-    private fun cleanStreamingText(rawText: String): String {
+    }    private fun cleanStreamingText(rawText: String, ctx: Context? = null): String {
         var text = rawText
         
         // 1. Remove completed thought blocks
-        val completedThoughtRegex = "<\\s*thought\\s*>.*<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
+        val completedThoughtRegex = "<\\s*thought\\s*>.*?<\\s*/\\s*thought\\s*>".toRegex(RegexOption.DOT_MATCHES_ALL)
         text = text.replace(completedThoughtRegex, "")
         
         // 2. Remove completed call blocks
@@ -1547,7 +1546,7 @@ class ChatViewModel(
         val actionRegex = "\\[\\s*ACTION\\s*:\\s*(.*?)\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
         text = text.replace(actionRegex, "")
         
-        // Strip partial action tags at the end of the stream to avoid visual flicker
+        // 4. Strip partial action tags at the end of the stream to avoid visual flicker
         val partialActionIndex = text.lastIndexOf("[")
         if (partialActionIndex != -1 && partialActionIndex >= text.length - 25) {
             val partial = text.substring(partialActionIndex)
@@ -1556,37 +1555,38 @@ class ChatViewModel(
             }
         }
         
-        // 4. Remove open thought block and everything following it
+        // 5. Remove open thought block and everything following it
         val openThoughtIndex = text.indexOf("<thought")
         if (openThoughtIndex != -1) {
             text = text.substring(0, openThoughtIndex)
         }
         
-        // 4. Remove open call block and everything following it
+        // 6. Remove open call block and everything following it
         val openCallIndex = text.indexOf("<call")
         if (openCallIndex != -1) {
             text = text.substring(0, openCallIndex)
         }
         
-        // 5. Remove any loose brackets/state markers
+        // 7. Remove any loose brackets/state markers
         val stateRegex = "\\[\\s*(?:Outfit|Location|Mood|Tool|Call)\\s*:.*?\\s*\\]".toRegex(RegexOption.IGNORE_CASE)
         text = text.replace(stateRegex, "")
 
-        // 6. Strip trailing partial tag openers (e.g. "<", "<c", "<ca", etc.) to prevent flicker
+        // 8. Strip trailing partial tag openers (e.g. "<", "<c", "<ca", etc.) to prevent flicker
         val partialTagRegex = "<[a-zA-Z]*$".toRegex()
         text = text.replace(partialTagRegex, "")
 
-        // 7. Strip trailing partial bracket openers (e.g. "[", "[O", "[Outfit", etc.)
+        // 9. Strip trailing partial bracket openers (e.g. "[", "[O", "[Outfit", etc.)
         val partialBracketRegex = "\\[[a-zA-Z\\s:]*$".toRegex()
         text = text.replace(partialBracketRegex, "")
         
-        // 8. Remove any special LLM control/template tokens (e.g. <|channel>, <|im_end|>)
+        // 10. Remove any special LLM control/template tokens (e.g. <|channel>, <|im_end|>)
         text = text.replace("<\\|[^>]*>".toRegex(), "")
         
-        return text.trim()
+        val gender = ctx?.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)?.getString("user_gender", cachedUserGender) ?: cachedUserGender
+        return sanitizeUserPronouns(text.trim(), gender)
     }
 
-    private fun cleanFinalText(rawText: String, context: Context? = null): String {
+    private fun cleanFinalText(rawText: String, ctx: Context? = null): String {
         var text = rawText
         
         // 1. Remove completed thought blocks <thought>...</thought>
@@ -1612,37 +1612,48 @@ class ChatViewModel(
         // 6. Remove any special LLM control/template tokens (e.g. <|channel>, <|im_end|>)
         text = text.replace("<\\|[^>]*>".toRegex(), "")
         
-        val userGender = context?.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)?.getString("user_gender", "Unspecified") ?: "Unspecified"
-        return sanitizeUserPronouns(text.trim(), userGender)
+        val gender = ctx?.getSharedPreferences("haven_prefs", Context.MODE_PRIVATE)?.getString("user_gender", cachedUserGender) ?: cachedUserGender
+        return sanitizeUserPronouns(text.trim(), gender)
     }
 
     private fun sanitizeUserPronouns(text: String, userGender: String): String {
         if (text.isBlank()) return text
         val uLower = userGender.trim().lowercase()
-        val isFemale = uLower.contains("female") || uLower.contains("woman") || uLower.contains("she")
+        val isFemale = uLower.contains("female") || uLower.contains("woman") || uLower.contains("she") || uLower == "unspecified"
         if (!isFemale) return text
 
         var cleaned = text
 
-        // 1. Possessive pronouns referring to user's body parts/belongings
-        cleaned = cleaned.replace("(?i)\\bhis\\s+(chest|shoulder|shoulders|gaze|form|body|eyes|lips|face|waist|hand|hands|back|neck|hair|arm|arms|collarbone|breath|skin|touch)\\b".toRegex()) { match ->
+        // 1. Possessive "his" followed by any noun or body part -> "her [noun]"
+        cleaned = cleaned.replace("(?i)\\bhis\\s+([a-zA-Z]+)\\b".toRegex()) { match ->
             val word = match.groupValues[1]
             val firstChar = match.value[0]
-            if (firstChar.isUpperCase()) "Her $word" else "her $word"
+            val replacement = if (firstChar.isUpperCase()) "Her" else "her"
+            "$replacement $word"
         }
 
-        // 2. Object pronouns following verbs/prepositions directed at user
-        cleaned = cleaned.replace("(?i)\\b(stop|squeeze|gives|give|offers|offer|tells|tell|toward|towards|for|with|at|before|around|near|against|beside|facing|watching|touching|holding|kissing|hugging|soak in|soaks in|looks at|looking at)\\s+him\\b".toRegex()) { match ->
+        // 2. Preposition/Verb + "his" -> "[prep] hers"
+        cleaned = cleaned.replace("(?i)\\b(against|on|to|over|under|near|beside|with|at|from)\\s+his\\b".toRegex()) { match ->
+            val prep = match.groupValues[1]
+            "$prep hers"
+        }
+
+        // 3. Verb/Preposition + "him" -> "[verb] her"
+        cleaned = cleaned.replace("(?i)\\b(stop|squeeze|gives|give|offers|offer|tells|tell|toward|towards|for|with|at|before|around|near|against|beside|facing|watching|touching|holding|kissing|hugging|soak in|soaks in|looks at|looking at|reminds|takes|helps|guides|leads|brings|pushes|pulls|leaves|joins|allows|lets|makes|make|hears|sees|chases|follows)\\s+him\\b".toRegex()) { match ->
             val verb = match.groupValues[1]
             "$verb her"
         }
 
-        // 3. Subject pronouns referring to user actions
-        cleaned = cleaned.replace("(?i)\\bhe\\s+(is|was|has|had|looks|smiles|says|laughs|walks|moves|stands|leans|sits|turns|nods|whispers|gazes|holds|takes|pulls|asks|decides)\\b".toRegex()) { match ->
+        // 4. "he" followed by verb -> "she [verb]"
+        cleaned = cleaned.replace("(?i)\\bhe\\s+(is|was|has|had|looks|smiles|says|laughs|walks|moves|stands|leans|sits|turns|nods|whispers|gazes|holds|takes|pulls|asks|decides|catches|feels|tries|soaks|gives|maintains|settles|drops|snaps|makes|manages|pauses|tilts|responds|admires|keeps|signals|gets|got)\\b".toRegex()) { match ->
             val verb = match.groupValues[1]
             val firstChar = match.value[0]
-            if (firstChar.isUpperCase()) "She $verb" else "she $verb"
+            val replacement = if (firstChar.isUpperCase()) "She" else "she"
+            "$replacement $verb"
         }
+
+        // 5. Standalone "him" -> "her"
+        cleaned = cleaned.replace("(?i)\\bhim\\b".toRegex(), "her")
 
         return cleaned
     }
