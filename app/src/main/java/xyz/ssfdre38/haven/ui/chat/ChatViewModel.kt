@@ -2022,4 +2022,10 @@ class ChatViewModel(
             }
         }
     }
+
+    fun clearHistory(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.clearMessagesForCharacter(characterId)
+        }
+    }
 }

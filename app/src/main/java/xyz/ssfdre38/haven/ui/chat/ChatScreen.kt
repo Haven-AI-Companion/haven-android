@@ -10,6 +10,16 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.animation.core.*
@@ -397,11 +407,48 @@ fun ChatScreen(
         }
     }
     val bgModifier = Modifier.background(Brush.verticalGradient(themeGradients))
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .then(bgModifier)
+            .focusRequester(focusRequester)
+            .focusable()
+            .onPreviewKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown) {
+                    if (keyEvent.isCtrlPressed && keyEvent.isShiftPressed) {
+                        when (keyEvent.key) {
+                            Key.I -> { requestPortrait(); true }
+                            Key.V -> { onVoiceCallClick(); true }
+                            else -> false
+                        }
+                    } else if (keyEvent.isCtrlPressed) {
+                        when (keyEvent.key) {
+                            Key.Enter -> {
+                                if (inputText.isNotBlank() && !isGenerating) {
+                                    val token = sharedPrefs.getString("auth_token", "") ?: ""
+                                    chatViewModel.sendMessage(context.applicationContext, serverUrl ?: "", token, inputText)
+                                    inputText = ""
+                                    true
+                                } else false
+                            }
+                            Key.N -> {
+                                chatViewModel.clearHistory(context)
+                                true
+                            }
+                            else -> false
+                        }
+                    } else if (keyEvent.key == Key.Escape) {
+                        tts?.stop()
+                        true
+                    } else false
+                } else false
+            }
             .pointerInput(Unit) {
                 detectTapGestures(
                     onDoubleTap = {
